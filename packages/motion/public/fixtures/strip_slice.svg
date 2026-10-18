@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="2000" viewBox="0 0 800 2000">
+<defs><linearGradient id="night" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d2a5c"/><stop offset="1" stop-color="#6b3f7a"/></linearGradient></defs>
+<rect width="800" height="2000" fill="#0f1530"/>
+<clipPath id="c0"><polygon points="0,100 800,100 800,900 0,900"/></clipPath><g clip-path="url(#c0)">
+  <defs><linearGradient id="fadeA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f1530" stop-opacity="0"/><stop offset="0.2" stop-color="#0f1530"/><stop offset="0.8" stop-color="#28194a"/><stop offset="1" stop-color="#28194a" stop-opacity="0"/></linearGradient></defs>
+  <rect x="0" y="100" width="800" height="800" fill="url(#fadeA)"/>
+  <circle cx="400" cy="520" r="230" fill="#f1c9a5"/>
+  <path d="M170 500 Q190 250 400 260 Q620 250 630 500 L590 400 L400 360 L210 400 Z" fill="#14141c"/>
+  <ellipse cx="320" cy="530" rx="44" ry="22" fill="#ffffff"/><circle cx="320" cy="530" r="17" fill="#3ad6ff"/>
+  <ellipse cx="480" cy="530" rx="44" ry="22" fill="#ffffff"/><circle cx="480" cy="530" r="17" fill="#3ad6ff"/></g>
+<clipPath id="c1"><polygon points="0,1100 800,1100 800,1900 0,1900"/></clipPath><g clip-path="url(#c1)">
+  <defs><radialGradient id="portal"><stop offset="0" stop-color="#e9ddff"/><stop offset="0.45" stop-color="#7b4dff"/><stop offset="1" stop-color="#120a2a"/></radialGradient></defs>
+  <rect x="0" y="1100" width="800" height="800" fill="#0c0a18"/>
+  <ellipse cx="400" cy="1480" rx="250" ry="330" fill="url(#portal)"/>
+  <g fill="#c9b6ff"><circle cx="120" cy="1150" r="2"/><circle cx="251" cy="1361" r="3"/><circle cx="382" cy="1572" r="4"/><circle cx="513" cy="1783" r="5"/><circle cx="644" cy="1294" r="2"/><circle cx="215" cy="1505" r="3"/><circle cx="346" cy="1716" r="4"/><circle cx="477" cy="1227" r="5"/><circle cx="608" cy="1438" r="2"/><circle cx="179" cy="1649" r="3"/><circle cx="310" cy="1160" r="4"/><circle cx="441" cy="1371" r="5"/><circle cx="572" cy="1582" r="2"/><circle cx="143" cy="1793" r="3"/><circle cx="274" cy="1304" r="4"/><circle cx="405" cy="1515" r="5"/><circle cx="536" cy="1726" r="2"/><circle cx="667" cy="1237" r="3"/><circle cx="238" cy="1448" r="4"/><circle cx="369" cy="1659" r="5"/><circle cx="500" cy="1170" r="2"/><circle cx="631" cy="1381" r="3"/><circle cx="202" cy="1592" r="4"/><circle cx="333" cy="1803" r="5"/></g>
+  <path d="M370 1900 L370 1760 Q400 1730 430 1760 L430 1900 Z" fill="#05040a"/></g>
+</svg>

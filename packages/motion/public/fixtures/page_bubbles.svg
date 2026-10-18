@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400" viewBox="0 0 1000 1400">
+<defs><linearGradient id="night" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d2a5c"/><stop offset="1" stop-color="#6b3f7a"/></linearGradient></defs>
+<rect width="1000" height="1400" fill="#fbfaf7"/>
+<clipPath id="c0"><polygon points="60,60 940,60 940,700 60,700"/></clipPath><g clip-path="url(#c0)">
+  <rect x="60" y="60" width="880" height="640" fill="#f3e3cf"/>
+  <rect x="60" y="520" width="880" height="180" fill="#b88a5e"/>
+  
+  <circle cx="300" cy="370" r="120" fill="#9ec5ff" opacity="0.35"/>
+  <path d="M150 660 Q300 450 450 660 Z" fill="#3b5b92"/>
+  <circle cx="300" cy="390" r="85" fill="#f1c9a5"/>
+  <path d="M208 380 Q220 270 300 280 Q395 270 392 390 L370 335 L300 320 L230 335 Z" fill="#1b1b24"/>
+  <rect x="255" y="378" width="22" height="9" fill="#1b1b24"/>
+  <rect x="323" y="378" width="22" height="9" fill="#1b1b24"/>
+  
+  <circle cx="700" cy="370" r="120" fill="#ffb3c6" opacity="0.35"/>
+  <path d="M550 660 Q700 450 850 660 Z" fill="#8f3b52"/>
+  <circle cx="700" cy="390" r="85" fill="#f1c9a5"/>
+  <path d="M608 380 Q620 270 700 280 Q795 270 792 390 L770 335 L700 320 L630 335 Z" fill="#1b1b24"/>
+  <rect x="655" y="378" width="22" height="9" fill="#1b1b24"/>
+  <rect x="723" y="378" width="22" height="9" fill="#1b1b24"/></g><polygon points="410,170 405,191 389,210 363,227 330,239 291,247 250,250 209,247 170,239 137,227 111,210 95,191 90,170 95,149 111,130 137,113 170,101 209,93 250,90 291,93 330,101 363,113 389,130 405,149" fill="#ffffff" stroke="#111" stroke-width="4"/>
+            <text x="250" y="180" font-family="Comic Sans MS, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="#111">Tum yahan kaise?</text><polygon points="910,200 905,223 890,245 866,264 835,278 799,287 760,290 721,287 685,278 654,264 630,245 615,223 610,200 615,177 630,155 654,136 685,122 721,113 760,110 799,113 835,122 866,136 890,155 905,177" fill="#ffffff" stroke="#111" stroke-width="4"/>
+            <text x="760" y="210" font-family="Comic Sans MS, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="#111">Gate khul gaya hai.</text><polygon points="60,60 940,60 940,700 60,700" fill="none" stroke="#111" stroke-width="8"/>
+<clipPath id="c1"><polygon points="60,740 600,740 940,900 940,1340 60,1340"/></clipPath><g clip-path="url(#c1)">
+  <rect x="60" y="740" width="880" height="600" fill="#20242f"/>
+  <path d="M60 1340 L420 1000 L580 1000 L940 1340 Z" fill="#363c4d"/>
+  <rect x="420" y="860" width="160" height="140" fill="#9be7ff" opacity="0.7"/>
+  
+  <circle cx="500" cy="1120" r="120" fill="#9be7ff" opacity="0.35"/>
+  <path d="M350 1410 Q500 1200 650 1410 Z" fill="#2d2d38"/>
+  <circle cx="500" cy="1140" r="85" fill="#f1c9a5"/>
+  <path d="M408 1130 Q420 1020 500 1030 Q595 1020 592 1140 L570 1085 L500 1070 L430 1085 Z" fill="#1b1b24"/>
+  <rect x="455" y="1128" width="22" height="9" fill="#1b1b24"/>
+  <rect x="523" y="1128" width="22" height="9" fill="#1b1b24"/></g><polygon points="430,840 424,858 407,875 380,889 345,901 304,908 260,910 216,908 175,901 140,889 113,875 96,858 90,840 96,822 113,805 140,791 175,779 216,772 260,770 304,772 345,779 380,791 407,805 424,822" fill="#ffffff" stroke="#111" stroke-width="4"/>
+            <text x="260" y="850" font-family="Comic Sans MS, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="#111">Peeche mat dekhna.</text><polygon points="60,740 600,740 940,900 940,1340 60,1340" fill="none" stroke="#111" stroke-width="8"/>
+</svg>
