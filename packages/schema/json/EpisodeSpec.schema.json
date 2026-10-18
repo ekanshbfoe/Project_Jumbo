@@ -1,0 +1,632 @@
+{
+  "$id": "https://jumbo.local/schema/EpisodeSpec.schema.json",
+  "title": "EpisodeSpec",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 1
+    },
+    "chapter_id": {
+      "type": "string",
+      "pattern": "^ch_\\d{4}$"
+    },
+    "title": {
+      "default": "",
+      "type": "string"
+    },
+    "video": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "width": {
+          "default": 1920,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "height": {
+          "default": 1080,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "fps": {
+          "default": 30,
+          "type": "integer",
+          "minimum": 12,
+          "maximum": 60
+        },
+        "background": {
+          "default": "#0b0b10",
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        }
+      }
+    },
+    "captions": {
+      "default": true,
+      "type": "boolean"
+    },
+    "hide_bubbles": {
+      "default": false,
+      "type": "boolean"
+    },
+    "panels": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^p_\\d{4}$"
+          },
+          "page": {
+            "type": "string",
+            "minLength": 1
+          },
+          "page_size": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "height": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ]
+          },
+          "bbox": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "w": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "h": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "w",
+              "h"
+            ]
+          },
+          "polygon": {
+            "minItems": 3,
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "crop": {
+            "type": "string",
+            "minLength": 1
+          },
+          "clean": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bubbles": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^b_\\d{4}$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "speech",
+                    "thought",
+                    "narration",
+                    "sfx"
+                  ]
+                },
+                "polygon": {
+                  "minItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                },
+                "text": {
+                  "type": "string"
+                },
+                "speaker": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "polygon"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "page",
+          "page_size",
+          "bbox",
+          "polygon"
+        ]
+      }
+    },
+    "beats": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "line_id": {
+            "type": "string",
+            "pattern": "^l_\\d{4}$"
+          },
+          "panel_ids": {
+            "minItems": 1,
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^p_\\d{4}$"
+            }
+          },
+          "narration": {
+            "type": "string",
+            "minLength": 1
+          },
+          "emotion": {
+            "type": "string",
+            "enum": [
+              "calm",
+              "tense",
+              "action",
+              "shock",
+              "sad",
+              "comedic",
+              "romantic",
+              "mysterious",
+              "triumphant"
+            ]
+          },
+          "preset": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "const": "hold"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {}
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Static panel. Use for quiet exposition or dialogue-heavy beats."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "const": "zoom"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "default": 1,
+                        "type": "number",
+                        "minimum": 0.5,
+                        "maximum": 3
+                      },
+                      "to": {
+                        "default": 1.15,
+                        "type": "number",
+                        "minimum": 0.5,
+                        "maximum": 3
+                      },
+                      "focus": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          }
+                        ],
+                        "items": false,
+                        "minItems": 2,
+                        "maxItems": 2
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Smooth push in (to > from) or pull out (to < from), optionally centred on a focus point such as a face."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "const": "pan"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "direction": {
+                        "default": "right",
+                        "type": "string",
+                        "enum": [
+                          "left",
+                          "right",
+                          "up",
+                          "down"
+                        ]
+                      },
+                      "distance": {
+                        "default": 0.08,
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 0.5
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Slow camera drift across the panel. Use for establishing shots and wide panels."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "const": "shake"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "intensity": {
+                        "default": 12,
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 60
+                      },
+                      "frequency": {
+                        "default": 12,
+                        "type": "number",
+                        "minimum": 1,
+                        "maximum": 30
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Continuous camera shake. Use for rumbling, explosions or sustained tension."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "const": "action_tilt"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "angle": {
+                        "default": 6,
+                        "type": "number",
+                        "minimum": -20,
+                        "maximum": 20
+                      },
+                      "punch": {
+                        "default": 1.12,
+                        "type": "number",
+                        "minimum": 1,
+                        "maximum": 1.5
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Fast punch-in with a dutch tilt that settles. Use for hits, reveals and sudden action."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "const": "kinetic_jitter"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "intensity": {
+                        "default": 18,
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 60
+                      },
+                      "decay": {
+                        "default": 0.35,
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Violent jitter that decays over the beat. Use for impacts, shock and screams."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "const": "panoramic_fade"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "direction": {
+                        "default": "right",
+                        "type": "string",
+                        "enum": [
+                          "left",
+                          "right",
+                          "up",
+                          "down"
+                        ]
+                      },
+                      "fade": {
+                        "default": 0.2,
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 0.5
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Wide pan that fades in and out. Use for scene changes, flashbacks and time skips."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "const": "split_screen"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "orientation": {
+                        "default": "vertical",
+                        "type": "string",
+                        "enum": [
+                          "vertical",
+                          "horizontal"
+                        ]
+                      },
+                      "stagger": {
+                        "default": 0.25,
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 2
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Two or three panels share the frame and slide in one after another. Use for confrontations and parallel reactions."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "const": "hud_popup"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "position": {
+                        "default": "top",
+                        "type": "string",
+                        "enum": [
+                          "top",
+                          "center",
+                          "bottom"
+                        ]
+                      },
+                      "accent": {
+                        "default": "#3ad6ff",
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}$"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Game-style info panel types onto the screen over the panel. Use for system messages, stats and level-ups."
+              }
+            ]
+          },
+          "transition_in": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "name": {
+                "default": "cut",
+                "type": "string",
+                "enum": [
+                  "cut",
+                  "fade",
+                  "slide",
+                  "wipe"
+                ]
+              },
+              "duration": {
+                "default": 0.4,
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1.5
+              }
+            }
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "src": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "duration": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "src",
+                  "duration"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "line_id",
+          "panel_ids",
+          "narration",
+          "emotion",
+          "preset",
+          "audio",
+          "duration"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "chapter_id",
+    "panels",
+    "beats"
+  ]
+}

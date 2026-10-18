@@ -1,0 +1,254 @@
+{
+  "$id": "https://jumbo.local/schema/MemoryDelta.schema.json",
+  "title": "MemoryDelta",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 1
+    },
+    "chapter_id": {
+      "type": "string",
+      "pattern": "^ch_\\d{4}$"
+    },
+    "base_ledger_offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "ops": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "ADD"
+              },
+              "entity_type": {
+                "type": "string",
+                "enum": [
+                  "character",
+                  "faction",
+                  "location",
+                  "item",
+                  "relationship",
+                  "plot_thread"
+                ]
+              },
+              "entity_id": {
+                "type": "string",
+                "pattern": "^[a-z]+(?:_[a-z0-9]+)+$"
+              },
+              "data": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "receipts": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "chapter_id": {
+                      "type": "string",
+                      "pattern": "^ch_\\d{4}$"
+                    },
+                    "panel_id": {
+                      "type": "string",
+                      "pattern": "^p_\\d{4}$"
+                    },
+                    "quote": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  },
+                  "required": [
+                    "chapter_id",
+                    "panel_id"
+                  ]
+                }
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "op",
+              "entity_type",
+              "entity_id",
+              "data",
+              "receipts",
+              "confidence"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "UPDATE"
+              },
+              "entity_type": {
+                "type": "string",
+                "enum": [
+                  "character",
+                  "faction",
+                  "location",
+                  "item",
+                  "relationship",
+                  "plot_thread"
+                ]
+              },
+              "entity_id": {
+                "type": "string",
+                "pattern": "^[a-z]+(?:_[a-z0-9]+)+$"
+              },
+              "field": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]+(?:\\.[a-z0-9_]+)*$"
+              },
+              "value": {},
+              "receipts": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "chapter_id": {
+                      "type": "string",
+                      "pattern": "^ch_\\d{4}$"
+                    },
+                    "panel_id": {
+                      "type": "string",
+                      "pattern": "^p_\\d{4}$"
+                    },
+                    "quote": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  },
+                  "required": [
+                    "chapter_id",
+                    "panel_id"
+                  ]
+                }
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "op",
+              "entity_type",
+              "entity_id",
+              "field",
+              "value",
+              "receipts",
+              "confidence"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "DELETE"
+              },
+              "entity_type": {
+                "type": "string",
+                "enum": [
+                  "character",
+                  "faction",
+                  "location",
+                  "item",
+                  "relationship",
+                  "plot_thread"
+                ]
+              },
+              "entity_id": {
+                "type": "string",
+                "pattern": "^[a-z]+(?:_[a-z0-9]+)+$"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "receipts": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "chapter_id": {
+                      "type": "string",
+                      "pattern": "^ch_\\d{4}$"
+                    },
+                    "panel_id": {
+                      "type": "string",
+                      "pattern": "^p_\\d{4}$"
+                    },
+                    "quote": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  },
+                  "required": [
+                    "chapter_id",
+                    "panel_id"
+                  ]
+                }
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "op",
+              "entity_type",
+              "entity_id",
+              "reason",
+              "receipts",
+              "confidence"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "NOOP"
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "op"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "chapter_id",
+    "base_ledger_offset",
+    "ops"
+  ]
+}
