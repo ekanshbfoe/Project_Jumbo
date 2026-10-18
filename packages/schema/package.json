@@ -1,0 +1,19 @@
+{
+  "name": "@jumbo/schema",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared Project Jumbo contracts: PanelsDoc, ScriptDoc, EpisodeSpec, MemoryDelta",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "4.5.4"
+  }
+}
