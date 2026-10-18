@@ -13,7 +13,8 @@
     "studio": "remotion studio src/entry.ts",
     "fixtures": "tsx scripts/make-fixtures.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "render:check": "tsx scripts/render-check.ts"
   },
   "dependencies": {
     "@jumbo/schema": "0.1.0",
