@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AssetPath, ChapterId, HexColor, LineId, PanelId, SchemaVersion } from "./common";
 import { Panel, type PanelsDoc } from "./panels";
 import { MULTI_PANEL_PRESETS, PresetSpec, TransitionSpec } from "./presets";
+import { SocialPromoSettings } from "./promo";
 import { Emotion, type ScriptDoc } from "./script";
 
 export const AudioClip = z.object({
@@ -66,6 +67,7 @@ export const EpisodeSpec = z
     video: VideoFormat.prefault({}),
     /** Mask out speech bubbles when no inpainted `clean` image exists. */
     hide_bubbles: z.boolean().default(false),
+    social_promo: SocialPromoSettings.prefault({}),
     panels: z.array(EpisodePanel).min(1),
     beats: z.array(Beat).min(1),
   })

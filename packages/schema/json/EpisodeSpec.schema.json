@@ -49,6 +49,68 @@
       "default": false,
       "type": "boolean"
     },
+    "social_promo": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "username": {
+          "default": "Project_Jumbo",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30,
+          "pattern": "^[A-Za-z0-9_.]+$"
+        },
+        "headline": {
+          "default": "Follow for more recaps",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "platforms": {
+          "default": [
+            "x",
+            "youtube",
+            "instagram"
+          ],
+          "minItems": 1,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "x",
+              "youtube",
+              "instagram"
+            ]
+          }
+        },
+        "position": {
+          "default": "bottom-right",
+          "type": "string",
+          "enum": [
+            "bottom-right",
+            "bottom-left",
+            "top-right",
+            "top-left",
+            "center"
+          ]
+        },
+        "start_after": {
+          "default": 300,
+          "type": "number",
+          "minimum": 0
+        },
+        "end_before": {
+          "default": 300,
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
     "panels": {
       "minItems": 1,
       "type": "array",
