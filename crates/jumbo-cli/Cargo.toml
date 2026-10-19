@@ -1,0 +1,21 @@
+[package]
+name = "jumbo-cli"
+version = "0.1.0"
+description = "Developer CLI for Project Jumbo projects and the Receipt Book"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "jumbo"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+jumbo-core.workspace = true
+jumbo-ledger.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
