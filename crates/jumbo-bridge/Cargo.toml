@@ -15,11 +15,19 @@ getrandom = "0.4.3"
 hex = "0.4.3"
 hkdf = "0.13.0"
 hmac = "0.13.0"
+# rustls with the pure-Rust ring provider: aws-lc-rs (the default) needs CMake and NASM on Windows.
+reqwest = { version = "0.13.5", default-features = false, features = ["charset", "http2", "json", "rustls-no-provider", "stream"] }
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.11.0"
 thiserror.workspace = true
+tokio = { version = "1.53.2", features = ["fs", "io-util", "macros", "rt-multi-thread", "sync", "time"] }
 x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
+
+[dev-dependencies]
+httpmock = { version = "0.8.3", default-features = false }
+tempfile.workspace = true
 
 [lints]
 workspace = true
