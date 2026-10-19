@@ -11,13 +11,16 @@ publish.workspace = true
 tauri-build = { version = "2.7.1", features = [] }
 
 [dependencies]
+jumbo-bridge = { path = "../../../crates/jumbo-bridge" }
 jumbo-core.workspace = true
 jumbo-ledger.workspace = true
+keyring = { version = "3.6.3", features = ["apple-native", "windows-native"] }
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2.12.1", features = [] }
 tauri-plugin-dialog = "2.8.1"
 time.workspace = true
+tokio = { version = "1.53.2", features = ["sync", "time"] }
 
 [lints]
 workspace = true
