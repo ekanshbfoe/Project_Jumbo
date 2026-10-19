@@ -1,10 +1,10 @@
 import type { AmbientEffect, Beat, EpisodePanel, PresetName } from "@jumbo/schema";
 import { AbsoluteFill, Html5Audio, Img, useCurrentFrame, useVideoConfig } from "remotion";
+import { AmbientLayer } from "../ambient/AmbientLayer";
 import { useAssetResolver } from "../assets";
 import { fitContain, panelSize, splitFrame } from "../geometry";
 import { PRESETS } from "../presets/registry";
 import type { PanelSlot, PresetContext, PresetImpl } from "../presets/types";
-import { AmbientDust } from "./AmbientDust";
 import { Camera } from "./Camera";
 import { PolygonPanel } from "./PolygonPanel";
 
@@ -75,9 +75,7 @@ export function BeatView({
           }}
         />
       ) : null}
-      {ambientEffect === "dust" ? (
-        <AmbientDust frame={startFrame + frame} fps={fps} width={width} height={height} />
-      ) : null}
+      <AmbientLayer effect={ambientEffect} frame={startFrame + frame} fps={fps} width={width} height={height} />
       {panels.map((panel, i) => (
         <Camera key={panel.id} transform={impl.camera(ctx(i), beat.preset.params as never)} {...rects[i]!}>
           <PolygonPanel
