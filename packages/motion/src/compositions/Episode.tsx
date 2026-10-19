@@ -6,6 +6,7 @@ import { wipe } from "@remotion/transitions/wipe";
 import { useMemo, type ReactElement } from "react";
 import { AbsoluteFill, Sequence, useVideoConfig, type CalculateMetadataFunction } from "remotion";
 import { BeatView } from "../components/BeatView";
+import { ChannelWatermark, WATERMARK_RESERVED_HEIGHT } from "../components/ChannelWatermark";
 import { PROMO_ENTRY_SECONDS, PROMO_EXIT_SECONDS, SocialPromo } from "../components/SocialPromo";
 import { episodeTimeline, overlayWindow } from "../timeline";
 
@@ -69,9 +70,15 @@ export function Episode(spec: EpisodeSpec) {
   return (
     <AbsoluteFill style={{ backgroundColor: spec.video.background }}>
       <TransitionSeries>{children}</TransitionSeries>
+      {spec.watermark.enabled ? <ChannelWatermark text={spec.watermark.text} opacity={spec.watermark.opacity} /> : null}
       {promoWindow ? (
         <Sequence from={promoWindow.from} durationInFrames={promoWindow.durationInFrames} name="SocialPromo">
-          <SocialPromo settings={promo} durationInFrames={promoWindow.durationInFrames} />
+          <SocialPromo
+            settings={promo}
+            durationInFrames={promoWindow.durationInFrames}
+            // Stack above the watermark rather than covering it when both sit bottom-right.
+            bottomClearance={spec.watermark.enabled && promo.position === "bottom-right" ? WATERMARK_RESERVED_HEIGHT : 0}
+          />
         </Sequence>
       ) : null}
     </AbsoluteFill>

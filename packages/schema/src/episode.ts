@@ -27,6 +27,13 @@ export const AudioManifest = z
     });
   });
 
+/** Permanent channel mark in the bottom-right corner. */
+export const WatermarkSettings = z.object({
+  enabled: z.boolean().default(true),
+  text: z.string().min(1).max(40).default("Project Jumbo"),
+  opacity: z.number().min(0.05).max(1).default(0.55),
+});
+
 /** Motion layered over every beat's blurred backdrop. */
 export const AmbientEffect = z.enum(["none", "dust"]);
 
@@ -71,6 +78,7 @@ export const EpisodeSpec = z
     /** Mask out speech bubbles when no inpainted `clean` image exists. */
     hide_bubbles: z.boolean().default(false),
     ambient_effect: AmbientEffect.default("dust"),
+    watermark: WatermarkSettings.prefault({}),
     social_promo: SocialPromoSettings.prefault({}),
     panels: z.array(EpisodePanel).min(1),
     beats: z.array(Beat).min(1),
@@ -99,6 +107,7 @@ export const EpisodeSpec = z
 export type AudioClip = z.infer<typeof AudioClip>;
 export type AudioManifest = z.infer<typeof AudioManifest>;
 export type AmbientEffect = z.infer<typeof AmbientEffect>;
+export type WatermarkSettings = z.infer<typeof WatermarkSettings>;
 export type VideoFormat = z.infer<typeof VideoFormat>;
 export type EpisodePanel = z.infer<typeof EpisodePanel>;
 export type Beat = z.infer<typeof Beat>;

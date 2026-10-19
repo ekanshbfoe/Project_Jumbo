@@ -57,6 +57,28 @@
         "dust"
       ]
     },
+    "watermark": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "text": {
+          "default": "Project Jumbo",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "opacity": {
+          "default": 0.55,
+          "type": "number",
+          "minimum": 0.05,
+          "maximum": 1
+        }
+      }
+    },
     "social_promo": {
       "default": {},
       "type": "object",

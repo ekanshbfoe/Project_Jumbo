@@ -19,14 +19,16 @@ export interface SocialPromoProps {
   settings: Pick<SocialPromoSettings, "username" | "headline" | "platforms" | "position">;
   /** Length of the promo's Sequence; the exit animation finishes on its last frame. */
   durationInFrames: number;
+  /** Extra space kept clear below the card in bottom placements (1080p pixels), e.g. for a watermark. */
+  bottomClearance?: number;
 }
 
-function placement(position: PromoPosition, margin: number): CSSProperties {
+function placement(position: PromoPosition, margin: number, bottom: number): CSSProperties {
   switch (position) {
     case "bottom-right":
-      return { right: margin, bottom: margin };
+      return { right: margin, bottom };
     case "bottom-left":
-      return { left: margin, bottom: margin };
+      return { left: margin, bottom };
     case "top-right":
       return { right: margin, top: margin };
     case "top-left":
@@ -40,7 +42,7 @@ function placement(position: PromoPosition, margin: number): CSSProperties {
  * Premium follow-us card: dark frosted glass that flips in on a snappy spring, cascades its contents,
  * floats while visible with a periodic light sweep, and flips away at the end of its Sequence.
  */
-export function SocialPromo({ settings, durationInFrames }: SocialPromoProps) {
+export function SocialPromo({ settings, durationInFrames, bottomClearance = 0 }: SocialPromoProps) {
   const frame = useCurrentFrame();
   const { fps, height } = useVideoConfig();
   const u = height / 1080;
@@ -83,7 +85,7 @@ export function SocialPromo({ settings, durationInFrames }: SocialPromoProps) {
 
   return (
     <AbsoluteFill style={{ pointerEvents: "none" }}>
-      <div style={{ position: "absolute", width: 620 * u, fontFamily, ...placement(settings.position, 64 * u) }}>
+      <div style={{ position: "absolute", width: 620 * u, fontFamily, ...placement(settings.position, 64 * u, Math.max(64, bottomClearance) * u) }}>
         {/* Ambient glow behind the glass. */}
         <div
           style={{
