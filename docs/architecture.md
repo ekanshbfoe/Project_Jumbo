@@ -300,15 +300,38 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
 
 ## 6. Remotion Engine Design (`packages/motion`, `@jumbo/motion`)
 
-- **`EpisodeSpec` (zod)** is consumed directly as `inputProps`. `calculateMetadata` derives the duration from `audio.manifest.json`, and each preset's parameters are validated by its own zod schema.
-- **Primitives:**
-  - `<PolygonPanel>`: normalized polygon → px → CSS `clip-path: polygon()`. Uses an SVG `<mask>` for holes and bubble cut-outs, which `clip-path` can't subtract. Optional stroke/glow border that follows the polygon.
-  - `<Camera>`: virtual camera (pan, zoom, focus on a character bbox, Ken Burns) with spring/easing curves.
-  - `<Beat>` (a timed `<Sequence>` per narration line), `<NarrationTrack>` (`<Audio>` clips), `<Captions>` (Hinglish burn-in from the SRT), `<Transition>` (`@remotion/transitions`).
-- **Preset registry:** each preset is a pure function `(frame, fps, duration, params, seed) → style/transform`. All randomness uses Remotion `random(seed)`, never `Math.random()`, so renders are deterministic.
+**Status:** the component library is locked as of 2026-10-19. New components are added only when the pipeline needs them, on the project lead's design direction.
 
-  | Preset | Behavior |
-  |---|---|
+- **`EpisodeSpec` (zod)** is consumed directly as `inputProps`. `calculateEpisodeMetadata` validates it and derives the duration from beat lengths (sized from `audio.manifest.json`), and each preset's parameters are validated by its own zod schema.
+- **Building blocks:**
+  - `PolygonPanel`: normalized polygon → CSS `clip-path`, with an even-odd SVG mask for bubble cut-outs, an outline-following border and a configurable drop shadow.
+  - `Camera`: virtual camera transform (translate, scale, in-plane rotation, 3D `rotateX`/`rotateY` with perspective only when used, opacity, pivot, stacking order).
+  - `BeatView`: one narration line, made of a blurred backdrop, an ambient layer, panels laid out by the preset, the preset overlay and narration audio. There are no captions; subtitles were dropped.
+  - `Episode`: beats in a `TransitionSeries` (cut, fade, slide, wipe), plus the two overlays below.
+- **Episode overlays:**
+  - `ChannelWatermark`: permanent, semi-translucent mark in the bottom-right for the whole video (`watermark`).
+  - `SocialPromo`: frosted-glass follow card for X, YouTube and Instagram that flips in at 5% of the runtime and has animated out by 95% (`social_promo`). It stacks above the watermark when both sit bottom-right.
+- **Ambient engine** (`ambient_effect`): `dust`, `smoke`, `city_bokeh` or `none`. Each is a pure, seeded function of the episode's master clock, so it flows continuously across cuts.
+- **Preset registry:** each preset is a pure function `(frame, fps, duration, params, seed) → camera transform`, optionally with its own layout, shadow and overlay. All randomness uses Remotion `random(seed)`, never `Math.random()`, so renders are deterministic.
+
+  | Preset | Panels | Behavior |
+  |---|---|---|
+  | `hold` | 1 | Static |
+  | `zoom` | 1 | Push in or pull out toward a focus point |
+  | `pan` | 1 | Camera drift |
+  | `shake` | 1 | Continuous seeded shake |
+  | `action_tilt` | 1 | Spring punch-in with a dutch tilt |
+  | `kinetic_jitter` | 1 | Violent jitter that decays |
+  | `panoramic_fade` | 1 | Wide pan that fades in and out |
+  | `split_screen` | 2–3 | Equal slots, staggered spring entrances |
+  | `floating_panels` | 2–3 | Tall panels layered like photos in 3D, heavy shadows, slow drift |
+  | `horizontal_slices` | 2–3 | Stacked ultra-wide strips drifting in opposite directions |
+  | `hud_popup` | 1 | Game-system message box that types on |
+
+- **Studio compositions:** `Episode` (the render target and a sample chapter) and, in the Gallery folder, `Gallery` (every preset × panel shape), `Ambient-*` previews and `SocialPromo`. The preset catalog, with descriptions, goes into Qwen's system prompt.
+- The same package is imported by the Tauri Approval Gate (`@remotion/player`) and by the worker's render script, so preview and final render are identical.
+
+---|---|
   | **ActionTilt** | Rotation and zoom punch |
   | **KineticJitter** | Seeded shake with decay |
   | **PanoramicFade** | Long pan with a crossfade |
@@ -336,7 +359,7 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
 
 **Step 1: Contract + Remotion component library (start here).** Spike track S0 runs in parallel.
 - 1a. `packages/schema`: `PanelsDoc`, `ScriptDoc`, `EpisodeSpec`, `MemoryDelta`, plus codegen to JSON Schema, pydantic, and Rust.
-- 1b. `@jumbo/motion` primitives: `PolygonPanel`, `Camera`, `Beat`, `NarrationTrack`, `Captions`, transitions.
+- 1b. `@jumbo/motion` primitives: `PolygonPanel`, `Camera`, `BeatView`, narration audio, transitions.
 - 1c. Preset registry (the full list in §6), each with a zod params schema.
 - 1d. Hand-authored fixtures (sample chapter pages, polygons, dummy TTS clips), plus the Gallery and a sample Episode composition. Development uses Remotion Studio locally (a dev tool only).
 - 1e. Visual regression: `renderStill` at key frames compared against golden PNGs. Determinism test: rendering twice gives identical hashes.
