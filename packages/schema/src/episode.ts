@@ -64,7 +64,6 @@ export const EpisodeSpec = z
     chapter_id: ChapterId,
     title: z.string().default(""),
     video: VideoFormat.prefault({}),
-    captions: z.boolean().default(true),
     /** Mask out speech bubbles when no inpainted `clean` image exists. */
     hide_bubbles: z.boolean().default(false),
     panels: z.array(EpisodePanel).min(1),

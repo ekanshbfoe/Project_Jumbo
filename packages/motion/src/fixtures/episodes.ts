@@ -41,7 +41,7 @@ const presetParams = (name: PresetName, i: number): Record<string, unknown> => {
   }
 };
 
-/** Every preset on every panel shape, cycling through transitions. Labels are shown as captions. */
+/** Every preset on every panel shape, cycling through transitions. Each beat is named after its preset in the Studio timeline. */
 export function galleryEpisode(): EpisodeSpec {
   let n = 0;
   const lines = PRESET_CATALOG.flatMap(({ name }) =>

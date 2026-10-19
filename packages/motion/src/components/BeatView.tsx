@@ -5,7 +5,6 @@ import { fitContain, panelSize, splitFrame, type Rect } from "../geometry";
 import { PRESETS } from "../presets/registry";
 import type { PresetContext, PresetImpl } from "../presets/types";
 import { Camera } from "./Camera";
-import { Captions } from "./Captions";
 import { PolygonPanel } from "./PolygonPanel";
 
 export interface BeatViewProps {
@@ -13,7 +12,6 @@ export interface BeatViewProps {
   panels: ReadonlyMap<string, EpisodePanel>;
   /** Passed explicitly because the beat's Sequence length is what presets animate over. */
   durationInFrames: number;
-  captions: boolean;
   hideBubbles: boolean;
 }
 
@@ -29,8 +27,8 @@ function layout(beat: Beat, panels: EpisodePanel[], width: number, height: numbe
   });
 }
 
-/** One narration beat: blurred backdrop, camera-driven panels, preset overlay, audio and captions. */
-export function BeatView({ beat, panels: panelMap, durationInFrames, captions, hideBubbles }: BeatViewProps) {
+/** One narration beat: blurred backdrop, camera-driven panels, preset overlay and audio. */
+export function BeatView({ beat, panels: panelMap, durationInFrames, hideBubbles }: BeatViewProps) {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
   const resolve = useAssetResolver();
@@ -70,16 +68,6 @@ export function BeatView({ beat, panels: panelMap, durationInFrames, captions, h
       ))}
       {impl.Overlay ? <impl.Overlay ctx={ctx(0)} params={beat.preset.params as never} /> : null}
       {beat.audio ? <Html5Audio src={resolve(beat.audio.src)} /> : null}
-      {captions ? (
-        <Captions
-          text={beat.narration}
-          frame={frame}
-          durationInFrames={durationInFrames}
-          fps={fps}
-          spokenFor={beat.audio?.duration ?? beat.duration}
-          height={height}
-        />
-      ) : null}
     </AbsoluteFill>
   );
 }

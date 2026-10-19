@@ -40,12 +40,11 @@ export function Episode(spec: EpisodeSpec) {
       );
     }
     children.push(
-      <TransitionSeries.Sequence key={beat.line_id} durationInFrames={timing.durationInFrames} name={beat.line_id}>
+      <TransitionSeries.Sequence key={beat.line_id} durationInFrames={timing.durationInFrames} name={`${beat.line_id} · ${beat.preset.name}`}>
         <BeatView
           beat={beat}
           panels={panels}
           durationInFrames={timing.durationInFrames}
-          captions={spec.captions}
           hideBubbles={spec.hide_bubbles}
         />
       </TransitionSeries.Sequence>,

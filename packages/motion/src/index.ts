@@ -1,7 +1,6 @@
 export * from "./assets";
 export * from "./components/BeatView";
 export * from "./components/Camera";
-export * from "./components/Captions";
 export * from "./components/PolygonPanel";
 export * from "./compositions/Episode";
 export * from "./geometry";

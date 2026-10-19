@@ -45,10 +45,6 @@
         }
       }
     },
-    "captions": {
-      "default": true,
-      "type": "boolean"
-    },
     "hide_bubbles": {
       "default": false,
       "type": "boolean"
