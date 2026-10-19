@@ -6,5 +6,7 @@
 
 pub mod canonical;
 pub mod ops;
+pub mod state;
 
 pub use ops::{EntityType, MemoryDelta, MemoryOp, Receipt};
+pub use state::{ApplyError, BookState, Entity};
