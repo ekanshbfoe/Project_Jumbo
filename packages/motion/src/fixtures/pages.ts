@@ -86,6 +86,29 @@ const gate = `
   <g fill="#c9b6ff">${Array.from({ length: 24 }, (_, i) => `<circle cx="${120 + ((i * 131) % 560)}" cy="${1150 + ((i * 211) % 700)}" r="${2 + (i % 4)}"/>`).join("")}</g>
   <path d="M370 1900 L370 1760 Q400 1730 430 1760 L430 1900 Z" fill="#05040a"/>`;
 
+/** An ultra-wide close-up of a pair of eyes, for stare-down strips. */
+const eyes = (y0: number, skin: string, iris: string, glare: number) => {
+  const cy = y0 + 118;
+  const eye = (cx: number, flip: number) => `
+    <path d="M${cx - 112} ${cy} Q${cx} ${cy - 58} ${cx + 112} ${cy} Q${cx} ${cy + 44} ${cx - 112} ${cy} Z" fill="#fdfbf7" stroke="#1b1b24" stroke-width="5"/>
+    <circle cx="${cx}" cy="${cy}" r="38" fill="${iris}"/>
+    <circle cx="${cx}" cy="${cy}" r="17" fill="#0c0c12"/>
+    <circle cx="${cx + 12}" cy="${cy - 13}" r="8" fill="#ffffff"/>
+    <path d="M${cx - 120} ${cy - 62 + flip * glare} L${cx + 120} ${cy - 62 - flip * glare}" stroke="#1b1b24" stroke-width="18" stroke-linecap="round"/>`;
+  return `
+  <rect x="40" y="${y0}" width="920" height="220" fill="${skin}"/>
+  <rect x="40" y="${y0}" width="920" height="70" fill="#000000" opacity="0.18"/>
+  ${eye(330, 1)}${eye(670, -1)}`;
+};
+
+const katana = `
+  <defs><linearGradient id="steel" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5d6575"/><stop offset="0.55" stop-color="#e9eef7"/><stop offset="1" stop-color="#8b93a4"/></linearGradient></defs>
+  <rect x="40" y="600" width="920" height="220" fill="#0b0d14"/>
+  <path d="M60 760 L900 650 L940 646 L905 668 L70 778 Z" fill="url(#steel)"/>
+  <path d="M120 752 L880 655" stroke="#ffffff" stroke-width="3" opacity="0.9"/>
+  <rect x="40" y="748" width="70" height="40" fill="#2a1a12" transform="rotate(-7 75 768)"/>
+  <path d="M640 640 L652 676 L688 688 L652 700 L640 736 L628 700 L592 688 L628 676 Z" fill="#ffffff" opacity="0.95"/>`;
+
 export const FIXTURE_PAGES: FixturePage[] = [
   {
     file: "fixtures/page_rect.svg",
@@ -132,6 +155,17 @@ export const FIXTURE_PAGES: FixturePage[] = [
     panels: [
       { id: "p_0007", outline: rect(0, 100, 800, 900), bordered: false, bubbles: [], art: closeUp },
       { id: "p_0008", outline: rect(0, 1100, 800, 1900), bordered: false, bubbles: [], art: gate },
+    ],
+  },
+  {
+    file: "fixtures/page_slices.svg",
+    width: 1000,
+    height: 1400,
+    layout: "page",
+    panels: [
+      { id: "p_0009", outline: rect(40, 80, 960, 300), bordered: true, bubbles: [], art: eyes(80, "#f1c9a5", "#3a8dde", 0) },
+      { id: "p_0010", outline: rect(40, 340, 960, 560), bordered: true, bubbles: [], art: eyes(340, "#e2b08c", "#d7263d", -14) },
+      { id: "p_0011", outline: rect(40, 600, 960, 820), bordered: true, bubbles: [], art: katana },
     ],
   },
 ];
