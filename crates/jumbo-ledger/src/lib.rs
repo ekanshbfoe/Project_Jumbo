@@ -9,6 +9,7 @@ pub mod log;
 pub mod ops;
 pub mod state;
 pub mod validate;
+pub mod views;
 
 pub use log::{Ledger, LedgerError, LedgerEvent, Repair};
 pub use ops::{EntityType, MemoryDelta, MemoryOp, Receipt};
