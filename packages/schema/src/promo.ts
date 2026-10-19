@@ -18,12 +18,13 @@ export const SocialPromoSettings = z
     headline: z.string().min(1).max(40).default("Follow for more recaps"),
     platforms: z.array(SocialPlatform).min(1).max(3).default(["x", "youtube", "instagram"]),
     position: PromoPosition.default("bottom-right"),
-    /** Seconds from the start of the episode until the card animates in. */
-    start_after: z.number().nonnegative().default(300),
-    /** Seconds before the end of the episode by which the card has animated out. */
-    end_before: z.number().nonnegative().default(300),
+    /** Fraction of the episode's length at which the card starts animating in. */
+    start_at: z.number().min(0).max(1).default(0.05),
+    /** Fraction of the episode's length by which the card has finished animating out. */
+    end_at: z.number().min(0).max(1).default(0.95),
   })
-  .refine((s) => new Set(s.platforms).size === s.platforms.length, "platforms must not repeat");
+  .refine((s) => new Set(s.platforms).size === s.platforms.length, "platforms must not repeat")
+  .refine((s) => s.start_at < s.end_at, "start_at must come before end_at");
 
 export type SocialPlatform = z.infer<typeof SocialPlatform>;
 export type PromoPosition = z.infer<typeof PromoPosition>;

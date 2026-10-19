@@ -39,18 +39,17 @@ export interface FrameWindow {
 }
 
 /**
- * Frames an overlay occupies when it starts `startAfter` seconds into the episode and must be gone
- * `endBefore` seconds before the end. Returns null when that leaves less than `minSeconds`, e.g. in
- * episodes shorter than both offsets combined.
+ * Frames an overlay occupies between two fractions of the episode's length, so it scales with any
+ * runtime: `startAt` 0.05 and `endAt` 0.95 of a 10 minute episode is 0:30 to 9:30. Returns null when
+ * the window is shorter than `minFrames`, i.e. too short to play the overlay's own animation.
  */
 export function overlayWindow(
   totalFrames: number,
-  fps: number,
-  startAfter: number,
-  endBefore: number,
-  minSeconds: number,
+  startAt: number,
+  endAt: number,
+  minFrames: number,
 ): FrameWindow | null {
-  const from = Math.round(startAfter * fps);
-  const durationInFrames = totalFrames - Math.round(endBefore * fps) - from;
-  return durationInFrames >= Math.ceil(minSeconds * fps) ? { from, durationInFrames } : null;
+  const from = Math.round(totalFrames * startAt);
+  const durationInFrames = Math.round(totalFrames * endAt) - from;
+  return durationInFrames >= minFrames ? { from, durationInFrames } : null;
 }

@@ -32,14 +32,16 @@ describe("episodeTimeline", () => {
 });
 
 describe("overlayWindow", () => {
-  it("spans from 5 minutes in to 5 minutes before the end", () => {
-    // A 20 minute episode at 30 fps.
-    expect(overlayWindow(36_000, 30, 300, 300, 2)).toEqual({ from: 9_000, durationInFrames: 18_000 });
+  it("spans 5% to 95% of any runtime", () => {
+    // 10, 8 and 50 minute episodes at 30 fps.
+    expect(overlayWindow(18_000, 0.05, 0.95, 60)).toEqual({ from: 900, durationInFrames: 16_200 });
+    expect(overlayWindow(14_400, 0.05, 0.95, 60)).toEqual({ from: 720, durationInFrames: 12_960 });
+    expect(overlayWindow(90_000, 0.05, 0.95, 60)).toEqual({ from: 4_500, durationInFrames: 81_000 });
   });
 
-  it("is absent when the episode is too short for both offsets plus the animation", () => {
-    expect(overlayWindow(18_000, 30, 300, 300, 2)).toBeNull();
-    expect(overlayWindow(18_059, 30, 300, 300, 2)).toBeNull();
-    expect(overlayWindow(18_060, 30, 300, 300, 2)).toEqual({ from: 9_000, durationInFrames: 60 });
+  it("is absent only when the window cannot fit the overlay's animation", () => {
+    // 70 frames * 0.9 = 63 frames available.
+    expect(overlayWindow(70, 0.05, 0.95, 64)).toBeNull();
+    expect(overlayWindow(70, 0.05, 0.95, 63)).toEqual({ from: 4, durationInFrames: 63 });
   });
 });

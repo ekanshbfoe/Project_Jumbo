@@ -4,7 +4,7 @@ import { fade } from "@remotion/transitions/fade";
 import { slide } from "@remotion/transitions/slide";
 import { wipe } from "@remotion/transitions/wipe";
 import { useMemo, type ReactElement } from "react";
-import { AbsoluteFill, Sequence, type CalculateMetadataFunction } from "remotion";
+import { AbsoluteFill, Sequence, useVideoConfig, type CalculateMetadataFunction } from "remotion";
 import { BeatView } from "../components/BeatView";
 import { PROMO_ENTRY_SECONDS, PROMO_EXIT_SECONDS, SocialPromo } from "../components/SocialPromo";
 import { episodeTimeline, overlayWindow } from "../timeline";
@@ -25,6 +25,7 @@ function presentation(name: Exclude<TransitionSpec["name"], "cut">): TransitionP
  * `calculateEpisodeMetadata` does this for renders, and previews should call `EpisodeSpec.parse`.
  */
 export function Episode(spec: EpisodeSpec) {
+  const { durationInFrames, fps } = useVideoConfig();
   const timeline = useMemo(() => episodeTimeline(spec), [spec]);
   const panels = useMemo(() => new Map(spec.panels.map((p) => [p.id, p])), [spec.panels]);
 
@@ -52,14 +53,14 @@ export function Episode(spec: EpisodeSpec) {
     );
   });
 
+  // Scheduled against the rendered composition's length so it scales with any runtime.
   const promo = spec.social_promo;
   const promoWindow = promo.enabled
     ? overlayWindow(
-        timeline.durationInFrames,
-        spec.video.fps,
-        promo.start_after,
-        promo.end_before,
-        PROMO_ENTRY_SECONDS + PROMO_EXIT_SECONDS,
+        durationInFrames,
+        promo.start_at,
+        promo.end_at,
+        Math.ceil((PROMO_ENTRY_SECONDS + PROMO_EXIT_SECONDS) * fps),
       )
     : null;
 

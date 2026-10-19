@@ -99,15 +99,17 @@
             "center"
           ]
         },
-        "start_after": {
-          "default": 300,
+        "start_at": {
+          "default": 0.05,
           "type": "number",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 1
         },
-        "end_before": {
-          "default": 300,
+        "end_at": {
+          "default": 0.95,
           "type": "number",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 1
         }
       }
     },
