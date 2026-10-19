@@ -14,7 +14,8 @@ export interface PolygonPanelProps {
   /** Colour that shows through masked bubbles. */
   bubbleFill?: string;
   border?: { color: string; width: number } | false;
-  shadow?: boolean;
+  /** true for the default soft shadow, or a CSS drop-shadow() filter for a custom one. */
+  shadow?: boolean | string;
   style?: CSSProperties;
 }
 
@@ -54,7 +55,7 @@ export function PolygonPanel({
         width,
         height,
         // drop-shadow on the unclipped parent follows the clipped child's outline.
-        filter: shadow ? "drop-shadow(0 18px 30px rgba(0, 0, 0, 0.55))" : undefined,
+        filter: typeof shadow === "string" ? shadow : shadow ? "drop-shadow(0 18px 30px rgba(0, 0, 0, 0.55))" : undefined,
         ...style,
       }}
     >
