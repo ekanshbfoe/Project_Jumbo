@@ -9,3 +9,4 @@ Thumbs.db
 .env.*
 kaggle.json
 target/
+.mcp.json
