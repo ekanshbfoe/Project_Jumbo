@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "chapter_id": "ch_0003",
+  "base_ledger_offset": 0,
+  "ops": [
+    {
+      "op": "ADD",
+      "entity_type": "character",
+      "entity_id": "character_jinwoo",
+      "data": { "name": "Sung Jin-Woo", "rank": "E", "abilities": { "stealth": false } },
+      "receipts": [{ "chapter_id": "ch_0001", "panel_id": "p_0004", "quote": "Duniya ka sabse kamzor hunter." }],
+      "confidence": 0.95
+    },
+    {
+      "op": "ADD",
+      "entity_type": "plot_thread",
+      "entity_id": "plot_thread_double_dungeon",
+      "data": { "summary": "What happened inside the double dungeon?", "status": "open" },
+      "receipts": [{ "chapter_id": "ch_0002", "panel_id": "p_0011" }],
+      "confidence": 0.8
+    },
+    {
+      "op": "UPDATE",
+      "entity_type": "character",
+      "entity_id": "character_jinwoo",
+      "field": "abilities.stealth",
+      "value": true,
+      "receipts": [{ "chapter_id": "ch_0003", "panel_id": "p_0007", "quote": "Koi mujhe dekh nahi sakta." }],
+      "confidence": 0.7
+    },
+    { "op": "NOOP", "reason": "panel p_0009 is a recap of chapter 2" }
+  ]
+}
