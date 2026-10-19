@@ -1,6 +1,7 @@
 import { PRESET_CATALOG, PresetSpec } from "@jumbo/schema";
 import { describe, expect, it } from "vitest";
 import { IDENTITY_CAMERA } from "../src/components/Camera";
+import { floatingLayout } from "../src/presets/floating";
 import { evaluateCamera, PRESETS } from "../src/presets/registry";
 import type { PresetContext } from "../src/presets/types";
 
@@ -84,5 +85,34 @@ describe("preset behaviour", () => {
 
   it("only hud_popup draws an overlay", () => {
     expect(Object.values(PRESETS).filter((p) => "Overlay" in p).map((p) => p.name)).toEqual(["hud_popup"]);
+  });
+});
+
+describe("floating panels", () => {
+  const spec = PresetSpec.parse({ name: "floating_panels" });
+
+  it("fans tall panels across the frame with the centre panel in front", () => {
+    const slots = floatingLayout(
+      [
+        { width: 400, height: 700 },
+        { width: 400, height: 700 },
+        { width: 400, height: 700 },
+      ],
+      { width: 1920, height: 1080 },
+    );
+    expect(slots.map((s) => s.zIndex)).toEqual([0, 3, 0]);
+    expect(slots[0]!.left).toBeLessThan(slots[1]!.left);
+    expect(slots.every((s) => s.height <= 1080 * 0.76 + 1e-6)).toBe(true);
+  });
+
+  it("turns outer panels toward the centre in 3D and settles in staggered", () => {
+    const at = (frame: number, index: number) => evaluateCamera(spec, ctx(frame, { index, count: 3 }));
+    expect(at(120, 0).rotateY).toBeGreaterThan(at(120, 2).rotateY);
+    expect(at(3, 2).opacity).toBeLessThan(at(3, 0).opacity);
+    expect(at(80, 2).opacity).toBe(1);
+  });
+
+  it("casts the heavy cinematic shadow at any resolution", () => {
+    expect(PRESETS.floating_panels.panelShadow?.(2)).toBe("drop-shadow(0 40px 100px rgba(0, 0, 0, 0.8))");
   });
 });

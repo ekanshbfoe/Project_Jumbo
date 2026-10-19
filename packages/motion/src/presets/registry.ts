@@ -1,6 +1,7 @@
 import type { PresetName, PresetSpec } from "@jumbo/schema";
 import type { CameraTransform } from "../components/Camera";
 import * as cameras from "./cameras";
+import { floatingLayout, floatingPanels, floatingShadow } from "./floating";
 import { HudPopupOverlay } from "./HudPopupOverlay";
 import type { PresetContext, PresetImpl, PresetRegistry } from "./types";
 
@@ -14,6 +15,12 @@ export const PRESETS: PresetRegistry = {
   kinetic_jitter: { name: "kinetic_jitter", camera: cameras.kineticJitter },
   panoramic_fade: { name: "panoramic_fade", camera: cameras.panoramicFade },
   split_screen: { name: "split_screen", camera: cameras.splitScreen },
+  floating_panels: {
+    name: "floating_panels",
+    camera: floatingPanels,
+    layout: floatingLayout,
+    panelShadow: floatingShadow,
+  },
   hud_popup: { name: "hud_popup", camera: cameras.hudPopup, Overlay: HudPopupOverlay },
 };
 

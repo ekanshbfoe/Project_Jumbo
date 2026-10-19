@@ -2,6 +2,7 @@ import {
   AudioManifest,
   buildEpisodeSpec,
   EpisodeSpec,
+  MULTI_PANEL_PRESETS,
   PRESET_CATALOG,
   ScriptDoc,
   type PresetName,
@@ -47,7 +48,7 @@ export function galleryEpisode(): EpisodeSpec {
   const lines = PRESET_CATALOG.flatMap(({ name }) =>
     GALLERY_SHAPES.map((shape, i) => {
       n += 1;
-      const multi = name === "split_screen";
+      const multi = MULTI_PANEL_PRESETS.has(name);
       return {
         id: `l_${String(n).padStart(4, "0")}`,
         panel_ids: multi ? [...SPLIT_PAIRS[i]!] : [shape.panel],

@@ -351,6 +351,43 @@
                 "properties": {
                   "name": {
                     "type": "string",
+                    "const": "floating_panels"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "tilt": {
+                        "default": 4,
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 12
+                      },
+                      "drift": {
+                        "default": 6,
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 15
+                      },
+                      "period": {
+                        "default": 10,
+                        "type": "number",
+                        "minimum": 3,
+                        "maximum": 30
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Two or three tall panels float over the background like physical photos layered in 3D, with heavy shadows and a slow drift. Use for character introductions, line-ups and reflective moments."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
                     "const": "hud_popup"
                   },
                   "params": {
