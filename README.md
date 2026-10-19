@@ -17,10 +17,13 @@ See [docs/architecture.md](docs/architecture.md) for the full design and roadmap
 | `crates/jumbo-core` | Project folder layout, manifests, chapter state machine, single-writer lock, job journal |
 | `crates/jumbo-ledger` | The Receipt Book: hash-chained memory ledger, delta validation, views, snapshots and lock |
 | `crates/jumbo-cli` | `jumbo` developer CLI over projects and the Receipt Book |
+| `crates/jumbo-bridge` | Desktop side of the Kaggle bridge: launcher, rendezvous, signed worker client, boot state machine |
+| `worker/` | Python worker for Kaggle: signed API, blob transfer, jobs, cloudflared tunnel, gist rendezvous |
+| `protocol/` | Bridge test vectors shared by the Rust and Python implementations |
 | `apps/desktop` | Tauri v2 + React desktop app (hub shell, chapters, Receipt Book) |
 | `docs/` | Architecture and ADRs |
 
-The Python worker and the Kaggle bridge arrive in later roadmap steps.
+Setting up Kaggle for the bridge: [docs/kaggle-setup.md](docs/kaggle-setup.md).
 
 ## Development
 
@@ -30,5 +33,7 @@ npm test && npm run typecheck          # TypeScript packages
 cargo test --workspace                  # Rust crates
 npm run tauri dev -w @jumbo/desktop     # desktop app (Vite + Tauri)
 cargo run -p jumbo-cli -- --help        # developer CLI
+python -m venv worker/.venv && worker/.venv/Scripts/pip install -e "worker[dev]"   # worker (Windows path)
+cd worker && .venv/Scripts/python -m pytest   # worker tests
 npm run studio -w @jumbo/motion         # Remotion Studio
 ```
