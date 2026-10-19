@@ -10,13 +10,11 @@ use serde::Serialize;
 /// Writes `bytes` to `path` atomically: write a sibling temp file, fsync it, rename over the target,
 /// then fsync the directory where the platform allows it.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let dir = path
-        .parent()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent directory"))?;
+    let dir =
+        path.parent().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent directory"))?;
     fs::create_dir_all(dir)?;
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?;
+    let file_name =
+        path.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?;
     let tmp = dir.join(format!(".{}.{}.tmp", file_name.to_string_lossy(), uuid::Uuid::new_v4().simple()));
 
     let result = (|| {
