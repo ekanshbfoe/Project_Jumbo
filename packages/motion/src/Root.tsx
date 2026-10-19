@@ -1,7 +1,8 @@
-import { EpisodeSpec } from "@jumbo/schema";
-import { Composition } from "remotion";
+import { EpisodeSpec, SocialPromoSettings } from "@jumbo/schema";
+import { Composition, Folder } from "remotion";
 import { calculateEpisodeMetadata, Episode } from "./compositions/Episode";
 import { galleryEpisode, sampleEpisode } from "./fixtures/episodes";
+import { PROMO_PREVIEW_SECONDS, SocialPromoPreview } from "./fixtures/SocialPromoPreview";
 
 /**
  * Compositions for Remotion Studio and the worker's renderer. The worker renders "Episode" with the
@@ -17,13 +18,25 @@ export function Root() {
         defaultProps={sampleEpisode()}
         calculateMetadata={calculateEpisodeMetadata}
       />
-      <Composition
-        id="Gallery"
-        component={Episode}
-        schema={EpisodeSpec}
-        defaultProps={galleryEpisode()}
-        calculateMetadata={calculateEpisodeMetadata}
-      />
+      <Folder name="Gallery">
+        <Composition
+          id="Gallery"
+          component={Episode}
+          schema={EpisodeSpec}
+          defaultProps={galleryEpisode()}
+          calculateMetadata={calculateEpisodeMetadata}
+        />
+        <Composition
+          id="SocialPromo"
+          component={SocialPromoPreview}
+          schema={SocialPromoSettings}
+          defaultProps={SocialPromoSettings.parse({})}
+          durationInFrames={PROMO_PREVIEW_SECONDS * 30}
+          fps={30}
+          width={1920}
+          height={1080}
+        />
+      </Folder>
     </>
   );
 }
