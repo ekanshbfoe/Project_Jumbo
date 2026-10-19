@@ -141,7 +141,12 @@ def create_app(
 
         async def pump() -> None:
             while True:
-                await ws.send_json(await queue.get())
+                event = await queue.get()
+                await ws.send_json(event)
+                if event["type"] == "session.stopped":
+                    # Close our side so server shutdown is not held open by connected clients.
+                    await ws.close(code=1001)
+                    return
 
         async def listen() -> None:
             # Any client frame counts as activity for the idle timer.

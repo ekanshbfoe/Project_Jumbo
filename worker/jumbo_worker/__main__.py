@@ -79,7 +79,7 @@ async def serve(args: argparse.Namespace) -> None:
         stop.set()
 
     app = create_app(session, store, bus, runner, on_stop=request_stop)
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=args.port, log_level="warning", ws="websockets-sansio"))
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=args.port, log_level="warning", ws="websockets-sansio", timeout_graceful_shutdown=10))
     local_url = f"http://127.0.0.1:{args.port}"
 
     async def publish(url: str) -> None:
@@ -106,6 +106,8 @@ async def serve(args: argparse.Namespace) -> None:
         await rendezvous.remove(session.ticket.session_id)
     except Exception as e:  # noqa: BLE001 - shutting down regardless
         log.warning("could not remove rendezvous record: %s", e)
+    bus.publish({"type": "session.stopped"})
+    await asyncio.sleep(0.2)  # let event streams flush the stop notice and close
     tunnel.stop()
     server.should_exit = True
     await asyncio.gather(*tasks, return_exceptions=True)
