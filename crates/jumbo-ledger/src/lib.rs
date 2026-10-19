@@ -5,8 +5,10 @@
 //! them against the current state and is the only code that writes the ledger.
 
 pub mod canonical;
+pub mod log;
 pub mod ops;
 pub mod state;
 
+pub use log::{Ledger, LedgerError, LedgerEvent, Repair};
 pub use ops::{EntityType, MemoryDelta, MemoryOp, Receipt};
 pub use state::{ApplyError, BookState, Entity};
