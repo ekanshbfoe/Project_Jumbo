@@ -1,0 +1,29 @@
+{
+  "proto": 1,
+  "session_id": "0123456789abcdef0123456789abcdef",
+  "app_sk": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "app_pk": "j0DFrbaPJWJK5bIU6nZ6bslNgp09e14a0bpvPiE4KF8=",
+  "worker_sk": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+  "worker_pk": "NYBy1jZYgNGu6jKa35EhODhR7SGijjt16WXQ0s0WYlQ=",
+  "session_key_hex": "fa6a3ebe772ee46192956a2070f17ba2a17e6d8796526e6529fca4dea20b615c",
+  "signatures": [
+    {
+      "method": "POST",
+      "path": "/v1/blobs/missing",
+      "ts": 1760860800,
+      "body": "{\"hashes\":[\"abc\"]}",
+      "sig": "5a3453b7f0b81b5501b732299f91b264654509f069f85babe7133b01d50847c4"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/blobs/abc?x=1",
+      "ts": 1760860861,
+      "body": "",
+      "sig": "29a6a70a6860e15dec1359713fb230b491434ac425244d4d25f2f98ffe55f163"
+    }
+  ],
+  "sealed": {
+    "message": "{\"url\": \"https://example.trycloudflare.com\", \"boot\": {\"epoch\": 1}}",
+    "box": "aHPeI1yNw3ccNrp1BmlBAaR8wXsnMr5pPIZUTZ4j4nQpItv9Zm1zFL9T1CrJuqHvF5xWHdLLN2o4G2Q9xgHiImEZPTWYiCfncT3Og44z8VRB3WMzBoNsionruyakmfujegMEFfY2+ggC2kkIIYIMrUJz"
+  }
+}
