@@ -1,7 +1,7 @@
 import { EpisodeSpec, SocialPromoSettings } from "@jumbo/schema";
 import { Composition, Folder } from "remotion";
 import { calculateEpisodeMetadata, Episode } from "./compositions/Episode";
-import { galleryEpisode, sampleEpisode } from "./fixtures/episodes";
+import { ambientPreviewEpisode, galleryEpisode, sampleEpisode } from "./fixtures/episodes";
 import { PROMO_PREVIEW_SECONDS, SocialPromoPreview } from "./fixtures/SocialPromoPreview";
 
 /**
@@ -26,6 +26,16 @@ export function Root() {
           defaultProps={galleryEpisode()}
           calculateMetadata={calculateEpisodeMetadata}
         />
+        {(["dust", "smoke", "city_bokeh"] as const).map((effect) => (
+          <Composition
+            key={effect}
+            id={`Ambient-${effect.replace("_", "-")}`}
+            component={Episode}
+            schema={EpisodeSpec}
+            defaultProps={ambientPreviewEpisode(effect)}
+            calculateMetadata={calculateEpisodeMetadata}
+          />
+        ))}
         <Composition
           id="SocialPromo"
           component={SocialPromoPreview}

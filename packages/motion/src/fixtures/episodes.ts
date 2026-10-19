@@ -5,6 +5,7 @@ import {
   MULTI_PANEL_PRESETS,
   PRESET_CATALOG,
   ScriptDoc,
+  type AmbientEffect,
   type PresetName,
   type TransitionSpec,
 } from "@jumbo/schema";
@@ -138,4 +139,28 @@ export const SAMPLE_AUDIO = AudioManifest.parse({
 /** A short end-to-end chapter: mixed shapes, transitions, audio and unvoiced beats. */
 export function sampleEpisode(): EpisodeSpec {
   return buildEpisodeSpec(SAMPLE_SCRIPT, panelsDoc(), SAMPLE_AUDIO);
+}
+
+/**
+ * A short episode for reviewing one ambient loop: three narrow-panel beats joined by hard cuts, so
+ * more background shows and you can see the ambient motion carry across each cut. Promo card off.
+ */
+export function ambientPreviewEpisode(effect: AmbientEffect): EpisodeSpec {
+  const script = ScriptDoc.parse({
+    schema_version: 1,
+    chapter_id: "ch_0001",
+    title: `Ambient: ${effect}`,
+    lines: [
+      { id: "l_0001", panel_ids: ["p_0002"], narration: "Ambient preview", emotion: "calm", preset: { name: "hold" } },
+      { id: "l_0002", panel_ids: ["p_0003"], narration: "Ambient preview", emotion: "calm", preset: { name: "zoom", params: { to: 1.06 } } },
+      { id: "l_0003", panel_ids: ["p_0008"], narration: "Ambient preview", emotion: "calm", preset: { name: "hold" } },
+    ],
+  });
+  const spec = buildEpisodeSpec(script, panelsDoc());
+  return EpisodeSpec.parse({
+    ...spec,
+    ambient_effect: effect,
+    social_promo: { ...spec.social_promo, enabled: false },
+    beats: spec.beats.map((b) => ({ ...b, duration: 4 })),
+  });
 }
