@@ -18,6 +18,17 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e "worker[dev]"
+      - run: python -m pytest -q
+        working-directory: worker
+
   rust:
     runs-on: ubuntu-latest
     steps:
@@ -26,6 +37,11 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # The bridge's end-to-end tests drive the real worker from this venv (they skip without it).
+      - run: python -m venv worker/.venv && worker/.venv/bin/pip install -e "worker[dev]"
       - run: cargo fmt --all --check
       # The Tauri app needs WebKitGTK system packages on Linux; it is checked on Windows below.
       - run: cargo clippy --workspace --exclude jumbo-desktop --all-targets -- -D warnings
