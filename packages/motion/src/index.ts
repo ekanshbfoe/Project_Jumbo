@@ -2,6 +2,8 @@ export * from "./assets";
 export * from "./components/BeatView";
 export * from "./components/Camera";
 export * from "./components/PolygonPanel";
+export * from "./components/SocialIcons";
+export * from "./components/SocialPromo";
 export * from "./compositions/Episode";
 export * from "./geometry";
 export * from "./noise";

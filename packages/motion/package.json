@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@jumbo/schema": "0.1.0",
+    "@remotion/google-fonts": "4.0.532",
     "@remotion/transitions": "4.0.532",
     "remotion": "4.0.532",
     "zod": "4.5.4"
