@@ -5,5 +5,6 @@ pub mod error;
 pub mod http;
 pub mod protocol;
 pub mod rendezvous;
+pub mod worker;
 
 pub use error::{BridgeError, Result};
