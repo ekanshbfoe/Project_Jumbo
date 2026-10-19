@@ -4,6 +4,7 @@ pub mod crypto;
 pub mod error;
 pub mod http;
 pub mod kaggle;
+pub mod launcher;
 pub mod protocol;
 pub mod rendezvous;
 pub mod worker;
