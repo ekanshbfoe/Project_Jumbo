@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import type { ProjectInfo } from "../api";
 import { ChaptersScreen } from "../screens/ChaptersScreen";
 import { ReceiptBookScreen } from "../screens/ReceiptBookScreen";
+import { SessionScreen } from "../screens/SessionScreen";
 
 export interface ScreenProps {
   project: ProjectInfo;
@@ -30,6 +31,7 @@ export const MODULES: HubModule[] = [
     screens: [
       { id: "chapters", label: "Chapters", Component: ChaptersScreen },
       { id: "receipt-book", label: "Receipt Book", Component: ReceiptBookScreen },
+      { id: "session", label: "Session", Component: SessionScreen },
     ],
   },
 ];

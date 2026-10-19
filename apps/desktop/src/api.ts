@@ -114,3 +114,52 @@ export const api = {
 export function errorText(e: unknown): string {
   return typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);
 }
+
+// Bridge (src-tauri/src/bridge.rs).
+
+export type BridgeMode = "kaggle_tpu" | "kaggle_cpu" | "local";
+
+export interface BridgeSettings {
+  mode: BridgeMode;
+  kernel_slug: string;
+  gist_id: string;
+}
+
+export interface CredentialStatus {
+  kaggle: boolean;
+  github: boolean;
+}
+
+export type BootState =
+  | { state: "pushing" | "queued" | "running" | "awaiting_rendezvous" }
+  | { state: "connecting"; epoch: number }
+  | { state: "ready"; epoch: number; boot: Record<string, unknown> }
+  | { state: "reconnecting"; from_epoch: number };
+
+export type SessionView =
+  | { phase: "idle" | "stopped" }
+  | { phase: "booting"; boot: BootState; mode: BridgeMode; since_ms: number }
+  | { phase: "ready"; epoch: number; facts: Record<string, unknown>; mode: BridgeMode; since_ms: number }
+  | { phase: "reconnecting"; from_epoch: number }
+  | { phase: "failed"; error: string };
+
+export interface BridgeTestReport {
+  bytes: number;
+  upload_ms: number;
+  job_ms: number;
+  download_ms: number;
+  verified: boolean;
+}
+
+export const bridgeApi = {
+  settings: () => invoke<BridgeSettings>("bridge_settings"),
+  saveSettings: (settings: BridgeSettings) => invoke<void>("save_bridge_settings", { settings }),
+  credentials: () => invoke<CredentialStatus>("credential_status"),
+  importKaggleJson: (path: string) => invoke<void>("import_kaggle_json", { path }),
+  setKaggleToken: (token: string) => invoke<void>("set_kaggle_token", { token }),
+  setGithubToken: (token: string) => invoke<void>("set_github_token", { token }),
+  view: () => invoke<SessionView>("session_view"),
+  start: () => invoke<void>("start_session"),
+  test: () => invoke<BridgeTestReport>("run_bridge_test"),
+  stop: () => invoke<void>("stop_session"),
+};
