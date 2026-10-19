@@ -25,6 +25,14 @@ const SPLIT_PAIRS = [
   ["p_0002", "p_0003", "p_0004"],
 ] as const;
 
+/** Ultra-wide close-up strips for stacked-strip layouts. */
+const SLICE_GROUPS = [
+  ["p_0009", "p_0010"],
+  ["p_0009", "p_0010", "p_0011"],
+  ["p_0010", "p_0011"],
+  ["p_0011", "p_0009", "p_0010"],
+] as const;
+
 const TRANSITIONS: TransitionSpec["name"][] = ["cut", "fade", "slide", "wipe"];
 
 const presetParams = (name: PresetName, i: number): Record<string, unknown> => {
@@ -37,6 +45,8 @@ const presetParams = (name: PresetName, i: number): Record<string, unknown> => {
       return { direction: (["right", "left", "down", "up"] as const)[i % 4] };
     case "split_screen":
       return { orientation: i === 1 ? "horizontal" : "vertical" };
+    case "horizontal_slices":
+      return { lead: i % 2 === 0 ? "left" : "right" };
     default:
       return {};
   }
@@ -49,10 +59,11 @@ export function galleryEpisode(): EpisodeSpec {
     GALLERY_SHAPES.map((shape, i) => {
       n += 1;
       const multi = MULTI_PANEL_PRESETS.has(name);
+      const group = (name === "horizontal_slices" ? SLICE_GROUPS : SPLIT_PAIRS)[i]!;
       return {
         id: `l_${String(n).padStart(4, "0")}`,
-        panel_ids: multi ? [...SPLIT_PAIRS[i]!] : [shape.panel],
-        narration: `${name} · ${multi ? `${SPLIT_PAIRS[i]!.length} panels` : shape.label}`,
+        panel_ids: multi ? [...group] : [shape.panel],
+        narration: `${name} · ${multi ? `${group.length} panels` : shape.label}`,
         emotion: "calm" as const,
         preset: { name, params: presetParams(name, i) },
         transition_in: { name: TRANSITIONS[n % TRANSITIONS.length]!, duration: 0.3 },

@@ -2,6 +2,7 @@ import { PRESET_CATALOG, PresetSpec } from "@jumbo/schema";
 import { describe, expect, it } from "vitest";
 import { IDENTITY_CAMERA } from "../src/components/Camera";
 import { floatingLayout } from "../src/presets/floating";
+import { slicesLayout } from "../src/presets/slices";
 import { evaluateCamera, PRESETS } from "../src/presets/registry";
 import type { PresetContext } from "../src/presets/types";
 
@@ -114,5 +115,35 @@ describe("floating panels", () => {
 
   it("casts the heavy cinematic shadow at any resolution", () => {
     expect(PRESETS.floating_panels.panelShadow?.(2)).toBe("drop-shadow(0 40px 100px rgba(0, 0, 0, 0.8))");
+  });
+});
+
+describe("horizontal slices", () => {
+  const strips = [
+    { width: 920, height: 220 },
+    { width: 920, height: 220 },
+    { width: 920, height: 220 },
+  ];
+
+  it("stacks strips top to bottom without overlap, centred and inside the frame", () => {
+    const slots = slicesLayout(strips, { width: 1920, height: 1080 });
+    for (let i = 1; i < slots.length; i++) {
+      expect(slots[i]!.top).toBeGreaterThanOrEqual(slots[i - 1]!.top + slots[i - 1]!.height);
+    }
+    expect(slots.every((s) => Math.abs(s.left + s.width / 2 - 960) < 1e-6)).toBe(true);
+    expect(slots.at(-1)!.top + slots.at(-1)!.height).toBeLessThanOrEqual(1080);
+  });
+
+  it("drifts neighbouring strips in opposite directions, starting from the lead", () => {
+    const spec = PresetSpec.parse({ name: "horizontal_slices", params: { drift: 0.1, lead: "left" } });
+    const dx = (index: number) =>
+      evaluateCamera(spec, ctx(89, { index, count: 3 })).x - evaluateCamera(spec, ctx(0, { index, count: 3 })).x;
+    expect(dx(0)).toBeCloseTo(-192);
+    expect(dx(1)).toBeCloseTo(192);
+    expect(dx(2)).toBeCloseTo(-192);
+  });
+
+  it("uses a subtle separating shadow", () => {
+    expect(PRESETS.horizontal_slices.panelShadow?.(1)).toBe("drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55))");
   });
 });

@@ -2,6 +2,7 @@ import type { PresetName, PresetSpec } from "@jumbo/schema";
 import type { CameraTransform } from "../components/Camera";
 import * as cameras from "./cameras";
 import { floatingLayout, floatingPanels, floatingShadow } from "./floating";
+import { horizontalSlices, slicesLayout, slicesShadow } from "./slices";
 import { HudPopupOverlay } from "./HudPopupOverlay";
 import type { PresetContext, PresetImpl, PresetRegistry } from "./types";
 
@@ -20,6 +21,12 @@ export const PRESETS: PresetRegistry = {
     camera: floatingPanels,
     layout: floatingLayout,
     panelShadow: floatingShadow,
+  },
+  horizontal_slices: {
+    name: "horizontal_slices",
+    camera: horizontalSlices,
+    layout: slicesLayout,
+    panelShadow: slicesShadow,
   },
   hud_popup: { name: "hud_popup", camera: cameras.hudPopup, Overlay: HudPopupOverlay },
 };

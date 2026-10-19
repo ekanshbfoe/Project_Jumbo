@@ -95,6 +95,17 @@ export const FloatingPanelsPreset = preset(
   }),
 );
 
+export const HorizontalSlicesPreset = preset(
+  "horizontal_slices",
+  "Two or three ultra-wide, short panels stacked as strips that drift slowly in opposite directions. Use for intimate close-ups, eye contact and tense stare-downs.",
+  z.object({
+    /** Horizontal travel of each strip over the beat, as a fraction of the frame width. */
+    drift: z.number().min(0).max(0.2).default(0.05),
+    /** Direction the top strip drifts; the strips below alternate. */
+    lead: z.enum(["left", "right"]).default("left"),
+  }),
+);
+
 export const HudPopupPreset = preset(
   "hud_popup",
   "Game-style info panel types onto the screen over the panel. Use for system messages, stats and level-ups.",
@@ -115,6 +126,7 @@ export const PresetSpec = z.discriminatedUnion("name", [
   PanoramicFadePreset,
   SplitScreenPreset,
   FloatingPanelsPreset,
+  HorizontalSlicesPreset,
   HudPopupPreset,
 ]);
 
@@ -123,7 +135,11 @@ export type PresetName = PresetSpec["name"];
 export type PresetParams<N extends PresetName> = Extract<PresetSpec, { name: N }>["params"];
 
 /** Presets that lay out more than one panel. Every other preset takes exactly one. */
-export const MULTI_PANEL_PRESETS: ReadonlySet<PresetName> = new Set<PresetName>(["split_screen", "floating_panels"]);
+export const MULTI_PANEL_PRESETS: ReadonlySet<PresetName> = new Set<PresetName>([
+  "split_screen",
+  "floating_panels",
+  "horizontal_slices",
+]);
 
 /** Preset vocabulary with descriptions, used to build the Director's system prompt. */
 export const PRESET_CATALOG: ReadonlyArray<{ name: PresetName; description: string }> = PresetSpec.options.map((o) => ({

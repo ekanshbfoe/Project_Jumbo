@@ -388,6 +388,39 @@
                 "properties": {
                   "name": {
                     "type": "string",
+                    "const": "horizontal_slices"
+                  },
+                  "params": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "drift": {
+                        "default": 0.05,
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 0.2
+                      },
+                      "lead": {
+                        "default": "left",
+                        "type": "string",
+                        "enum": [
+                          "left",
+                          "right"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "description": "Two or three ultra-wide, short panels stacked as strips that drift slowly in opposite directions. Use for intimate close-ups, eye contact and tense stare-downs."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
                     "const": "hud_popup"
                   },
                   "params": {
