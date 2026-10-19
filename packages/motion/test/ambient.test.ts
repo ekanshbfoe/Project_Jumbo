@@ -56,13 +56,13 @@ describe("smoke", () => {
   });
 
   it("restarts each puff only while it is invisible", () => {
-    // Steps of 10 frames over ~3.3 minutes cover every puff's 16-30 s cycle several times.
-    expectSeamless((f) => smokePuffs(clock(f * 10)), 600, 120);
+    // Every frame of a full minute covers each puff's 16-30 s cycle at least twice.
+    expectSeamless((f) => smokePuffs(clock(f)), 1800, 20);
   });
 
   it("stays translucent and rises", () => {
     const puffs = smokePuffs(clock(300));
-    expect(Math.max(...puffs.map((p) => p.opacity))).toBeLessThan(0.2);
+    expect(Math.max(...puffs.map((p) => p.opacity))).toBeLessThanOrEqual(0.35);
     const later = smokePuffs(clock(330));
     const rising = puffs.filter((p, i) => later[i]!.y < p.y).length;
     expect(rising).toBeGreaterThan(puffs.length * 0.8);
@@ -84,6 +84,6 @@ describe("city bokeh", () => {
     const b = bokehLights(clock(15));
     const moves = a.map((l, i) => b[i]!.x - l.x).filter((d) => Math.abs(d) < 200);
     expect(moves.some((d) => d > 0) && moves.some((d) => d < 0)).toBe(true);
-    expect(Math.max(...a.map((l) => l.opacity))).toBeLessThanOrEqual(0.35);
+    expect(Math.max(...a.map((l) => l.opacity))).toBeLessThanOrEqual(0.46);
   });
 });

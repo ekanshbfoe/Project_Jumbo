@@ -33,7 +33,7 @@ export function smokePuffs({ frame, fps, width, height }: AmbientClock, count = 
       height: base * grow,
       rotate: (r("tilt") - 0.5) * 40 + age * 25,
       // sin(pi * age) is zero at both ends of the cycle, where the puff restarts below the frame.
-      opacity: Math.sin(Math.PI * age) * (0.08 + r("opacity") * 0.1),
+      opacity: Math.sin(Math.PI * age) * (0.18 + r("opacity") * 0.17),
       blur: (38 + r("blur") * 30) * u,
     };
   });
@@ -48,7 +48,7 @@ export function AmbientSmoke(clock: AmbientClock) {
         style={{
           position: "absolute",
           inset: 0,
-          background: "linear-gradient(0deg, rgba(196, 202, 218, 0.16) 0%, rgba(196, 202, 218, 0.05) 30%, transparent 55%)",
+          background: "linear-gradient(0deg, rgba(196, 202, 218, 0.28) 0%, rgba(196, 202, 218, 0.1) 32%, transparent 60%)",
           opacity: 0.8 + 0.2 * Math.sin((t / 11) * Math.PI * 2),
         }}
       />

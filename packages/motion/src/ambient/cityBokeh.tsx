@@ -38,7 +38,7 @@ export function bokehLights({ frame, fps, width, height }: AmbientClock, count =
       y: height * (0.22 + r("y") * 0.72) + Math.sin((t / bobPeriod) * Math.PI * 2 + phase) * 12 * u,
       size,
       color: PALETTE[Math.floor(r("color") * PALETTE.length)]!,
-      opacity: (0.1 + depth * 0.25) * (0.75 + 0.25 * Math.sin((t / pulsePeriod) * Math.PI * 2 + phase)),
+      opacity: (0.16 + depth * 0.3) * (0.75 + 0.25 * Math.sin((t / pulsePeriod) * Math.PI * 2 + phase)),
       blur: (4 + depth * 14) * u,
     };
   });
