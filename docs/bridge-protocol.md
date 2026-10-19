@@ -17,11 +17,19 @@ All binary values travel as standard base64 with padding.
 The launcher embeds the ticket in the kernel source it pushes. The ticket contains no secrets:
 
 ```json
-{ "proto": 1, "session_id": "<32 hex chars>", "app_pk": "<b64>", "deadline_s": 30600, "idle_s": 1800 }
+{
+  "proto": 1,
+  "session_id": "<32 hex chars>",
+  "app_pk": "<b64>",
+  "deadline_s": 30600,
+  "idle_s": 1800,
+  "rendezvous": { "kind": "gist", "gist_id": "<id>" }
+}
 ```
 
 - `deadline_s`: seconds after boot when the worker stops itself. 8.5 h leaves a margin under Kaggle's 9 h cap.
 - `idle_s`: the dead-man switch. The worker stops itself after this many seconds without an authenticated request.
+- `rendezvous`: where to publish. The gist token itself never appears in the ticket; on Kaggle it comes from the attached Kaggle Secret `JUMBO_GIST_TOKEN`.
 
 ## Rendezvous record
 
