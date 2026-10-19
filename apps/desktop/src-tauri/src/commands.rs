@@ -91,6 +91,12 @@ pub fn open_project(app: AppHandle, state: State<AppState>, path: String) -> Cmd
     install(&app, &state, project)
 }
 
+/// Opens a project passed on the command line, before the UI asks for one.
+pub fn open_at_startup(app: &AppHandle, state: &State<AppState>, path: PathBuf) -> CmdResult<ProjectInfo> {
+    let project = Project::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    install(app, state, project)
+}
+
 #[tauri::command]
 pub fn close_project(state: State<AppState>) -> CmdResult<()> {
     state.project.lock().map_err(msg)?.take();
