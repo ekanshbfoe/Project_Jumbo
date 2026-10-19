@@ -32,3 +32,25 @@ export function episodeTimeline(spec: Pick<EpisodeSpec, "beats" | "video">): Epi
 
   return { beats, durationInFrames: Math.max(1, cursor) };
 }
+
+export interface FrameWindow {
+  from: number;
+  durationInFrames: number;
+}
+
+/**
+ * Frames an overlay occupies when it starts `startAfter` seconds into the episode and must be gone
+ * `endBefore` seconds before the end. Returns null when that leaves less than `minSeconds`, e.g. in
+ * episodes shorter than both offsets combined.
+ */
+export function overlayWindow(
+  totalFrames: number,
+  fps: number,
+  startAfter: number,
+  endBefore: number,
+  minSeconds: number,
+): FrameWindow | null {
+  const from = Math.round(startAfter * fps);
+  const durationInFrames = totalFrames - Math.round(endBefore * fps) - from;
+  return durationInFrames >= Math.ceil(minSeconds * fps) ? { from, durationInFrames } : null;
+}
