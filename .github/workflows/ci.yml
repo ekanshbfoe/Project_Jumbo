@@ -17,3 +17,26 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      # The Tauri app needs WebKitGTK system packages on Linux; it is checked on Windows below.
+      - run: cargo clippy --workspace --exclude jumbo-desktop --all-targets -- -D warnings
+      - run: cargo test --workspace --exclude jumbo-desktop
+
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p jumbo-desktop -- -D warnings
