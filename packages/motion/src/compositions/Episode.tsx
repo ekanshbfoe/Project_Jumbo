@@ -4,9 +4,10 @@ import { fade } from "@remotion/transitions/fade";
 import { slide } from "@remotion/transitions/slide";
 import { wipe } from "@remotion/transitions/wipe";
 import { useMemo, type ReactElement } from "react";
-import { AbsoluteFill, type CalculateMetadataFunction } from "remotion";
+import { AbsoluteFill, Sequence, type CalculateMetadataFunction } from "remotion";
 import { BeatView } from "../components/BeatView";
-import { episodeTimeline } from "../timeline";
+import { PROMO_ENTRY_SECONDS, PROMO_EXIT_SECONDS, SocialPromo } from "../components/SocialPromo";
+import { episodeTimeline, overlayWindow } from "../timeline";
 
 function presentation(name: Exclude<TransitionSpec["name"], "cut">): TransitionPresentation<Record<string, unknown>> {
   switch (name) {
@@ -51,9 +52,25 @@ export function Episode(spec: EpisodeSpec) {
     );
   });
 
+  const promo = spec.social_promo;
+  const promoWindow = promo.enabled
+    ? overlayWindow(
+        timeline.durationInFrames,
+        spec.video.fps,
+        promo.start_after,
+        promo.end_before,
+        PROMO_ENTRY_SECONDS + PROMO_EXIT_SECONDS,
+      )
+    : null;
+
   return (
     <AbsoluteFill style={{ backgroundColor: spec.video.background }}>
       <TransitionSeries>{children}</TransitionSeries>
+      {promoWindow ? (
+        <Sequence from={promoWindow.from} durationInFrames={promoWindow.durationInFrames} name="SocialPromo">
+          <SocialPromo settings={promo} durationInFrames={promoWindow.durationInFrames} />
+        </Sequence>
+      ) : null}
     </AbsoluteFill>
   );
 }
