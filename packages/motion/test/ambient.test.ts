@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dustMotes } from "../src/ambient/dust";
+import { smokePuffs } from "../src/ambient/smoke";
 import type { AmbientClock } from "../src/ambient/types";
 
 const W = 1920;
@@ -45,5 +46,24 @@ describe("dust", () => {
 
   it("stays faint", () => {
     expect(Math.max(...dustMotes(clock(99)).map((m) => m.opacity))).toBeLessThanOrEqual(0.7);
+  });
+});
+
+describe("smoke", () => {
+  it("is deterministic per episode frame", () => {
+    expect(smokePuffs(clock(4321))).toEqual(smokePuffs(clock(4321)));
+  });
+
+  it("restarts each puff only while it is invisible", () => {
+    // Steps of 10 frames over ~3.3 minutes cover every puff's 16-30 s cycle several times.
+    expectSeamless((f) => smokePuffs(clock(f * 10)), 600, 120);
+  });
+
+  it("stays translucent and rises", () => {
+    const puffs = smokePuffs(clock(300));
+    expect(Math.max(...puffs.map((p) => p.opacity))).toBeLessThan(0.2);
+    const later = smokePuffs(clock(330));
+    const rising = puffs.filter((p, i) => later[i]!.y < p.y).length;
+    expect(rising).toBeGreaterThan(puffs.length * 0.8);
   });
 });

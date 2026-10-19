@@ -35,7 +35,7 @@ export const WatermarkSettings = z.object({
 });
 
 /** Motion layered over every beat's blurred backdrop. */
-export const AmbientEffect = z.enum(["none", "dust"]);
+export const AmbientEffect = z.enum(["none", "dust", "smoke"]);
 
 export const VideoFormat = z.object({
   width: z.number().int().positive().default(1920),

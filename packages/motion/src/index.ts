@@ -1,6 +1,7 @@
 export * from "./assets";
 export * from "./ambient/AmbientLayer";
 export * from "./ambient/dust";
+export * from "./ambient/smoke";
 export * from "./ambient/types";
 export * from "./components/BeatView";
 export * from "./components/Camera";
