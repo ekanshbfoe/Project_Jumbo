@@ -49,6 +49,14 @@
       "default": false,
       "type": "boolean"
     },
+    "ambient_effect": {
+      "default": "dust",
+      "type": "string",
+      "enum": [
+        "none",
+        "dust"
+      ]
+    },
     "social_promo": {
       "default": {},
       "type": "object",

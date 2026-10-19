@@ -27,6 +27,9 @@ export const AudioManifest = z
     });
   });
 
+/** Motion layered over every beat's blurred backdrop. */
+export const AmbientEffect = z.enum(["none", "dust"]);
+
 export const VideoFormat = z.object({
   width: z.number().int().positive().default(1920),
   height: z.number().int().positive().default(1080),
@@ -67,6 +70,7 @@ export const EpisodeSpec = z
     video: VideoFormat.prefault({}),
     /** Mask out speech bubbles when no inpainted `clean` image exists. */
     hide_bubbles: z.boolean().default(false),
+    ambient_effect: AmbientEffect.default("dust"),
     social_promo: SocialPromoSettings.prefault({}),
     panels: z.array(EpisodePanel).min(1),
     beats: z.array(Beat).min(1),
@@ -94,6 +98,7 @@ export const EpisodeSpec = z
 
 export type AudioClip = z.infer<typeof AudioClip>;
 export type AudioManifest = z.infer<typeof AudioManifest>;
+export type AmbientEffect = z.infer<typeof AmbientEffect>;
 export type VideoFormat = z.infer<typeof VideoFormat>;
 export type EpisodePanel = z.infer<typeof EpisodePanel>;
 export type Beat = z.infer<typeof Beat>;

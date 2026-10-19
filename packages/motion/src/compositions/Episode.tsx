@@ -48,6 +48,8 @@ export function Episode(spec: EpisodeSpec) {
           panels={panels}
           durationInFrames={timing.durationInFrames}
           hideBubbles={spec.hide_bubbles}
+          ambientEffect={spec.ambient_effect}
+          startFrame={timing.from}
         />
       </TransitionSeries.Sequence>,
     );

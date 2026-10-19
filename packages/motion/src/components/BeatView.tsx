@@ -1,9 +1,10 @@
-import type { Beat, EpisodePanel, PresetName } from "@jumbo/schema";
+import type { AmbientEffect, Beat, EpisodePanel, PresetName } from "@jumbo/schema";
 import { AbsoluteFill, Html5Audio, Img, useCurrentFrame, useVideoConfig } from "remotion";
 import { useAssetResolver } from "../assets";
 import { fitContain, panelSize, splitFrame, type Rect } from "../geometry";
 import { PRESETS } from "../presets/registry";
 import type { PresetContext, PresetImpl } from "../presets/types";
+import { AmbientDust } from "./AmbientDust";
 import { Camera } from "./Camera";
 import { PolygonPanel } from "./PolygonPanel";
 
@@ -13,6 +14,10 @@ export interface BeatViewProps {
   /** Passed explicitly because the beat's Sequence length is what presets animate over. */
   durationInFrames: number;
   hideBubbles: boolean;
+  /** Motion layered over the blurred backdrop so static panels never sit on a dead background. */
+  ambientEffect?: AmbientEffect;
+  /** The beat's first frame on the episode clock, which keeps ambient motion continuous across beats. */
+  startFrame?: number;
 }
 
 /** Where each panel of the beat sits before the camera moves. */
@@ -27,8 +32,15 @@ function layout(beat: Beat, panels: EpisodePanel[], width: number, height: numbe
   });
 }
 
-/** One narration beat: blurred backdrop, camera-driven panels, preset overlay and audio. */
-export function BeatView({ beat, panels: panelMap, durationInFrames, hideBubbles }: BeatViewProps) {
+/** One narration beat: blurred backdrop, ambient motion, camera-driven panels, preset overlay and audio. */
+export function BeatView({
+  beat,
+  panels: panelMap,
+  durationInFrames,
+  hideBubbles,
+  ambientEffect = "dust",
+  startFrame = 0,
+}: BeatViewProps) {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
   const resolve = useAssetResolver();
@@ -60,6 +72,9 @@ export function BeatView({ beat, panels: panelMap, durationInFrames, hideBubbles
             filter: "blur(40px) brightness(0.4) saturate(1.2)",
           }}
         />
+      ) : null}
+      {ambientEffect === "dust" ? (
+        <AmbientDust frame={startFrame + frame} fps={fps} width={width} height={height} />
       ) : null}
       {panels.map((panel, i) => (
         <Camera key={panel.id} transform={impl.camera(ctx(i), beat.preset.params as never)} {...rects[i]!}>

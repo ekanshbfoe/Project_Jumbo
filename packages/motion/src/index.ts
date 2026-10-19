@@ -1,4 +1,5 @@
 export * from "./assets";
+export * from "./components/AmbientDust";
 export * from "./components/BeatView";
 export * from "./components/Camera";
 export * from "./components/PolygonPanel";
