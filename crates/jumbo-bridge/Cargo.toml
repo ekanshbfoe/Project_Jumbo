@@ -1,0 +1,25 @@
+[package]
+name = "jumbo-bridge"
+version = "0.1.0"
+description = "Desktop side of the Kaggle bridge: launcher, rendezvous, signed worker client and boot state machine"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+blake3.workspace = true
+crypto_box = { version = "0.9.1", features = ["seal"] }
+getrandom = "0.4.3"
+hex = "0.4.3"
+hkdf = "0.13.0"
+hmac = "0.13.0"
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.11.0"
+thiserror.workspace = true
+x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
+
+[lints]
+workspace = true
