@@ -1,5 +1,6 @@
 export * from "./assets";
 export * from "./ambient/AmbientLayer";
+export * from "./ambient/cityBokeh";
 export * from "./ambient/dust";
 export * from "./ambient/smoke";
 export * from "./ambient/types";

@@ -55,7 +55,8 @@
       "enum": [
         "none",
         "dust",
-        "smoke"
+        "smoke",
+        "city_bokeh"
       ]
     },
     "watermark": {

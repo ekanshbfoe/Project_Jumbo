@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { bokehLights } from "../src/ambient/cityBokeh";
 import { dustMotes } from "../src/ambient/dust";
 import { smokePuffs } from "../src/ambient/smoke";
 import type { AmbientClock } from "../src/ambient/types";
@@ -65,5 +66,24 @@ describe("smoke", () => {
     const later = smokePuffs(clock(330));
     const rising = puffs.filter((p, i) => later[i]!.y < p.y).length;
     expect(rising).toBeGreaterThan(puffs.length * 0.8);
+  });
+});
+
+describe("city bokeh", () => {
+  it("is deterministic per episode frame", () => {
+    expect(bokehLights(clock(777))).toEqual(bokehLights(clock(777)));
+  });
+
+  it("wraps lights around only off screen", () => {
+    // A disc's centre is off screen by at least its radius when it wraps; allow for the largest disc.
+    expectSeamless((f) => bokehLights(clock(f * 5)), 900, 40, 0);
+  });
+
+  it("drifts both ways like traffic and keeps lights soft", () => {
+    const a = bokehLights(clock(0));
+    const b = bokehLights(clock(15));
+    const moves = a.map((l, i) => b[i]!.x - l.x).filter((d) => Math.abs(d) < 200);
+    expect(moves.some((d) => d > 0) && moves.some((d) => d < 0)).toBe(true);
+    expect(Math.max(...a.map((l) => l.opacity))).toBeLessThanOrEqual(0.35);
   });
 });

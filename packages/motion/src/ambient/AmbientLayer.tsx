@@ -1,4 +1,5 @@
 import type { AmbientEffect } from "@jumbo/schema";
+import { CityBokeh } from "./cityBokeh";
 import { AmbientDust } from "./dust";
 import { AmbientSmoke } from "./smoke";
 import type { AmbientClock } from "./types";
@@ -10,6 +11,8 @@ export function AmbientLayer({ effect, ...clock }: AmbientClock & { effect: Ambi
       return <AmbientDust {...clock} />;
     case "smoke":
       return <AmbientSmoke {...clock} />;
+    case "city_bokeh":
+      return <CityBokeh {...clock} />;
     case "none":
       return null;
   }
