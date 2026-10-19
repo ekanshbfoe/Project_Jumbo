@@ -8,7 +8,9 @@ pub mod canonical;
 pub mod log;
 pub mod ops;
 pub mod state;
+pub mod validate;
 
 pub use log::{Ledger, LedgerError, LedgerEvent, Repair};
 pub use ops::{EntityType, MemoryDelta, MemoryOp, Receipt};
 pub use state::{ApplyError, BookState, Entity};
+pub use validate::{Finding, PanelIndex, ProjectPanelIndex, Severity, ValidationReport, validate};
