@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { ProjectInfo } from "../api";
 import { ChaptersScreen } from "../screens/ChaptersScreen";
+import { PreviewScreen } from "../screens/PreviewScreen";
 import { ReceiptBookScreen } from "../screens/ReceiptBookScreen";
 import { SessionScreen } from "../screens/SessionScreen";
 
@@ -30,6 +31,7 @@ export const MODULES: HubModule[] = [
     title: "Manhwa Studio",
     screens: [
       { id: "chapters", label: "Chapters", Component: ChaptersScreen },
+      { id: "preview", label: "Preview", Component: PreviewScreen },
       { id: "receipt-book", label: "Receipt Book", Component: ReceiptBookScreen },
       { id: "session", label: "Session", Component: SessionScreen },
     ],

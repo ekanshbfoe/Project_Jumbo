@@ -52,7 +52,8 @@ button.primary {
   color: #fff;
 }
 
-input {
+input,
+select {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -283,4 +284,16 @@ th {
 .welcome {
   max-width: 640px;
   margin: 8vh auto;
+}
+
+.preview-player {
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.preview-error {
+  white-space: pre-wrap;
+  margin: 0;
 }

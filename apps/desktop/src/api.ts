@@ -97,6 +97,15 @@ export interface VerifyReport {
   problems: string[];
 }
 
+/** Raw preview inputs for one chapter (`chapter_preview`); the screen validates them with @jumbo/schema. */
+export interface PreviewSources {
+  episode: unknown | null;
+  script: unknown | null;
+  script_file: string | null;
+  panels: unknown | null;
+  audio: unknown | null;
+}
+
 export const api = {
   createProject: (path: string, title: string) => invoke<ProjectInfo>("create_project", { path, title }),
   openProject: (path: string) => invoke<ProjectInfo>("open_project", { path }),
@@ -108,6 +117,7 @@ export const api = {
   importChapters: (paths: string[]) => invoke<ChapterManifest[]>("import_chapters", { paths }),
   bookOverview: () => invoke<BookOverview>("book_overview"),
   verifyBook: () => invoke<VerifyReport>("verify_book"),
+  chapterPreview: (chapter: string) => invoke<PreviewSources>("chapter_preview", { chapter }),
 };
 
 /** Tauri rejects with the Rust error string; normalise anything else. */
