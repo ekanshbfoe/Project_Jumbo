@@ -14,7 +14,7 @@ from jumbo_worker.pipeline.vision.detect import MagiDetector, OpenCVDetector
 from jumbo_worker.pipeline.vision.order import reading_order
 from jumbo_worker.pipeline.vision.raster import rasterize
 from jumbo_worker.pipeline.vision.slicer import slice_strip
-from jumbo_worker.pipeline.vision.stitch import find_joins, stitch
+from jumbo_worker.pipeline.vision.stitch import chapter_layout, find_joins, stitch
 
 # A webtoon strip: four panels; the PDF pages cut it at 1500 and 3000 rows.
 STRIP, SPANS = strip(800, [900, 1200, 700, 1000], gutter=60)
@@ -24,7 +24,7 @@ def test_a_page_break_through_a_panel_is_joined_and_one_in_a_gutter_is_not():
     through = next(y for y in range(1400, 1600) if any(a + 50 < y < b - 50 for a, b in SPANS))
     gutter = next((a + b) // 2 for (_, a), (b, _) in zip(SPANS, SPANS[1:]) if b - a >= 40)
     pages = cut(STRIP, sorted([through, gutter]))
-    joins = find_joins(pages)
+    joins = find_joins(pages, layout="strip")
     kinds = {j.after_page: j.kind for j in joins}
     assert sorted(kinds.values()) == ["none", "vertical"], joins
     canvases = stitch(pages, joins)
@@ -36,9 +36,9 @@ def test_a_break_through_flat_colour_is_joined_but_a_white_gutter_is_not():
     framed = np.full((1400, 800, 3), 255, np.uint8)
     framed[100:1300] = sky
     top, bottom = framed[:700], framed[700:]
-    assert [j.kind for j in find_joins([top, bottom])] == ["vertical"]
+    assert [j.kind for j in find_joins([top, bottom], layout="strip")] == ["vertical"]
     white = np.full((300, 800, 3), 255, np.uint8)
-    [join] = find_joins([framed, white])
+    [join] = find_joins([framed, white], layout="strip")
     assert join.kind == "none" and join.reason.startswith("vertical: white gutter on both sides")
 
 
@@ -54,6 +54,21 @@ def test_a_split_spread_is_joined_left_to_right_and_unrelated_pages_are_not():
     # Manga order: the later page is on the left.
     rtl = stitch([right, left], find_joins([right, left], rtl=True), rtl=True)
     assert len(rtl) == 1 and np.array_equal(rtl[0].image, spread)
+
+
+def test_printed_pages_are_never_joined_vertically_and_busy_edges_are_no_spread():
+    # Two manga pages ending and starting in the same black bleed would pass as a vertical cut.
+    bleed = np.zeros((1400, 1000, 3), np.uint8)
+    bleed[200:1200, 100:900] = 255
+    pages = [bleed, bleed.copy()]
+    assert chapter_layout(pages) == "page" and chapter_layout([np.zeros((3000, 800, 3), np.uint8)]) == "strip"
+    [join] = find_joins(pages)
+    assert join.kind == "none" and join.reason.startswith("vertical: printed pages do not continue vertically")
+    # Unrelated speed-line edges: different on every line, so the line-to-line change alone would excuse them.
+    rng = np.random.default_rng(5)
+    noisy = [rng.integers(0, 256, (1400, 1000, 3), dtype=np.uint8) for _ in range(2)]
+    [join] = find_joins(noisy, layout="page")
+    assert join.kind == "none", join
 
 
 def test_strips_are_sliced_at_their_gutters():
@@ -137,7 +152,7 @@ async def test_vision_stage_recovers_every_panel_of_a_strip_cut_mid_panel(tmp_pa
 
 async def test_vision_stage_on_pages_and_a_spread(tmp_path):
     spread = art(1400, 2000, seed=5)
-    store, job = await run_vision(tmp_path, [grid_page(), spread[:, :1000], spread[:, 1000:]], detector="opencv")
+    store, job = await run_vision(tmp_path, [grid_page(), spread[:, :1000], spread[:, 1000:]], detector="opencv", rtl=False)
     assert job.status == "done", job.error
     manifest = json.loads(store.path(job.output).read_bytes())
     assert [c["kind"] for c in manifest["report"]["canvases"]] == ["page", "spread"]

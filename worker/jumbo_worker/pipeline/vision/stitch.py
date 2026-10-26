@@ -12,6 +12,11 @@ when both edges are flat white (a gutter) or the drawing stops exactly at the cu
 Otherwise they are joined when the edge lines continue: they differ about as little as neighbouring
 lines inside each page do, or their gradient profiles line up. That includes flat colour or black
 running across the cut (a night sky split by the page break). Spreads join only on real structure.
+Vertical breaks are only looked for in strip-layout chapters (webtoons). A chapter of printed pages
+(manga) never continues from the bottom of one page into the top of the next, and a page ending in a
+black bleed would otherwise be glued to the next one; there only spreads are looked for. The layout
+router decides this from the chapter's typical page shape.
+
 Every decision, with its numbers, goes into the stage report so the thresholds can be checked
 against real chapters.
 """
@@ -37,6 +42,11 @@ FLAT_STD = 3.0
 WHITE = 235.0
 # Spreads need at least this much structure on an edge to be joined.
 INK_STD = 6.0
+# Spreads also need the edges to be close in absolute terms: busy edges (speed lines, screentone)
+# change a lot from line to line, which would otherwise excuse any difference across the cut.
+MAX_SPREAD_DIFF = 30.0
+# A chapter whose typical page is shorter than this many widths is printed pages, not a strip.
+PAGE_ASPECT = 1.6
 
 
 def gray(image: np.ndarray) -> np.ndarray:
@@ -109,6 +119,8 @@ def judge(a: np.ndarray, b: np.ndarray, vertical: bool) -> tuple[bool, str, floa
     if not vertical and max(ea.std(), eb.std()) <= INK_STD:
         # Two flat-coloured edges side by side prove nothing; spreads are only joined on real structure.
         return False, "flat edges", cross, inner, correlation
+    if not vertical and cross > MAX_SPREAD_DIFF:
+        return False, "edges do not match", cross, inner, correlation
     if cross <= max(CROSS_SLACK + 2.5 * inner, CROSS_FLOOR):
         return True, "edges continue", cross, inner, correlation
     if correlation >= MIN_CORRELATION and cross <= MAX_CORRELATED_DIFF:
@@ -116,11 +128,22 @@ def judge(a: np.ndarray, b: np.ndarray, vertical: bool) -> tuple[bool, str, floa
     return False, "edges do not match", cross, inner, correlation
 
 
-def find_joins(pages: list[np.ndarray], rtl: bool = False, strip_aspect: float = 2.0) -> list[Join]:
+def chapter_layout(pages: list[np.ndarray]) -> str:
+    """The layout router: "page" for printed pages (manga), "strip" for webtoons, from the median page shape."""
+    if not pages:
+        return "page"
+    return "page" if float(np.median([p.shape[0] / p.shape[1] for p in pages])) < PAGE_ASPECT else "strip"
+
+
+def find_joins(pages: list[np.ndarray], rtl: bool = False, strip_aspect: float = 2.0, layout: str | None = None) -> list[Join]:
+    layout = layout or chapter_layout(pages)
     joins = []
     for i in range(len(pages) - 1):
         a, b = pages[i], pages[i + 1]
-        ok, reason, cross, inner, corr = judge(a, b, vertical=True)
+        if layout == "strip":
+            ok, reason, cross, inner, corr = judge(a, b, vertical=True)
+        else:
+            ok, reason, cross, inner, corr = False, "printed pages do not continue vertically", 0.0, 0.0, 0.0
         if ok:
             joins.append(Join(i, "vertical", reason, cross, inner, corr))
             continue

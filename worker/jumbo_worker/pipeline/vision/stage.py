@@ -4,8 +4,8 @@ Rasterize -> join pages split across page breaks (stitch) -> slice strip runs at
 panels -> reading order -> crops -> PanelsDoc, validated against the shared contract.
 
 Params: `chapter_id` (required), `detector` ("magi", the default and the production path, or
-"opencv" for local plumbing tests), `target_width` (default 1600), `rtl` (default false; manhwa
-reads left to right).
+"opencv" for local plumbing tests), `target_width` (default 1600), `rtl` (default: true for
+printed-page chapters, read as manga, false for strips).
 
 The output manifest is JSON:
 
@@ -33,7 +33,7 @@ from .detect import Detection, Detector, MagiDetector, OpenCVDetector
 from .order import reading_order
 from .raster import rasterize
 from .slicer import slice_strip
-from .stitch import find_joins, stitch
+from .stitch import chapter_layout, find_joins, stitch
 
 WEBP_QUALITY = 92
 
@@ -73,7 +73,6 @@ async def run(ctx: JobContext) -> str:
     if not isinstance(chapter, str):
         raise JobError("vision needs params.chapter_id")
     detector = make_detector(ctx.params.get("detector", "magi"), ctx)
-    rtl = bool(ctx.params.get("rtl", False))
     store = ctx.store
 
     ctx.progress(0.02, "rasterizing")
@@ -81,7 +80,10 @@ async def run(ctx: JobContext) -> str:
     if not pages:
         raise JobError("the PDF has no pages")
     ctx.progress(0.15, f"checking {len(pages) - 1} page breaks for split drawings")
-    joins = await asyncio.to_thread(find_joins, pages, rtl)
+    source_layout = chapter_layout(pages)
+    # Without an explicit direction, printed pages are read as manga (right to left) and strips left to right.
+    rtl = bool(ctx.params["rtl"]) if "rtl" in ctx.params else source_layout == "page"
+    joins = await asyncio.to_thread(find_joins, pages, rtl, 2.0, source_layout)
     canvases = await asyncio.to_thread(stitch, pages, joins, rtl)
     del pages
 
@@ -141,6 +143,8 @@ async def run(ctx: JobContext) -> str:
     report = {
         "pages": sum(len(c.pages) for c in canvases),
         "detector": detector.name,
+        "source_layout": source_layout,
+        "rtl": rtl,
         "joins": [asdict(j) for j in joins],
         "canvases": [{"pages": [p + 1 for p in c.pages], "kind": c.kind, "size": [int(c.image.shape[1]), int(c.image.shape[0])]} for c in canvases],
         "images": len(images),
