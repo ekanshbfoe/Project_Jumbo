@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "multi_panel_presets": [
+    "floating_panels",
+    "horizontal_slices",
+    "split_screen"
+  ],
+  "presets": [
+    {
+      "name": "hold",
+      "description": "Static panel. Use for quiet exposition or dialogue-heavy beats."
+    },
+    {
+      "name": "zoom",
+      "description": "Smooth push in (to > from) or pull out (to < from), optionally centred on a focus point such as a face."
+    },
+    {
+      "name": "pan",
+      "description": "Slow camera drift across the panel. Use for establishing shots and wide panels."
+    },
+    {
+      "name": "shake",
+      "description": "Continuous camera shake. Use for rumbling, explosions or sustained tension."
+    },
+    {
+      "name": "action_tilt",
+      "description": "Fast punch-in with a dutch tilt that settles. Use for hits, reveals and sudden action."
+    },
+    {
+      "name": "kinetic_jitter",
+      "description": "Violent jitter that decays over the beat. Use for impacts, shock and screams."
+    },
+    {
+      "name": "panoramic_fade",
+      "description": "Wide pan that fades in and out. Use for scene changes, flashbacks and time skips."
+    },
+    {
+      "name": "split_screen",
+      "description": "Two or three panels share the frame and slide in one after another. Use for confrontations and parallel reactions."
+    },
+    {
+      "name": "floating_panels",
+      "description": "Two or three tall panels float over the background like physical photos layered in 3D, with heavy shadows and a slow drift. Use for character introductions, line-ups and reflective moments."
+    },
+    {
+      "name": "horizontal_slices",
+      "description": "Two or three ultra-wide, short panels stacked as strips that drift slowly in opposite directions. Use for intimate close-ups, eye contact and tense stare-downs."
+    },
+    {
+      "name": "hud_popup",
+      "description": "Game-style info panel types onto the screen over the panel. Use for system messages, stats and level-ups."
+    }
+  ]
+}

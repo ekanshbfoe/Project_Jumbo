@@ -9,7 +9,18 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { AudioManifest, EpisodeSpec, LedgerEvent, MemoryDelta, PanelsDoc, ScriptDoc, SessionTicket } from "../src";
+import {
+  AudioManifest,
+  EpisodeSpec,
+  LedgerEvent,
+  MemoryDelta,
+  MULTI_PANEL_PRESETS,
+  PanelsDoc,
+  PRESET_CATALOG,
+  SCHEMA_VERSION,
+  ScriptDoc,
+  SessionTicket,
+} from "../src";
 
 export const CONTRACTS = { PanelsDoc, ScriptDoc, AudioManifest, EpisodeSpec, MemoryDelta, LedgerEvent, SessionTicket } as const;
 
@@ -21,10 +32,24 @@ export function renderContract(name: keyof typeof CONTRACTS): string {
   return `${JSON.stringify({ $id: `https://jumbo.local/schema/${name}.schema.json`, title: name, ...schema }, null, 2)}\n`;
 }
 
+export const CATALOG_FILE = "presets.catalog.json";
+
+/** Constants other languages need alongside the schemas: the preset vocabulary and its panel counts. */
+export function renderCatalog(): string {
+  const catalog = {
+    schema_version: SCHEMA_VERSION,
+    multi_panel_presets: [...MULTI_PANEL_PRESETS].sort(),
+    presets: PRESET_CATALOG,
+  };
+  return `${JSON.stringify(catalog, null, 2)}\n`;
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   mkdirSync(OUT_DIR, { recursive: true });
   for (const name of Object.keys(CONTRACTS) as (keyof typeof CONTRACTS)[]) {
     writeFileSync(join(OUT_DIR, `${name}.schema.json`), renderContract(name));
     console.log(`wrote json/${name}.schema.json`);
   }
+  writeFileSync(join(OUT_DIR, CATALOG_FILE), renderCatalog());
+  console.log(`wrote json/${CATALOG_FILE}`);
 }

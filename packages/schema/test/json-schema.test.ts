@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CONTRACTS, OUT_DIR, renderContract } from "../scripts/export-json-schema";
+import { CATALOG_FILE, CONTRACTS, OUT_DIR, renderCatalog, renderContract } from "../scripts/export-json-schema";
 
 describe("exported JSON Schema", () => {
   for (const name of Object.keys(CONTRACTS) as (keyof typeof CONTRACTS)[]) {
@@ -10,6 +10,13 @@ describe("exported JSON Schema", () => {
       expect(committed).toBe(renderContract(name));
     });
   }
+
+  it(`${CATALOG_FILE} is up to date (run npm run schema:export)`, () => {
+    expect(readFileSync(join(OUT_DIR, CATALOG_FILE), "utf8")).toBe(renderCatalog());
+    const catalog = JSON.parse(renderCatalog());
+    expect(catalog.multi_panel_presets).toEqual(["floating_panels", "horizontal_slices", "split_screen"]);
+    expect(catalog.presets).toHaveLength(11);
+  });
 
   it("names shared types so code generators reuse them", () => {
     const delta = JSON.parse(renderContract("MemoryDelta"));
