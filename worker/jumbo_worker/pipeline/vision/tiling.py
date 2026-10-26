@@ -17,8 +17,10 @@ TILE_ASPECT = 1.4
 OVERLAP = 0.25
 # Images up to this much taller than one tile are not worth cutting.
 SLACK = 1.15
-# Panel pieces from two tiles are one panel when they overlap vertically and share this much width.
-SAME_COLUMN = 0.6
+# Panel pieces from neighbouring tiles are one panel when, inside the band the two tiles share, they
+# cover the same area this closely (IoU). Comparing only inside the shared band matters: a panel cut
+# at one tile's edge must not be joined to the next panel down that the other tile also sees.
+SAME_PANEL_IN_OVERLAP = 0.5
 # Texts or characters overlapping this much (IoU) are the same detection seen twice.
 DUPLICATE_IOU = 0.5
 
@@ -41,8 +43,9 @@ def _iou(a: Box, b: Box) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def merge_panels(per_tile: list[list[Box]]) -> list[Box]:
-    """Unions panel boxes from different tiles that are pieces of the same panel."""
+def merge_panels(per_tile: list[list[Box]], spans: list[tuple[int, int]]) -> list[Box]:
+    """Unions panel boxes from neighbouring tiles that are the same panel (seen twice in the shared
+    band, or cut by a tile edge and continued in the next tile)."""
     boxes = [(t, b) for t, tile in enumerate(per_tile) for b in tile]
     parent = list(range(len(boxes)))
 
@@ -55,12 +58,15 @@ def merge_panels(per_tile: list[list[Box]]) -> list[Box]:
     for i, (ti, a) in enumerate(boxes):
         for j in range(i + 1, len(boxes)):
             tj, b = boxes[j]
-            if ti == tj:
+            if abs(ti - tj) != 1:
                 continue
-            v_overlap = min(a[3], b[3]) - max(a[1], b[1])
-            h_overlap = min(a[2], b[2]) - max(a[0], b[0])
-            narrower = min(a[2] - a[0], b[2] - b[0])
-            if v_overlap > 0 and narrower > 0 and h_overlap >= SAME_COLUMN * narrower:
+            upper, lower = min(ti, tj), max(ti, tj)
+            band_top, band_bottom = spans[lower][0], spans[upper][1]
+            clip = lambda box: (box[0], max(box[1], band_top), box[2], min(box[3], band_bottom))  # noqa: E731
+            ca, cb = clip(a), clip(b)
+            if ca[3] <= ca[1] or cb[3] <= cb[1]:
+                continue
+            if _iou(ca, cb) >= SAME_PANEL_IN_OVERLAP:
                 parent[find(i)] = find(j)
     groups: dict[int, Box] = {}
     for i, (_, b) in enumerate(boxes):

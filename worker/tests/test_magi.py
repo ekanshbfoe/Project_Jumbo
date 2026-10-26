@@ -19,11 +19,31 @@ def test_tall_images_are_cut_into_overlapping_page_shaped_tiles():
     assert all(spans[i + 1][0] < spans[i][1] for i in range(len(spans) - 1))
 
 
+SPANS = [(0, 1260), (945, 2205), (1890, 3150)]
+
+
 def test_panel_pieces_across_tiles_merge_but_neighbours_do_not():
     tile_a = [(0, 0, 900, 400), (0, 900, 900, 1260)]  # second one is cut by the tile edge
     tile_b = [(0, 900, 900, 1700), (100, 1800, 500, 2100)]
-    merged = merge_panels([tile_a, tile_b])
+    merged = merge_panels([tile_a, tile_b, []], SPANS)
     assert merged == [(0, 0, 900, 400), (0, 900, 900, 1700), (100, 1800, 500, 2100)]
+
+
+def test_stacked_panels_seen_whole_and_cut_in_neighbouring_tiles_stay_separate():
+    # Three full-width panels in a strip: 0-1100, 1150-2100, 2150-3100. Each tile sees some whole and
+    # the ones crossing its edges cut off. The old rule chained all three into one box.
+    tile_a = [(0, 0, 900, 1100), (0, 1150, 900, 1260)]
+    tile_b = [(0, 945, 900, 1100), (0, 1150, 900, 2100), (0, 2150, 900, 2205)]
+    tile_c = [(0, 1890, 900, 2100), (0, 2150, 900, 3100)]
+    merged = merge_panels([tile_a, tile_b, tile_c], SPANS)
+    assert merged == [(0, 0, 900, 1100), (0, 1150, 900, 2100), (0, 2150, 900, 3100)]
+
+
+def test_a_panel_taller_than_the_overlap_is_rebuilt_from_its_pieces():
+    tile_a = [(0, 200, 900, 1260)]
+    tile_b = [(0, 945, 900, 2205)]
+    tile_c = [(0, 1890, 900, 2600)]
+    assert merge_panels([tile_a, tile_b, tile_c], SPANS) == [(0, 200, 900, 2600)]
 
 
 def test_duplicates_in_an_overlap_are_kept_once():

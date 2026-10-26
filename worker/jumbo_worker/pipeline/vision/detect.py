@@ -164,7 +164,10 @@ class MagiDetector:
             finally:
                 shutil.rmtree(folder, ignore_errors=True)
 
-        boxes = merge_panels([[_poly_box(_shift(p["polygon"], top)) for p in r["panels"] if len(p.get("polygon", [])) >= 3] for top, r in results])
+        boxes = merge_panels(
+            [[_poly_box(_shift(p["polygon"], top)) for p in r["panels"] if len(p.get("polygon", [])) >= 3] for top, r in results],
+            [(top, top + (spans[n][1] - spans[n][0])) for n, (top, _) in enumerate(results)],
+        )
         panels = [Detection([(b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3])]) for b in boxes]
         texts = dedupe([{**t, "polygon": _shift(t["polygon"], top)} for top, r in results for t in r.get("texts", [])], lambda t: _poly_box(t["polygon"]))
         chars = dedupe(
