@@ -4,6 +4,7 @@ voice creation and reuse, and the whole voice job through the pool with a stand-
 import asyncio
 import base64
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,7 @@ import numpy as np
 from jumbo_worker.blobs import BlobStore
 from jumbo_worker.events import EventBus
 from jumbo_worker.jobs import JobRunner
-from jumbo_worker.models.drama3 import Drama3Runner, cue
+from jumbo_worker.models.drama3 import Drama3Runner, cue, speech_binary
 from jumbo_worker.models.wav import read_pcm, write_pcm
 from jumbo_worker.pipeline.voice import takes
 from jumbo_worker.pipeline.voice.direction import pick_prompt
@@ -115,6 +116,17 @@ async def test_runner_speaks_the_worker_protocol(tmp_path):
     # Without a voice file the model invents one from the description.
     await runner.run("speak", {"text": "नमस्ते।", "out": str(tmp_path / "b.wav"), "design": "deep male narrator"})
     assert worker.sent[-1]["voice"] == "none" and worker.sent[-1]["text"].startswith("[deep male narrator] ")
+
+
+def test_engine_is_copied_out_of_read_only_dataset_input(tmp_path):
+    unpacked = tmp_path / "input" / "jumbo-speechcpp-cuda75"
+    unpacked.mkdir(parents=True)
+    (unpacked / "speech").write_text("#!/bin/sh\n")
+    (unpacked / "libspeech.so.3").write_text("lib")
+    (unpacked / "speech").chmod(0o444)
+    binary = speech_binary(str(tmp_path / "input"), str(tmp_path / "run"))
+    assert binary == str(tmp_path / "run" / "speech") and os.access(binary, os.X_OK)
+    assert (tmp_path / "run" / "libspeech.so.3").is_file()
 
 
 def test_drama3_fits_a_t4_under_the_ceiling():

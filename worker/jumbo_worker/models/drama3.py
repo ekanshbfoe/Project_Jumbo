@@ -66,12 +66,23 @@ def cue(emotion: str | None = None, tone: str | None = None, pace: str | None = 
     return f"[{', '.join(dict.fromkeys(words))}] " if words else ""
 
 
-def speech_binary() -> str:
-    """The CUDA build: JUMBO_SPEECH_BIN, the attached Kaggle dataset, or `speech` on PATH."""
-    found = os.environ.get("JUMBO_SPEECH_BIN") or next(iter(sorted(glob.glob("/kaggle/input/**/speech", recursive=True))), None) or shutil.which("speech")
-    if not found:
-        raise RuntimeError("speech.cpp not found: set JUMBO_SPEECH_BIN or attach the jumbo-speechcpp dataset")
-    return found
+def speech_binary(inputs: str = "/kaggle/input", local: str = "/tmp/jumbo-speechcpp") -> str:
+    """The CUDA build: JUMBO_SPEECH_BIN, the attached jumbo-speechcpp-cuda75 dataset, or `speech` on PATH.
+
+    Kaggle unpacks the dataset's archive into read-only input, where the exec bit may be lost, so the
+    binary and its libraries are copied out once and run from there."""
+    if os.environ.get("JUMBO_SPEECH_BIN"):
+        return os.environ["JUMBO_SPEECH_BIN"]
+    found = [p for p in sorted(glob.glob(f"{inputs}/**/speech", recursive=True)) if os.path.isfile(p)]
+    if found:
+        binary = Path(local) / "speech"
+        if not binary.is_file():
+            shutil.copytree(Path(found[0]).parent, local, dirs_exist_ok=True)
+            binary.chmod(0o755)
+        return str(binary)
+    if shutil.which("speech"):
+        return shutil.which("speech")
+    raise RuntimeError("speech.cpp not found: set JUMBO_SPEECH_BIN or attach the jumbo-speechcpp-cuda75 dataset")
 
 
 class Drama3Runner:
