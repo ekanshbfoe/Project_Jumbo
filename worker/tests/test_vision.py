@@ -61,6 +61,19 @@ def test_strips_are_sliced_at_their_gutters():
     assert [(t, b) for t, b in slices] == SPANS
 
 
+def test_borderless_shots_fading_through_black_are_sliced_apart():
+    width = 600
+    shot_a, shot_b = art(700, width, seed=31), art(700, width, seed=32)
+    fade = np.linspace(0, 1, 80)[:, None, None]
+    black = np.zeros((90, width, 3), np.uint8)
+    # A fades out to black, a long black band, B fades in; a short black stripe inside B stays.
+    strip_image = np.vstack([shot_a, (shot_a[-1:] * (1 - fade)).astype(np.uint8), black, (shot_b[:1] * fade).astype(np.uint8), shot_b])
+    strip_image[1700:1715] = 0
+    slices = slice_strip(strip_image)
+    assert len(slices) == 2, slices
+    assert slices[0][1] <= 700 + 80 + 5 and slices[1][0] >= 700 + 80 + 90 - 5
+
+
 def test_reading_order_rows_then_columns():
     boxes = [(500, 0, 900, 400), (0, 10, 450, 400), (0, 450, 900, 800)]
     assert reading_order(boxes) == [1, 0, 2]
