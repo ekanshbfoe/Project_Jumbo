@@ -25,6 +25,8 @@ const STEPS: { id: BootState["state"]; label: string }[] = [
   { id: "running", label: "Kernel running" },
   { id: "awaiting_rendezvous", label: "Tunnel + rendezvous" },
   { id: "connecting", label: "Connecting" },
+  { id: "authenticating", label: "Authenticating" },
+  { id: "warming", label: "Warming up" },
   { id: "ready", label: "Ready" },
 ];
 
@@ -152,7 +154,15 @@ export function SessionScreen(_: ScreenProps) {
       <div className="grid" style={{ gridTemplateColumns: "minmax(320px, 1fr) minmax(320px, 1fr)" }}>
         <div className="card stack">
           <strong>Status</strong>
-          {view.phase === "failed" ? <div className="error">{view.error}</div> : null}
+          {view.phase === "failed" ? (
+            // Failures can carry the tail of the Kaggle log, so keep its line breaks.
+            <div className="error" style={{ whiteSpace: "pre-wrap" }}>
+              {view.error}
+            </div>
+          ) : null}
+          {view.phase === "booting" && view.boot.state === "retrying" ? (
+            <span className="badge warn">Kernel crashed during boot; retrying once. {view.boot.reason}</span>
+          ) : null}
           {view.phase === "idle" || view.phase === "stopped" ? (
             <span className="muted">{view.phase === "stopped" ? "Session stopped." : "No worker running."}</span>
           ) : null}

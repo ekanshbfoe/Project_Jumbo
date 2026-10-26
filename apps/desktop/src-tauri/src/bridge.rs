@@ -354,10 +354,13 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
                     set_view(&app, SessionView::Reconnecting { from_epoch });
                 }
             };
-            client = match reconnect(&http, &mut reader, &keys, &ticket, endpoint.epoch, &timings, on_state).await {
-                Ok(next) => next,
-                Err(e) => return set_view(&app, SessionView::Failed { error: format!("lost the worker: {e}") }),
-            };
+            // Watching the kernel too means a finished session is reported at once, not after a timeout.
+            let kernel = kaggle.as_ref().map(|(client, config, _)| (client, config.kernel_slug.as_str()));
+            client =
+                match reconnect(&http, &mut reader, &keys, &ticket, endpoint.epoch, kernel, &timings, on_state).await {
+                    Ok(next) => next,
+                    Err(e) => return set_view(&app, SessionView::Failed { error: e.to_string() }),
+                };
         }
     });
     *state.task.lock().map_err(msg)? = Some(task);

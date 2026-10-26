@@ -51,7 +51,9 @@ fn fast() -> BootTimings {
     BootTimings {
         queue: Duration::from_secs(5),
         rendezvous: Duration::from_secs(60),
+        warm: Duration::from_secs(10),
         reconnect: Duration::from_secs(10),
+        retry_backoff: Duration::from_millis(50),
         poll_status: Duration::from_millis(200),
         poll_rendezvous: Duration::from_millis(200),
     }
@@ -75,8 +77,11 @@ fn names(states: &[BootState]) -> Vec<&'static str> {
             BootState::Running => "running",
             BootState::AwaitingRendezvous => "awaiting_rendezvous",
             BootState::Connecting { .. } => "connecting",
+            BootState::Authenticating { .. } => "authenticating",
+            BootState::Warming { .. } => "warming",
             BootState::Ready { .. } => "ready",
             BootState::Reconnecting { .. } => "reconnecting",
+            BootState::Retrying { .. } => "retrying",
         })
         .collect()
 }
@@ -121,23 +126,30 @@ async fn boots_through_kaggle_states_to_a_ready_worker_and_reconnects() {
         .await
         .expect("boot");
     push.assert_async().await;
-    assert_eq!(names(&states), ["pushing", "queued", "running", "awaiting_rendezvous", "connecting", "ready"]);
+    assert_eq!(
+        names(&states),
+        ["pushing", "queued", "running", "awaiting_rendezvous", "connecting", "authenticating", "ready"]
+    );
     let BootState::Ready { epoch, boot } = states.last().expect("ready").clone() else { panic!("not ready") };
     assert_eq!(epoch, 1);
     assert!(boot["cpus"].as_u64().unwrap_or(0) > 0, "boot facts: {boot}");
 
     // The same epoch answering again counts as a successful reconnect.
     let mut states = Vec::new();
-    let again = reconnect(&http, &mut reader, &keys, &ticket, 1, &fast(), |s| states.push(s)).await.expect("reconnect");
-    assert_eq!(names(&states), ["reconnecting", "connecting", "ready"]);
+    let again = reconnect(&http, &mut reader, &keys, &ticket, 1, Some((&kaggle, "alice/jumbo-worker")), &fast(), |s| {
+        states.push(s)
+    })
+    .await
+    .expect("reconnect");
+    assert_eq!(names(&states), ["reconnecting", "connecting", "authenticating", "ready"]);
     again.stop().await.expect("stop");
     drop(client);
 }
 
 #[tokio::test]
-async fn reports_kaggles_failure_message() {
+async fn retries_a_crashed_boot_once_then_reports_kaggles_message_and_log() {
     let kaggle_api = MockServer::start_async().await;
-    kaggle_api
+    let push = kaggle_api
         .mock_async(|when, then| {
             when.method(POST).path("/v1/kernels.KernelsApiService/SaveKernel");
             then.status(200).json_body(json!({}));
@@ -149,12 +161,24 @@ async fn reports_kaggles_failure_message() {
             then.status(200).json_body(json!({"status": "ERROR", "failureMessage": "No JUMBO_GIST_TOKEN"}));
         })
         .await;
+    let output = kaggle_api
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/v1/kernels.KernelsApiService/ListKernelSessionOutput")
+                .json_body_includes(r#"{"userName":"alice","kernelSlug":"jumbo-worker"}"#);
+            then.status(200).json_body(json!({
+                "files": [],
+                "log": r#"[{"stream_name":"stdout","time":1.0,"data":"jumbo: session x\n"},{"stream_name":"stderr","time":2.0,"data":"SystemExit: No JUMBO_GIST_TOKEN\n"}]"#,
+            }));
+        })
+        .await;
     let kaggle = KaggleClient::with_api(http::client(), &kaggle_api.base_url(), KaggleAuth::Token("t".into()));
     let keys = AppKeys::generate().expect("keys");
     let ticket = SessionTicket::new(&keys, RendezvousSpec::Gist { gist_id: "g".into() }).expect("ticket");
     let tmp = tempfile::tempdir().expect("tempdir");
     let mut reader = RendezvousReader::Folder(tmp.path().to_path_buf());
     let config = config();
+    let mut states = Vec::new();
     let err = boot(
         &http::client(),
         Launch::Kaggle { client: &kaggle, config: &config },
@@ -162,12 +186,55 @@ async fn reports_kaggles_failure_message() {
         &keys,
         &ticket,
         &fast(),
-        |_| {},
+        |s| states.push(s),
     )
     .await
     .err()
     .expect("boot fails");
-    assert!(err.to_string().contains("No JUMBO_GIST_TOKEN"), "{err}");
+    assert_eq!(names(&states), ["pushing", "queued", "retrying", "pushing", "queued"]);
+    push.assert_calls_async(2).await;
+    output.assert_calls_async(1).await;
+    let text = err.to_string();
+    assert!(text.contains("No JUMBO_GIST_TOKEN") && text.contains("SystemExit"), "{text}");
+}
+
+#[tokio::test]
+async fn reconnect_gives_up_at_once_when_the_kernel_has_ended() {
+    let kaggle_api = MockServer::start_async().await;
+    kaggle_api
+        .mock_async(|when, then| {
+            when.method(POST).path("/v1/kernels.KernelsApiService/GetKernelSessionStatus");
+            then.status(200).json_body(json!({"status": "COMPLETE"}));
+        })
+        .await;
+    kaggle_api
+        .mock_async(|when, then| {
+            when.method(POST).path("/v1/kernels.KernelsApiService/ListKernelSessionOutput");
+            then.status(200).json_body(json!({"log": "worker: deadline reached"}));
+        })
+        .await;
+    let kaggle = KaggleClient::with_api(http::client(), &kaggle_api.base_url(), KaggleAuth::Token("t".into()));
+    let keys = AppKeys::generate().expect("keys");
+    let ticket = SessionTicket::new(&keys, RendezvousSpec::Gist { gist_id: "g".into() }).expect("ticket");
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mut reader = RendezvousReader::Folder(tmp.path().to_path_buf());
+    let started = std::time::Instant::now();
+    let err = reconnect(
+        &http::client(),
+        &mut reader,
+        &keys,
+        &ticket,
+        1,
+        Some((&kaggle, "alice/jumbo-worker")),
+        &fast(),
+        |_| {},
+    )
+    .await
+    .err()
+    .expect("lost");
+    assert!(matches!(err, jumbo_bridge::BridgeError::SessionLost(_)), "{err}");
+    assert!(err.to_string().contains("deadline reached"), "{err}");
+    assert!(started.elapsed() < fast().reconnect);
 }
 
 #[tokio::test]

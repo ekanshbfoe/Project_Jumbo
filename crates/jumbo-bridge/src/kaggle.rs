@@ -248,4 +248,46 @@ impl KaggleClient {
         }
         Ok(())
     }
+
+    /// The kernel's latest run log (stdout and stderr), as plain text.
+    pub async fn output_log(&self, slug: &str) -> Result<String> {
+        let (owner, kernel) = split_slug(slug)?;
+        let value = self
+            .call(KERNELS, "ListKernelSessionOutput", json!({ "userName": owner, "kernelSlug": kernel, "pageSize": 1 }))
+            .await?;
+        Ok(plain_log(value["log"].as_str().unwrap_or_default()))
+    }
+}
+
+/// Kaggle returns run logs as a JSON array of `{"stream_name", "time", "data"}` records.
+fn plain_log(raw: &str) -> String {
+    #[derive(Deserialize)]
+    struct Record {
+        #[serde(default)]
+        data: String,
+    }
+    match serde_json::from_str::<Vec<Record>>(raw) {
+        Ok(records) => records.into_iter().map(|r| r.data).collect(),
+        Err(_) => raw.to_owned(),
+    }
+}
+
+/// The last `lines` lines of a log, for error messages.
+pub fn log_tail(log: &str, lines: usize) -> String {
+    let all: Vec<&str> = log.trim_end().lines().collect();
+    all[all.len().saturating_sub(lines)..].join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flattens_kaggle_log_records_and_keeps_the_tail() {
+        let raw = r#"[{"stream_name":"stdout","time":0.1,"data":"one\n"},{"stream_name":"stderr","time":0.2,"data":"two\nthree\n"}]"#;
+        let log = plain_log(raw);
+        assert_eq!(log, "one\ntwo\nthree\n");
+        assert_eq!(log_tail(&log, 2), "two\nthree");
+        assert_eq!(plain_log("not json"), "not json");
+    }
 }

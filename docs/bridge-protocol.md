@@ -67,7 +67,7 @@ sig = hex(HMAC-SHA256(K, "v1\n" + METHOD + "\n" + PATH_AND_QUERY + "\n" + ts + "
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health` | Unauthenticated liveness: `{"ok": true, "proto": 1}` |
-| GET | `/v1/session` | Session id, epoch, timings and host facts |
+| GET | `/v1/session` | Session id, epoch, timings and host facts. `warming` is true while models load; the app waits for it to clear |
 | POST | `/v1/session/stop` | Start draining; the worker exits after in-flight work |
 | POST | `/v1/blobs/missing` | `{"hashes": [...]}` → `{"missing": [...]}` |
 | GET | `/v1/blobs/{hash}/status` | `{"received": n, "complete": bool}` (resume point) |

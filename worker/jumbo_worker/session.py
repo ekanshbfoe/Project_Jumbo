@@ -49,6 +49,8 @@ class Session:
     worker_sk: PrivateKey = field(default_factory=PrivateKey.generate)
     epoch: int = 0
     draining: bool = False
+    # True while models load; the app shows "Warming" and waits until it clears.
+    warming: bool = False
 
     def __post_init__(self) -> None:
         self.key = derive_session_key(self.worker_sk, self.ticket.app_pk, self.ticket.session_id)
@@ -95,4 +97,5 @@ class Session:
             "deadline_at": self.started_at + self.ticket.deadline_s,
             "idle_s": self.ticket.idle_s,
             "draining": self.draining,
+            "warming": self.warming,
         }

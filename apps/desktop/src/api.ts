@@ -134,7 +134,8 @@ export interface CredentialStatus {
 
 export type BootState =
   | { state: "pushing" | "queued" | "running" | "awaiting_rendezvous" }
-  | { state: "connecting"; epoch: number }
+  | { state: "connecting" | "authenticating" | "warming"; epoch: number }
+  | { state: "retrying"; reason: string }
   | { state: "ready"; epoch: number; boot: Record<string, unknown> }
   | { state: "reconnecting"; from_epoch: number };
 

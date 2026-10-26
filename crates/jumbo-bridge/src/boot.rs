@@ -1,6 +1,6 @@
 //! The headless boot sequence: push the kernel, follow it through Kaggle's queue, wait for the
-//! worker's rendezvous record, open it and connect. Reports every state change so the UI can show
-//! exactly where a boot is (or why it failed).
+//! worker's rendezvous record, open it, authenticate and wait for warm-up. Reports every state change
+//! so the UI can show exactly where a boot is (or why it failed).
 
 use std::time::Duration;
 
@@ -10,11 +10,14 @@ use tokio::time::Instant;
 
 use crate::crypto::AppKeys;
 use crate::error::{BridgeError, Result};
-use crate::kaggle::KaggleClient;
+use crate::kaggle::{KaggleClient, KernelStatus, log_tail};
 use crate::launcher::{LaunchConfig, kernel_push};
 use crate::protocol::SessionTicket;
 use crate::rendezvous::RendezvousReader;
 use crate::worker::WorkerClient;
+
+/// Lines of Kaggle output shown with a failure.
+const LOG_TAIL_LINES: usize = 40;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -23,9 +26,28 @@ pub enum BootState {
     Queued,
     Running,
     AwaitingRendezvous,
-    Connecting { epoch: u64 },
-    Ready { epoch: u64, boot: Value },
-    Reconnecting { from_epoch: u64 },
+    Connecting {
+        epoch: u64,
+    },
+    /// The tunnel answers; checking the worker accepts this session's signed requests.
+    Authenticating {
+        epoch: u64,
+    },
+    /// Authenticated; the worker is still loading models.
+    Warming {
+        epoch: u64,
+    },
+    Ready {
+        epoch: u64,
+        boot: Value,
+    },
+    Reconnecting {
+        from_epoch: u64,
+    },
+    /// The kernel crashed during boot; it is pushed again once.
+    Retrying {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -34,8 +56,12 @@ pub struct BootTimings {
     pub queue: Duration,
     /// Give up if the kernel is running but no reachable rendezvous appears within this long.
     pub rendezvous: Duration,
+    /// Give up if an authenticated worker is still warming up after this long.
+    pub warm: Duration,
     /// How long to wait for a dropped worker to come back before declaring the session lost.
     pub reconnect: Duration,
+    /// Pause before pushing again after the kernel crashed during boot.
+    pub retry_backoff: Duration,
     pub poll_status: Duration,
     pub poll_rendezvous: Duration,
 }
@@ -45,7 +71,9 @@ impl Default for BootTimings {
         Self {
             queue: Duration::from_secs(20 * 60),
             rendezvous: Duration::from_secs(10 * 60),
+            warm: Duration::from_secs(30 * 60),
             reconnect: Duration::from_secs(3 * 60),
+            retry_backoff: Duration::from_secs(30),
             poll_status: Duration::from_secs(30),
             poll_rendezvous: Duration::from_secs(3),
         }
@@ -58,7 +86,22 @@ pub enum Launch<'a> {
     External,
 }
 
-/// Opens the newest record above `min_epoch` and checks the worker answers through it.
+/// The tail of the kernel's output, or a note saying why it could not be fetched.
+async fn kernel_log(client: &KaggleClient, slug: &str) -> String {
+    match client.output_log(slug).await {
+        Ok(log) => log_tail(&log, LOG_TAIL_LINES),
+        Err(e) => format!("(could not fetch the Kaggle log: {e})"),
+    }
+}
+
+fn why(status: KernelStatus) -> String {
+    match status.failure_message.filter(|m| !m.is_empty()) {
+        Some(reason) => format!("{} ({reason})", status.status),
+        None => status.status,
+    }
+}
+
+/// Opens the newest record at or above `min_epoch` and checks the worker answers through it.
 async fn try_connect(
     http: &reqwest::Client,
     reader: &mut RendezvousReader,
@@ -77,8 +120,29 @@ async fn try_connect(
     if !client.health().await {
         return Ok(None);
     }
+    on_state(BootState::Authenticating { epoch: client.endpoint().epoch });
     client.session().await?;
     Ok(Some(client))
+}
+
+/// Waits until an authenticated worker reports it has finished warming up.
+async fn wait_warm(client: &WorkerClient, timings: &BootTimings, on_state: &mut impl FnMut(BootState)) -> Result<()> {
+    let deadline = Instant::now() + timings.warm;
+    let mut announced = false;
+    loop {
+        let info = client.session().await?;
+        if !info["warming"].as_bool().unwrap_or(false) {
+            return Ok(());
+        }
+        if !announced {
+            on_state(BootState::Warming { epoch: client.endpoint().epoch });
+            announced = true;
+        }
+        if Instant::now() >= deadline {
+            return Err(BridgeError::Timeout(format!("the worker was still warming up after {:?}", timings.warm)));
+        }
+        tokio::time::sleep(timings.poll_rendezvous).await;
+    }
 }
 
 /// Boots (or attaches to) the worker for `ticket` and returns a connected client.
@@ -96,7 +160,7 @@ pub async fn boot(
             on_state(BootState::Pushing);
             client.push(&kernel_push(config, ticket)?).await?;
             on_state(BootState::Queued);
-            Some((client, config.kernel_slug.as_str()))
+            Some((client, config))
         }
         Launch::External => {
             on_state(BootState::AwaitingRendezvous);
@@ -104,18 +168,33 @@ pub async fn boot(
         }
     };
 
-    let started = Instant::now();
+    let mut retried = false;
+    let mut started = Instant::now();
     let mut running_since = kaggle.is_none().then(Instant::now);
     let mut next_status = Instant::now();
     loop {
-        if let Some((client, slug)) = kaggle
+        if let Some((client, config)) = kaggle
             && Instant::now() >= next_status
         {
+            let slug = config.kernel_slug.as_str();
             next_status = Instant::now() + timings.poll_status;
             let status = client.status(slug).await?;
             if status.is_finished() {
-                let why = status.failure_message.filter(|m| !m.is_empty()).unwrap_or(status.status);
-                return Err(BridgeError::Protocol(format!("Kaggle kernel stopped before the worker came up: {why}")));
+                let crashed = status.status == "ERROR";
+                let message = format!("Kaggle kernel stopped before the worker came up: {}", why(status));
+                if crashed && !retried {
+                    retried = true;
+                    on_state(BootState::Retrying { reason: message });
+                    tokio::time::sleep(timings.retry_backoff).await;
+                    on_state(BootState::Pushing);
+                    client.push(&kernel_push(config, ticket)?).await?;
+                    on_state(BootState::Queued);
+                    started = Instant::now();
+                    running_since = None;
+                    next_status = Instant::now() + timings.poll_status;
+                    continue;
+                }
+                return Err(BridgeError::KernelFailed { message, log: kernel_log(client, slug).await });
             }
             if status.status == "RUNNING" && running_since.is_none() {
                 running_since = Some(Instant::now());
@@ -127,6 +206,7 @@ pub async fn boot(
         if running_since.is_some()
             && let Some(client) = try_connect(http, reader, keys, ticket, 1, &mut on_state).await?
         {
+            wait_warm(&client, timings, &mut on_state).await?;
             let endpoint = client.endpoint();
             on_state(BootState::Ready { epoch: endpoint.epoch, boot: endpoint.boot.clone() });
             return Ok(client);
@@ -140,10 +220,15 @@ pub async fn boot(
                 )));
             }
             Some(since) if since.elapsed() > timings.rendezvous => {
-                return Err(BridgeError::Timeout(format!(
-                    "the worker did not publish a reachable rendezvous within {:?}",
-                    timings.rendezvous
-                )));
+                let message =
+                    format!("the worker did not publish a reachable rendezvous within {:?}", timings.rendezvous);
+                return Err(match kaggle {
+                    // The log usually says why (a missing secret, a failed install).
+                    Some((client, config)) => {
+                        BridgeError::KernelFailed { message, log: kernel_log(client, &config.kernel_slug).await }
+                    }
+                    None => BridgeError::Timeout(message),
+                });
             }
             _ => {}
         }
@@ -152,25 +237,40 @@ pub async fn boot(
 }
 
 /// After the connection to `from_epoch` drops: waits for the worker to come back, either on a new
-/// tunnel epoch or on the same one once it answers again.
+/// tunnel epoch or on the same one once it answers again. With `kernel`, a kernel that has finished
+/// ends the wait at once as a lost session.
+#[allow(clippy::too_many_arguments)]
 pub async fn reconnect(
     http: &reqwest::Client,
     reader: &mut RendezvousReader,
     keys: &AppKeys,
     ticket: &SessionTicket,
     from_epoch: u64,
+    kernel: Option<(&KaggleClient, &str)>,
     timings: &BootTimings,
     mut on_state: impl FnMut(BootState),
 ) -> Result<WorkerClient> {
     on_state(BootState::Reconnecting { from_epoch });
     let deadline = Instant::now() + timings.reconnect;
+    let mut next_status = Instant::now();
     while Instant::now() < deadline {
+        if let Some((client, slug)) = kernel
+            && Instant::now() >= next_status
+        {
+            next_status = Instant::now() + timings.poll_status;
+            let status = client.status(slug).await?;
+            if status.is_finished() {
+                let log = kernel_log(client, slug).await;
+                return Err(BridgeError::SessionLost(format!("the Kaggle kernel ended: {}\n{log}", why(status))));
+            }
+        }
         if let Some(client) = try_connect(http, reader, keys, ticket, from_epoch, &mut on_state).await? {
+            wait_warm(&client, timings, &mut on_state).await?;
             let endpoint = client.endpoint();
             on_state(BootState::Ready { epoch: endpoint.epoch, boot: endpoint.boot.clone() });
             return Ok(client);
         }
         tokio::time::sleep(timings.poll_rendezvous).await;
     }
-    Err(BridgeError::Timeout(format!("the worker did not come back within {:?}", timings.reconnect)))
+    Err(BridgeError::SessionLost(format!("the worker did not come back within {:?}", timings.reconnect)))
 }

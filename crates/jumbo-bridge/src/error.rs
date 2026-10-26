@@ -16,6 +16,12 @@ pub enum BridgeError {
     Protocol(String),
     #[error("timed out: {0}")]
     Timeout(String),
+    /// The Kaggle kernel ended before or after the worker came up. `log` is the tail of its output.
+    #[error("{message}{}", if log.is_empty() { String::new() } else { format!("\n--- Kaggle log (last lines) ---\n{log}") })]
+    KernelFailed { message: String, log: String },
+    /// A connected worker is gone and did not come back.
+    #[error("session lost: {0}")]
+    SessionLost(String),
 }
 
 impl BridgeError {
