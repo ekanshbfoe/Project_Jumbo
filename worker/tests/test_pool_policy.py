@@ -86,5 +86,10 @@ def test_watchdog_levels_and_peaks():
     assert dog.judge("a", {0: 8.0, 1: 9.0}).level == "ok"
     soft = dog.judge("a", {0: 12.3})
     assert (soft.level, soft.chip) == ("soft", 0)
-    assert dog.judge("b", {3: 12.8}).level == "hard"
-    assert dog.peaks[0] == pytest.approx(12.3 / 16) and dog.peak() == pytest.approx(0.8)
+    # Exactly at the ceiling is where the allocator caps put a full replica; above it is a kill.
+    assert dog.judge("b", {3: 12.8}).level == "soft"
+    assert dog.judge("b", {3: 12.81}).level == "hard"
+    # vLLM sits above the soft line by design; only growth beyond its profile throttles it.
+    assert dog.judge("q", {4: 12.5}, profile_gb=12.5).level == "ok"
+    assert dog.judge("q", {4: 12.7}, profile_gb=12.5).level == "soft"
+    assert dog.peaks[0] == pytest.approx(12.3 / 16) and dog.peak() == pytest.approx(12.81 / 16)
