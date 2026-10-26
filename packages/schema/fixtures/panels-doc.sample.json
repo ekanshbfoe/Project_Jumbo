@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "chapter_id": "ch_0001",
+  "layout": "page",
+  "panels": [
+    {
+      "id": "p_0001",
+      "order": 0,
+      "page": "chapters/ch_0001/pages/page_001.webp",
+      "page_size": { "width": 1200, "height": 1800 },
+      "bbox": { "x": 0.05, "y": 0.04, "w": 0.9, "h": 0.3 },
+      "polygon": [[0.05, 0.04], [0.95, 0.04], [0.95, 0.34], [0.05, 0.3]],
+      "crop": "chapters/ch_0001/panels/crops/p_0001.webp",
+      "bubbles": [
+        { "id": "b_0001", "kind": "speech", "polygon": [[0.6, 0.06], [0.9, 0.06], [0.9, 0.14], [0.6, 0.14]], "text": "Main kamzor nahi hoon.", "speaker": "c_0001" }
+      ],
+      "characters": [{ "cluster": "c_0001", "bbox": { "x": 0.1, "y": 0.08, "w": 0.3, "h": 0.25 } }]
+    },
+    {
+      "id": "p_0002",
+      "order": 1,
+      "page": "chapters/ch_0001/pages/page_001.webp",
+      "page_size": { "width": 1200, "height": 1800 },
+      "bbox": { "x": 0.05, "y": 0.36, "w": 0.43, "h": 0.3 },
+      "polygon": [[0.05, 0.36], [0.48, 0.36], [0.48, 0.66], [0.05, 0.66]]
+    },
+    {
+      "id": "p_0003",
+      "order": 2,
+      "page": "chapters/ch_0001/pages/page_001.webp",
+      "page_size": { "width": 1200, "height": 1800 },
+      "bbox": { "x": 0.52, "y": 0.36, "w": 0.43, "h": 0.3 },
+      "polygon": [[0.52, 0.36], [0.95, 0.36], [0.95, 0.66], [0.52, 0.66]],
+      "clean": "chapters/ch_0001/panels/clean/p_0003.webp"
+    }
+  ]
+}

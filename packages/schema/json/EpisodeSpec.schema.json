@@ -194,26 +194,7 @@
           "$ref": "#/$defs/BBox"
         },
         "polygon": {
-          "minItems": 3,
-          "type": "array",
-          "items": {
-            "type": "array",
-            "prefixItems": [
-              {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              },
-              {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              }
-            ],
-            "items": false,
-            "minItems": 2,
-            "maxItems": 2
-          }
+          "$ref": "#/$defs/Polygon"
         },
         "crop": {
           "type": "string",
@@ -289,6 +270,31 @@
         "h"
       ]
     },
+    "Polygon": {
+      "minItems": 3,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Point"
+      }
+    },
+    "Point": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
     "Bubble": {
       "type": "object",
       "properties": {
@@ -306,26 +312,7 @@
           ]
         },
         "polygon": {
-          "minItems": 3,
-          "type": "array",
-          "items": {
-            "type": "array",
-            "prefixItems": [
-              {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              },
-              {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              }
-            ],
-            "items": false,
-            "minItems": 2,
-            "maxItems": 2
-          }
+          "$ref": "#/$defs/Polygon"
         },
         "text": {
           "type": "string"
@@ -466,14 +453,17 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {}
+          "$ref": "#/$defs/HoldParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Static panel. Use for quiet exposition or dialogue-heavy beats."
+    },
+    "HoldParams": {
+      "type": "object",
+      "properties": {}
     },
     "ZoomPreset": {
       "type": "object",
@@ -484,45 +474,33 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {
-            "from": {
-              "default": 1,
-              "type": "number",
-              "minimum": 0.5,
-              "maximum": 3
-            },
-            "to": {
-              "default": 1.15,
-              "type": "number",
-              "minimum": 0.5,
-              "maximum": 3
-            },
-            "focus": {
-              "type": "array",
-              "prefixItems": [
-                {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1
-                },
-                {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1
-                }
-              ],
-              "items": false,
-              "minItems": 2,
-              "maxItems": 2
-            }
-          }
+          "$ref": "#/$defs/ZoomParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Smooth push in (to > from) or pull out (to < from), optionally centred on a focus point such as a face."
+    },
+    "ZoomParams": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "default": 1,
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 3
+        },
+        "to": {
+          "default": 1.15,
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 3
+        },
+        "focus": {
+          "$ref": "#/$defs/Point"
+        }
+      }
     },
     "PanPreset": {
       "type": "object",
@@ -533,31 +511,34 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {
-            "direction": {
-              "default": "right",
-              "type": "string",
-              "enum": [
-                "left",
-                "right",
-                "up",
-                "down"
-              ]
-            },
-            "distance": {
-              "default": 0.08,
-              "type": "number",
-              "minimum": 0,
-              "maximum": 0.5
-            }
-          }
+          "$ref": "#/$defs/PanParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Slow camera drift across the panel. Use for establishing shots and wide panels."
+    },
+    "PanParams": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "default": "right",
+          "type": "string",
+          "enum": [
+            "left",
+            "right",
+            "up",
+            "down"
+          ]
+        },
+        "distance": {
+          "default": 0.08,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.5
+        }
+      }
     },
     "ShakePreset": {
       "type": "object",
@@ -568,27 +549,30 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {
-            "intensity": {
-              "default": 12,
-              "type": "number",
-              "minimum": 0,
-              "maximum": 60
-            },
-            "frequency": {
-              "default": 12,
-              "type": "number",
-              "minimum": 1,
-              "maximum": 30
-            }
-          }
+          "$ref": "#/$defs/ShakeParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Continuous camera shake. Use for rumbling, explosions or sustained tension."
+    },
+    "ShakeParams": {
+      "type": "object",
+      "properties": {
+        "intensity": {
+          "default": 12,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60
+        },
+        "frequency": {
+          "default": 12,
+          "type": "number",
+          "minimum": 1,
+          "maximum": 30
+        }
+      }
     },
     "ActionTiltPreset": {
       "type": "object",
@@ -599,27 +583,30 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {
-            "angle": {
-              "default": 6,
-              "type": "number",
-              "minimum": -20,
-              "maximum": 20
-            },
-            "punch": {
-              "default": 1.12,
-              "type": "number",
-              "minimum": 1,
-              "maximum": 1.5
-            }
-          }
+          "$ref": "#/$defs/ActionTiltParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Fast punch-in with a dutch tilt that settles. Use for hits, reveals and sudden action."
+    },
+    "ActionTiltParams": {
+      "type": "object",
+      "properties": {
+        "angle": {
+          "default": 6,
+          "type": "number",
+          "minimum": -20,
+          "maximum": 20
+        },
+        "punch": {
+          "default": 1.12,
+          "type": "number",
+          "minimum": 1,
+          "maximum": 1.5
+        }
+      }
     },
     "KineticJitterPreset": {
       "type": "object",
@@ -630,27 +617,30 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {
-            "intensity": {
-              "default": 18,
-              "type": "number",
-              "minimum": 0,
-              "maximum": 60
-            },
-            "decay": {
-              "default": 0.35,
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1
-            }
-          }
+          "$ref": "#/$defs/KineticJitterParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Violent jitter that decays over the beat. Use for impacts, shock and screams."
+    },
+    "KineticJitterParams": {
+      "type": "object",
+      "properties": {
+        "intensity": {
+          "default": 18,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60
+        },
+        "decay": {
+          "default": 0.35,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
     },
     "PanoramicFadePreset": {
       "type": "object",
@@ -661,31 +651,34 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {
-            "direction": {
-              "default": "right",
-              "type": "string",
-              "enum": [
-                "left",
-                "right",
-                "up",
-                "down"
-              ]
-            },
-            "fade": {
-              "default": 0.2,
-              "type": "number",
-              "minimum": 0,
-              "maximum": 0.5
-            }
-          }
+          "$ref": "#/$defs/PanoramicFadeParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Wide pan that fades in and out. Use for scene changes, flashbacks and time skips."
+    },
+    "PanoramicFadeParams": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "default": "right",
+          "type": "string",
+          "enum": [
+            "left",
+            "right",
+            "up",
+            "down"
+          ]
+        },
+        "fade": {
+          "default": 0.2,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.5
+        }
+      }
     },
     "SplitScreenPreset": {
       "type": "object",
@@ -696,29 +689,32 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {
-            "orientation": {
-              "default": "vertical",
-              "type": "string",
-              "enum": [
-                "vertical",
-                "horizontal"
-              ]
-            },
-            "stagger": {
-              "default": 0.25,
-              "type": "number",
-              "minimum": 0,
-              "maximum": 2
-            }
-          }
+          "$ref": "#/$defs/SplitScreenParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Two or three panels share the frame and slide in one after another. Use for confrontations and parallel reactions."
+    },
+    "SplitScreenParams": {
+      "type": "object",
+      "properties": {
+        "orientation": {
+          "default": "vertical",
+          "type": "string",
+          "enum": [
+            "vertical",
+            "horizontal"
+          ]
+        },
+        "stagger": {
+          "default": 0.25,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        }
+      }
     },
     "FloatingPanelsPreset": {
       "type": "object",
@@ -729,33 +725,36 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {
-            "tilt": {
-              "default": 4,
-              "type": "number",
-              "minimum": 0,
-              "maximum": 12
-            },
-            "drift": {
-              "default": 6,
-              "type": "number",
-              "minimum": 0,
-              "maximum": 15
-            },
-            "period": {
-              "default": 10,
-              "type": "number",
-              "minimum": 3,
-              "maximum": 30
-            }
-          }
+          "$ref": "#/$defs/FloatingPanelsParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Two or three tall panels float over the background like physical photos layered in 3D, with heavy shadows and a slow drift. Use for character introductions, line-ups and reflective moments."
+    },
+    "FloatingPanelsParams": {
+      "type": "object",
+      "properties": {
+        "tilt": {
+          "default": 4,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 12
+        },
+        "drift": {
+          "default": 6,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 15
+        },
+        "period": {
+          "default": 10,
+          "type": "number",
+          "minimum": 3,
+          "maximum": 30
+        }
+      }
     },
     "HorizontalSlicesPreset": {
       "type": "object",
@@ -766,29 +765,32 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {
-            "drift": {
-              "default": 0.05,
-              "type": "number",
-              "minimum": 0,
-              "maximum": 0.2
-            },
-            "lead": {
-              "default": "left",
-              "type": "string",
-              "enum": [
-                "left",
-                "right"
-              ]
-            }
-          }
+          "$ref": "#/$defs/HorizontalSlicesParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Two or three ultra-wide, short panels stacked as strips that drift slowly in opposite directions. Use for intimate close-ups, eye contact and tense stare-downs."
+    },
+    "HorizontalSlicesParams": {
+      "type": "object",
+      "properties": {
+        "drift": {
+          "default": 0.05,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.2
+        },
+        "lead": {
+          "default": "left",
+          "type": "string",
+          "enum": [
+            "left",
+            "right"
+          ]
+        }
+      }
     },
     "HudPopupPreset": {
       "type": "object",
@@ -799,37 +801,40 @@
         },
         "params": {
           "default": {},
-          "type": "object",
-          "properties": {
-            "text": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 120
-            },
-            "position": {
-              "default": "top",
-              "type": "string",
-              "enum": [
-                "top",
-                "center",
-                "bottom"
-              ]
-            },
-            "accent": {
-              "default": "#3ad6ff",
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$"
-            }
-          },
-          "required": [
-            "text"
-          ]
+          "$ref": "#/$defs/HudPopupParams"
         }
       },
       "required": [
         "name"
       ],
       "description": "Game-style info panel types onto the screen over the panel. Use for system messages, stats and level-ups."
+    },
+    "HudPopupParams": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "position": {
+          "default": "top",
+          "type": "string",
+          "enum": [
+            "top",
+            "center",
+            "bottom"
+          ]
+        },
+        "accent": {
+          "default": "#3ad6ff",
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        }
+      },
+      "required": [
+        "text"
+      ]
     },
     "TransitionSpec": {
       "type": "object",

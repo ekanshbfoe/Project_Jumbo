@@ -3,12 +3,14 @@ import { HexColor, Point } from "./common";
 
 const Direction = z.enum(["left", "right", "up", "down"]);
 
-/** `action_tilt` → `ActionTiltPreset`: the type name code generators give the preset. */
-const presetId = (name: string) => `${name.replace(/(^|_)([a-z])/g, (_, __, c: string) => c.toUpperCase())}Preset`;
+/** `action_tilt` → `ActionTilt`: the type name code generators give the preset (`ActionTiltPreset`, `ActionTiltParams`). */
+const pascal = (name: string) => name.replace(/(^|_)([a-z])/g, (_, __, c: string) => c.toUpperCase());
 
 const preset = <N extends string, P extends z.ZodObject>(name: N, description: string, params: P) =>
   // Omitted params are parsed as {}, so every field's default applies (and required fields still fail).
-  z.object({ name: z.literal(name), params: params.prefault({} as z.input<P>) }).meta({ id: presetId(name), description });
+  z
+    .object({ name: z.literal(name), params: params.meta({ id: `${pascal(name)}Params` }).prefault({} as z.input<P>) })
+    .meta({ id: `${pascal(name)}Preset`, description });
 
 export const HoldPreset = preset("hold", "Static panel. Use for quiet exposition or dialogue-heavy beats.", z.object({}));
 

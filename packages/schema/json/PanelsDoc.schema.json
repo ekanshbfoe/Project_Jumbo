@@ -57,26 +57,7 @@
           "$ref": "#/$defs/BBox"
         },
         "polygon": {
-          "minItems": 3,
-          "type": "array",
-          "items": {
-            "type": "array",
-            "prefixItems": [
-              {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              },
-              {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              }
-            ],
-            "items": false,
-            "minItems": 2,
-            "maxItems": 2
-          }
+          "$ref": "#/$defs/Polygon"
         },
         "crop": {
           "type": "string",
@@ -160,6 +141,31 @@
         "h"
       ]
     },
+    "Polygon": {
+      "minItems": 3,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Point"
+      }
+    },
+    "Point": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
     "Bubble": {
       "type": "object",
       "properties": {
@@ -177,26 +183,7 @@
           ]
         },
         "polygon": {
-          "minItems": 3,
-          "type": "array",
-          "items": {
-            "type": "array",
-            "prefixItems": [
-              {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              },
-              {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              }
-            ],
-            "items": false,
-            "minItems": 2,
-            "maxItems": 2
-          }
+          "$ref": "#/$defs/Polygon"
         },
         "text": {
           "type": "string"

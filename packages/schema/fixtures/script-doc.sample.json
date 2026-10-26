@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "chapter_id": "ch_0001",
+  "title": "Sabse kamzor hunter",
+  "lines": [
+    {
+      "id": "l_0001",
+      "panel_ids": ["p_0001"],
+      "narration": "Duniya ka sabse kamzor hunter, aur aaj woh pehli baar muskura raha hai.",
+      "emotion": "mysterious",
+      "voice": { "tone": "whispered", "pace": "slow" },
+      "preset": { "name": "zoom", "params": { "to": 1.2, "focus": [0.3, 0.2] } }
+    },
+    {
+      "id": "l_0002",
+      "panel_ids": ["p_0002", "p_0003"],
+      "narration": "Dono taraf dushman, beech mein sirf woh.",
+      "emotion": "tense",
+      "preset": { "name": "split_screen", "params": {} },
+      "transition_in": { "name": "fade", "duration": 0.5 }
+    },
+    {
+      "id": "l_0003",
+      "panel_ids": ["p_0003"],
+      "narration": "Aur tabhi system ne awaaz di.",
+      "emotion": "shock",
+      "preset": { "name": "hud_popup", "params": { "text": "Daily quest unlocked" } }
+    }
+  ]
+}

@@ -13,10 +13,10 @@ export const LineId = z.string().regex(/^l_\d{4}$/, "expected l_0001 style id");
 const Unit = z.number().min(0).max(1);
 
 /** [x, y] in normalized source-image coordinates. */
-export const Point = z.tuple([Unit, Unit]);
+export const Point = z.tuple([Unit, Unit]).meta({ id: "Point" });
 
 /** Closed polygon, listed in drawing order. The last point connects back to the first. */
-export const Polygon = z.array(Point).min(3);
+export const Polygon = z.array(Point).min(3).meta({ id: "Polygon" });
 
 /** Axis-aligned box in normalized source-image coordinates. */
 export const BBox = z

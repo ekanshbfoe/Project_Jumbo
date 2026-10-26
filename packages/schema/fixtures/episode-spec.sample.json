@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "chapter_id": "ch_0001",
+  "title": "Sabse kamzor hunter",
+  "video": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "background": "#0b0b10"
+  },
+  "hide_bubbles": false,
+  "ambient_effect": "dust",
+  "watermark": {
+    "enabled": true,
+    "text": "Project Jumbo",
+    "opacity": 0.55
+  },
+  "social_promo": {
+    "enabled": true,
+    "username": "Project_Jumbo",
+    "headline": "Follow for more recaps",
+    "platforms": [
+      "x",
+      "youtube",
+      "instagram"
+    ],
+    "position": "bottom-right",
+    "start_at": 0.05,
+    "end_at": 0.95
+  },
+  "panels": [
+    {
+      "id": "p_0001",
+      "page": "chapters/ch_0001/pages/page_001.webp",
+      "page_size": {
+        "width": 1200,
+        "height": 1800
+      },
+      "bbox": {
+        "x": 0.05,
+        "y": 0.04,
+        "w": 0.9,
+        "h": 0.3
+      },
+      "polygon": [
+        [
+          0.05,
+          0.04
+        ],
+        [
+          0.95,
+          0.04
+        ],
+        [
+          0.95,
+          0.34
+        ],
+        [
+          0.05,
+          0.3
+        ]
+      ],
+      "crop": "chapters/ch_0001/panels/crops/p_0001.webp",
+      "bubbles": [
+        {
+          "id": "b_0001",
+          "kind": "speech",
+          "polygon": [
+            [
+              0.6,
+              0.06
+            ],
+            [
+              0.9,
+              0.06
+            ],
+            [
+              0.9,
+              0.14
+            ],
+            [
+              0.6,
+              0.14
+            ]
+          ],
+          "text": "Main kamzor nahi hoon.",
+          "speaker": "c_0001"
+        }
+      ]
+    },
+    {
+      "id": "p_0002",
+      "page": "chapters/ch_0001/pages/page_001.webp",
+      "page_size": {
+        "width": 1200,
+        "height": 1800
+      },
+      "bbox": {
+        "x": 0.05,
+        "y": 0.36,
+        "w": 0.43,
+        "h": 0.3
+      },
+      "polygon": [
+        [
+          0.05,
+          0.36
+        ],
+        [
+          0.48,
+          0.36
+        ],
+        [
+          0.48,
+          0.66
+        ],
+        [
+          0.05,
+          0.66
+        ]
+      ],
+      "bubbles": []
+    },
+    {
+      "id": "p_0003",
+      "page": "chapters/ch_0001/pages/page_001.webp",
+      "page_size": {
+        "width": 1200,
+        "height": 1800
+      },
+      "bbox": {
+        "x": 0.52,
+        "y": 0.36,
+        "w": 0.43,
+        "h": 0.3
+      },
+      "polygon": [
+        [
+          0.52,
+          0.36
+        ],
+        [
+          0.95,
+          0.36
+        ],
+        [
+          0.95,
+          0.66
+        ],
+        [
+          0.52,
+          0.66
+        ]
+      ],
+      "clean": "chapters/ch_0001/panels/clean/p_0003.webp",
+      "bubbles": []
+    }
+  ],
+  "beats": [
+    {
+      "line_id": "l_0001",
+      "panel_ids": [
+        "p_0001"
+      ],
+      "narration": "Duniya ka sabse kamzor hunter, aur aaj woh pehli baar muskura raha hai.",
+      "emotion": "mysterious",
+      "preset": {
+        "name": "zoom",
+        "params": {
+          "from": 1,
+          "to": 1.2,
+          "focus": [
+            0.3,
+            0.2
+          ]
+        }
+      },
+      "transition_in": {
+        "name": "cut",
+        "duration": 0.4
+      },
+      "audio": {
+        "src": "chapters/ch_0001/audio/l_0001.wav",
+        "duration": 3.4
+      },
+      "duration": 3.75
+    },
+    {
+      "line_id": "l_0002",
+      "panel_ids": [
+        "p_0002",
+        "p_0003"
+      ],
+      "narration": "Dono taraf dushman, beech mein sirf woh.",
+      "emotion": "tense",
+      "preset": {
+        "name": "split_screen",
+        "params": {
+          "orientation": "vertical",
+          "stagger": 0.25
+        }
+      },
+      "transition_in": {
+        "name": "fade",
+        "duration": 0.5
+      },
+      "audio": {
+        "src": "chapters/ch_0001/audio/l_0002.wav",
+        "duration": 2.1
+      },
+      "duration": 2.45
+    },
+    {
+      "line_id": "l_0003",
+      "panel_ids": [
+        "p_0003"
+      ],
+      "narration": "Aur tabhi system ne awaaz di.",
+      "emotion": "shock",
+      "preset": {
+        "name": "hud_popup",
+        "params": {
+          "text": "Daily quest unlocked",
+          "position": "top",
+          "accent": "#3ad6ff"
+        }
+      },
+      "transition_in": {
+        "name": "cut",
+        "duration": 0.4
+      },
+      "audio": null,
+      "duration": 2.6576923076923076
+    }
+  ]
+}

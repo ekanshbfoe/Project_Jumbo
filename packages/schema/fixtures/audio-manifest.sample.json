@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "chapter_id": "ch_0001",
+  "sample_rate": 24000,
+  "clips": [
+    { "line_id": "l_0001", "src": "chapters/ch_0001/audio/l_0001.wav", "duration": 3.4 },
+    { "line_id": "l_0002", "src": "chapters/ch_0001/audio/l_0002.wav", "duration": 2.1 }
+  ]
+}
