@@ -183,7 +183,7 @@
         "src": "chapters/ch_0001/audio/l_0001.wav",
         "duration": 3.4
       },
-      "duration": 3.75
+      "duration": 4.266666666666667
     },
     {
       "line_id": "l_0002",
@@ -208,7 +208,7 @@
         "src": "chapters/ch_0001/audio/l_0002.wav",
         "duration": 2.1
       },
-      "duration": 2.45
+      "duration": 2.466666666666667
     },
     {
       "line_id": "l_0003",
@@ -230,7 +230,7 @@
         "duration": 0.4
       },
       "audio": null,
-      "duration": 2.6576923076923076
+      "duration": 2.6666666666666665
     }
   ]
 }

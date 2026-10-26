@@ -83,7 +83,9 @@ def test_episode_spec_rules():
         "beats.0.panel_ids: unknown panel p_0009",
         "beats.0.duration: beat is shorter than its narration audio",
         "beats.1.panel_ids: wrong panel count for split_screen",
+        "beats.1.transition_in: transition starts before the previous narration ends",
         "beats.2.transition_in: transition is longer than the beats it joins",
+        "beats.2.transition_in: transition starts before the previous narration ends",
         "social_promo: start_at must come before end_at",
     ]
 

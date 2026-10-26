@@ -115,6 +115,10 @@ def episode_spec(spec: EpisodeSpec) -> list[str]:
         overlap = 0 if transition is None or transition.name == "cut" else transition.duration
         if i > 0 and overlap >= min(spec.beats[i - 1].duration, beat.duration):
             out.append(f"beats.{i}.transition_in: transition is longer than the beats it joins")
+        prev = spec.beats[i - 1] if i > 0 else None
+        # The next beat's audio starts when its transition does, so two voices would overlap.
+        if prev is not None and prev.audio is not None and prev.duration - overlap < prev.audio.duration:
+            out.append(f"beats.{i}.transition_in: transition starts before the previous narration ends")
     if spec.social_promo is not None:
         out += _promo("social_promo", spec.social_promo)
     return out

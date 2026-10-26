@@ -101,6 +101,10 @@ export const EpisodeSpec = z
       if (prev && overlap >= Math.min(prev.duration, beat.duration)) {
         ctx.addIssue({ code: "custom", path: ["beats", i, "transition_in"], message: "transition is longer than the beats it joins" });
       }
+      // The next beat's audio starts when its transition does, so two voices would overlap.
+      if (prev?.audio && prev.duration - overlap < prev.audio.duration) {
+        ctx.addIssue({ code: "custom", path: ["beats", i, "transition_in"], message: "transition starts before the previous narration ends" });
+      }
     });
   });
 
@@ -116,7 +120,7 @@ export type EpisodeSpec = z.infer<typeof EpisodeSpec>;
 export interface BuildEpisodeOptions {
   title?: string;
   video?: Partial<VideoFormat>;
-  /** Silence after each narration clip, in seconds. */
+  /** Silence after each narration clip, in seconds, before the next beat's transition begins. */
   padding?: number;
   /** Shortest a beat may be, in seconds. */
   minBeat?: number;
@@ -137,6 +141,7 @@ export function buildEpisodeSpec(
 ): EpisodeSpec {
   const { padding = 0.35, minBeat = 1.5, wordsPerSecond = 2.6 } = options;
   const clips = new Map(audio?.clips.map((c) => [c.line_id, c]));
+  const { fps } = VideoFormat.parse(options.video ?? {});
   const used = new Set(script.lines.flatMap((l) => l.panel_ids));
 
   return EpisodeSpec.parse({
@@ -146,7 +151,7 @@ export function buildEpisodeSpec(
     video: options.video ?? {},
     hide_bubbles: options.hideBubbles ?? false,
     panels: panelsDoc.panels.filter((p) => used.has(p.id)),
-    beats: script.lines.map((line) => {
+    beats: script.lines.map((line, i) => {
       const clip = clips.get(line.id);
       const spoken = clip ? clip.duration : line.narration.split(/\s+/).length / wordsPerSecond;
       return {
@@ -157,8 +162,18 @@ export function buildEpisodeSpec(
         preset: line.preset,
         transition_in: line.transition_in,
         audio: clip ? { src: clip.src, duration: clip.duration } : null,
-        duration: Math.max(minBeat, spoken + padding),
+        duration: beatLength(Math.max(minBeat, spoken + padding + overlapOf(script.lines[i + 1])), fps),
       };
     }),
   });
+}
+
+/** How far a line's transition reaches back into the beat before it, in seconds. */
+function overlapOf(line?: ScriptDoc["lines"][number]): number {
+  return !line || line.transition_in.name === "cut" ? 0 : line.transition_in.duration;
+}
+
+/** Seconds rounded up to a whole frame, so the timeline's frame rounding never cuts the end of a clip. */
+function beatLength(seconds: number, fps: number): number {
+  return Math.ceil(seconds * fps - 1e-6) / fps;
 }
