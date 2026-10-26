@@ -8,6 +8,7 @@ pub mod kaggle;
 pub mod launcher;
 pub mod protocol;
 pub mod rendezvous;
+pub mod secrets;
 pub mod worker;
 
 pub use error::{BridgeError, Result};

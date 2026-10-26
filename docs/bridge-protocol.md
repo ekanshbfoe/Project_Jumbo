@@ -29,7 +29,7 @@ The launcher embeds the ticket in the kernel source it pushes. The ticket contai
 
 - `deadline_s`: seconds after boot when the worker stops itself. 8.5 h leaves a margin under Kaggle's 9 h cap.
 - `idle_s`: the dead-man switch. The worker stops itself after this many seconds without an authenticated request.
-- `rendezvous`: where to publish. The gist token itself never appears in the ticket; on Kaggle it comes from the attached Kaggle Secret `JUMBO_GIST_TOKEN`.
+- `rendezvous`: where to publish. The gist token itself never appears in the ticket; on Kaggle it comes from the private `jumbo-secrets` dataset the app attaches (see [kaggle-setup.md](kaggle-setup.md)), or a Kaggle Secret `JUMBO_GIST_TOKEN`.
 
 ## Rendezvous record
 

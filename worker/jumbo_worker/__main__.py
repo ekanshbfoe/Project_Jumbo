@@ -40,9 +40,26 @@ def host_facts() -> dict:
     return facts
 
 
+SECRETS_DATASET = "jumbo-secrets"
+
+
+def mounted_secret(name: str, root: Path = Path("/kaggle/input")) -> str | None:
+    """A secret from the private `jumbo-secrets` dataset the app attaches to every kernel it pushes.
+
+    Kaggle has mounted datasets both directly under /kaggle/input and under an owner folder.
+    """
+    candidates = [root / SECRETS_DATASET / name, *sorted(root.glob(f"*/{SECRETS_DATASET}/{name}")), *sorted(root.glob(f"*/*/{SECRETS_DATASET}/{name}"))]
+    for path in candidates:
+        if path.is_file():
+            value = path.read_text(encoding="utf-8").strip()
+            if value:
+                return value
+    return None
+
+
 def gist_token() -> str:
-    """The gist token comes from the environment, or from Kaggle Secrets when running on Kaggle."""
-    token = os.environ.get("JUMBO_GIST_TOKEN")
+    """The gist token comes from the environment, the app's private secrets dataset, or Kaggle Secrets."""
+    token = os.environ.get("JUMBO_GIST_TOKEN") or mounted_secret("gist_token")
     if token:
         return token
     try:
@@ -51,7 +68,7 @@ def gist_token() -> str:
         return UserSecretsClient().get_secret("JUMBO_GIST_TOKEN")
     except Exception as e:  # noqa: BLE001
         raise SystemExit(
-            "No JUMBO_GIST_TOKEN: attach the Kaggle Secret JUMBO_GIST_TOKEN to this notebook (Add-ons > Secrets)"
+            "No JUMBO_GIST_TOKEN: the jumbo-secrets dataset is not attached to this kernel and no Kaggle Secret is set"
         ) from e
 
 

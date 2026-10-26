@@ -15,16 +15,19 @@ One-time setup for running the worker on Kaggle from the desktop app. The protoc
 
 The worker writes `session-<id>.json` files here. They hold only an encrypted tunnel URL and a public key, and the worker deletes them when it stops.
 
-## 3. The worker kernel (once, in the Kaggle UI)
+## 3. How the worker gets the gist token (automatic)
 
-1. Create a new notebook and name it `jumbo-worker` (the slug becomes `<you>/jumbo-worker`). Save it.
-2. In the notebook's **Add-ons → Secrets**, add `JUMBO_GIST_TOKEN` with the GitHub token, and attach it to this notebook.
+The worker needs the GitHub token to publish its rendezvous record. Kaggle's API cannot attach Kaggle Secrets to a kernel, so the app delivers the token itself:
 
-The app pushes new versions of this kernel for every session, so you never edit it by hand. Kaggle's API cannot attach secrets, which is why this one step is manual. One thing still needs confirming: that the secret stays attached across versions pushed through the API. The first Kaggle CPU run will show it either way. A missing secret fails fast, with "No JUMBO_GIST_TOKEN" shown on the Session screen.
+- Before each launch it makes sure a **private** dataset `<you>/jumbo-secrets` holds one file, `gist_token`. It uploads only when the token changed, and each upload deletes the older versions, so a rotated token does not linger in the dataset history.
+- Every kernel it pushes lists that dataset as a source, and the worker reads it from `/kaggle/input/`.
+- The kernel itself (`<you>/jumbo-worker`) is created by the first push if it does not exist yet.
+
+Only the gist-scoped token goes into the dataset. Anyone with access to your Kaggle account could read it, which is why it must have nothing but the `gist` scope. A Kaggle Secret named `JUMBO_GIST_TOKEN`, if you attach one by hand, still works as a fallback.
 
 ## 4. In the desktop app (Manhwa Studio → Session)
 
-1. **Credentials:** import `kaggle.json` (or paste an API token), then paste the GitHub token. Both go into Windows Credential Manager.
+1. **Credentials:** import `kaggle.json` (or paste an API token), then paste the GitHub token. Both go into the system credential store (Windows Credential Manager, macOS Keychain or the Linux Secret Service), or a private file in the app settings folder when there is none.
 2. **Bridge settings:** set the kernel `<you>/jumbo-worker` and the gist id.
 3. Pick **Kaggle CPU** first and press **Launch worker**. This tests the whole cloud path (push, queue, cloudflared tunnel, rendezvous, signed API) without spending TPU quota.
 4. When it shows **Ready**, press **Run bridge test**, then **Stop session**.

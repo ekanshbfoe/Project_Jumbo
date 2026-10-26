@@ -14,6 +14,7 @@ use jumbo_bridge::kaggle::{KaggleAuth, KaggleClient};
 use jumbo_bridge::launcher::LaunchConfig;
 use jumbo_bridge::protocol::{RendezvousSpec, SessionTicket};
 use jumbo_bridge::rendezvous::{GistReader, RendezvousReader};
+use jumbo_bridge::secrets::{SecretsTimings, ensure_secrets, secrets_slug};
 use jumbo_bridge::worker::WorkerClient;
 use jumbo_core::fsx;
 use serde::{Deserialize, Serialize};
@@ -189,6 +190,33 @@ fn kaggle_auth(app: &AppHandle) -> CmdResult<KaggleAuth> {
     }
 }
 
+/// What the pushed kernel needs from the private `jumbo-secrets` dataset.
+struct KaggleSecrets {
+    owner: String,
+    gist_token: String,
+}
+
+/// Fingerprint of the secrets last uploaded, so an unchanged token is not re-uploaded each session.
+fn secrets_fingerprint_path(app: &AppHandle) -> CmdResult<PathBuf> {
+    Ok(config_dir(app)?.join("kaggle_secrets.json"))
+}
+
+async fn upload_secrets(app: &AppHandle, client: &KaggleClient, secrets: &KaggleSecrets) -> CmdResult<()> {
+    let path = secrets_fingerprint_path(app)?;
+    let uploaded: Option<String> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| v["fingerprint"].as_str().map(str::to_owned));
+    let fingerprint =
+        ensure_secrets(client, &secrets.owner, &secrets.gist_token, uploaded.as_deref(), &SecretsTimings::default())
+            .await
+            .map_err(msg)?;
+    if uploaded.as_deref() != Some(fingerprint.as_str()) {
+        fsx::atomic_write_json(&path, &json!({ "fingerprint": fingerprint })).map_err(msg)?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn session_view(state: State<'_, BridgeState>) -> CmdResult<SessionView> {
     Ok(state.view.lock().map_err(msg)?.clone())
@@ -261,14 +289,18 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
                 return Err("set the Kaggle kernel as owner/kernel-slug in Bridge settings".into());
             }
             let token = secret(&app, GITHUB_SECRET).ok_or("add the GitHub gist token first")?;
+            let kernel_slug = settings.kernel_slug.trim().to_owned();
+            let owner = kernel_slug.split_once('/').map_or("", |(owner, _)| owner).to_owned();
             let config = LaunchConfig {
-                kernel_slug: settings.kernel_slug.trim().to_owned(),
                 machine_shape: (settings.mode == BridgeMode::KaggleTpu).then(|| "TpuV5E8".to_owned()),
                 model_sources: vec![],
-                dataset_sources: vec![],
+                // The worker reads its gist token from here (Kaggle's API cannot attach Kaggle Secrets).
+                dataset_sources: vec![secrets_slug(&owner)],
+                kernel_slug,
             };
             let reader = RendezvousReader::Gist(GistReader::new(http.clone(), &gist_id, &token));
-            (reader, Some((KaggleClient::new(http.clone(), kaggle_auth(&app)?), config)))
+            let client = KaggleClient::new(http.clone(), kaggle_auth(&app)?);
+            (reader, Some((client, config, KaggleSecrets { owner, gist_token: token })))
         }
     };
 
@@ -281,8 +313,16 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
         let mut reader = reader;
         let timings = BootTimings::default();
         let on_state = |s: BootState| set_view(&app, SessionView::Booting { boot: s, mode, since_ms: since });
+        if let Some((client, _, secrets)) = &kaggle
+            && let Err(e) = upload_secrets(&app, client, secrets).await
+        {
+            return set_view(
+                &app,
+                SessionView::Failed { error: format!("could not prepare the secrets dataset: {e}") },
+            );
+        }
         let launch = match &kaggle {
-            Some((client, config)) => Launch::Kaggle { client, config },
+            Some((client, config, _)) => Launch::Kaggle { client, config },
             None => Launch::External,
         };
         let mut client = match boot(&http, launch, &mut reader, &keys, &ticket, &timings, on_state).await {
