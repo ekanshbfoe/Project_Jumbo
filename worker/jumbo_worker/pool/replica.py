@@ -28,6 +28,10 @@ class ReplicaError(Exception):
     """The replica failed a request, or died."""
 
 
+class ReplicaDied(ReplicaError):
+    """The process is gone (crashed, killed by the watchdog, or put to sleep): the work can be retried."""
+
+
 def replica_env(spec: ModelSpec, config: PoolConfig, chips: ChipLease | None, cpu: CpuLease, extra: dict[str, str] | None = None) -> dict[str, str]:
     """Environment that binds a replica to its lease and caps its allocator at the HBM ceiling
     (layer 2 of the ceiling; admission is layer 1 and the watchdog layer 3)."""
@@ -138,7 +142,7 @@ class Replica:
         finally:
             code = await self._proc.wait()
             self.state = "dead"
-            err = ReplicaError(f"{self.id} exited with code {code}")
+            err = ReplicaDied(f"{self.id} exited with code {code}")
             if self._ready and not self._ready.done():
                 self._ready.set_exception(err)
             for future in self._pending.values():
@@ -148,7 +152,7 @@ class Replica:
 
     async def call(self, op: str, **payload) -> object:
         if self.state == "dead" or not self._proc or not self._proc.stdin:
-            raise ReplicaError(f"{self.id} is not running")
+            raise ReplicaDied(f"{self.id} is not running")
         seq = next(self._seq)
         future = asyncio.get_running_loop().create_future()
         self._pending[seq] = future

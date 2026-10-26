@@ -41,6 +41,10 @@ class ModelSpec(BaseModel):
     max_replicas: int = Field(1, ge=0)
     # Queued jobs one replica is expected to keep up with.
     target_queue_per_replica: int = Field(4, ge=1)
+    # Requests one replica works on at once (continuous batching for vLLM).
+    concurrency: int = Field(1, ge=1)
+    # Higher goes first: stages closer to a finished deliverable win ties for chips and cores.
+    priority: int = 0
     idle_ttl_s: float = Field(120.0, ge=0)
     # Seconds to wake a replica (load weights, compile); the phase arbiter weighs this.
     wake_s: float = Field(30.0, ge=0)
@@ -71,6 +75,11 @@ class PoolConfig(BaseModel):
     hbm_ceiling: float = Field(0.80, gt=0.5, le=0.95)
     chips: int = Field(TPU_CHIPS, ge=0)
     chip_hbm_gb: float = Field(CHIP_HBM_GB, gt=0)
+    # A phase switch must win by this many seconds of queued work beyond the swap cost.
+    phase_hysteresis_s: float = Field(60.0, ge=0)
+    # A phase holds the chips at least this long before it can be switched out.
+    phase_min_dwell_s: float = Field(30.0, ge=0)
+    tick_s: float = Field(2.0, gt=0)
     models: dict[str, ModelSpec]
 
     @model_validator(mode="before")
@@ -102,6 +111,13 @@ class PoolConfig(BaseModel):
     @property
     def soft_limit(self) -> float:
         return self.hbm_ceiling - SOFT_MARGIN
+
+    def phases(self) -> dict[str, list[ModelSpec]]:
+        out: dict[str, list[ModelSpec]] = {}
+        for spec in self.models.values():
+            if spec.phase:
+                out.setdefault(spec.phase, []).append(spec)
+        return out
 
     def spec(self, name: str) -> ModelSpec:
         try:
