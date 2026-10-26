@@ -22,7 +22,7 @@ These are facts about the hardware and models. The design below is built around 
 
 | # | Reality | Design consequence |
 |---|---|---|
-| R1 | A TPU v5e-8 is **8 chips × 16 GB HBM**, not one 128 GB pool. **A chip is owned by exactly one process** (libtpu lock). | The 80% cap is enforced **per chip** (12.8 GB/chip; that makes ≤102.4 GB total by construction). The worker pool schedules **chip leases**, not shared VRAM. |
+| R1 | A TPU v5e-8 is **8 chips × 16 GB HBM**, not one 128 GB pool. **A chip is owned by exactly one process** (libtpu lock). | The HBM ceiling (`hbm_ceiling` in `worker/model_specs.json`: 0.80 by default, 0.90 if S0 spike 6 passes its soak) is enforced **per chip** (12.8 or 14.4 GB/chip), so the total stays under it by construction. The worker pool schedules **chip leases**, not shared VRAM. |
 | R2 | Qwen2.5-VL-72B in int8 is about 76 GB of weights. It needs tensor parallelism of 8 (64 attention heads / 8 KV heads), which is about 9.5 GB/chip and leaves about 3.3 GB/chip under the cap for KV cache. | While Qwen is active it **holds all 8 chips**. Nothing else can use the TPU at that time, so other stages run on the **host CPU** (many vCPUs) or in separate TPU phases. "Dynamic scaling" means phase-based chip leasing plus CPU-side concurrency. |
 | R3 | Magi v2 outputs **axis-aligned boxes** (panels, text, characters) plus OCR and speaker links. It does **not** output polygons. It was trained on manga *pages*, not borderless webtoon strips. | Add a **polygon refinement stage**: OpenCV gutter/contour analysis, with SAM-2 inside the Magi box as a fallback. Add a **layout router** that slices webtoon strips into pseudo-pages before Magi runs. |
 | R4 | Qwen2.5-VL native context is 32,768 tokens. Images cost tokens in proportion to their pixel count. | The 70% ceiling is about **22.9K tokens**, covering everything including the output reserve. A deterministic **Context Assembler** enforces it with the real tokenizer and caps image pixels per panel. |
@@ -59,7 +59,7 @@ Operational risks to note:
 - **Python 3.11**.
   - **FastAPI + Uvicorn** (single process, asyncio) as the control plane: REST for jobs and assets, WebSocket for events.
   - **pydantic v2** for models generated from the shared schema.
-  - **pyzmq** for RPC from the orchestrator to the model-worker subprocesses.
+  - JSON lines over each replica subprocess's stdin/stdout for RPC to model workers (stdlib only; the child moves fd 1 to stderr so library output cannot corrupt the protocol).
 - **Inference:**
   - **vLLM TPU backend** for Qwen2.5-VL-72B int8 and the Librarian LLM, with constrained JSON decoding (guided/structured output).
   - Magi v2 and OmniVoice run under torch-xla or on CPU, as decided by the spike.
@@ -91,8 +91,8 @@ project-jumbo/
     schema/                # zod contract → JSON Schema → pydantic / Rust
     motion/                # @jumbo/motion Remotion component library
   worker/
-    jumbo_worker/          # api/, scheduler/, models/, pipeline/, memory/, render/, tunnel/
-    model_specs.yaml       # ModelSpec registry
+    jumbo_worker/          # app, jobs, pool/ (resource manager), pipeline stages, tunnel
+    model_specs.json       # ModelSpec registry and the HBM ceiling (shipped in the worker bundle)
   docs/adr/                # architecture decision records
 ```
 
@@ -218,7 +218,7 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
                                ▼
                     Stage Queues (priority, idempotent jobs keyed by input hash)
                                │
-                    Resource Manager ── ChipLedger (8 × 12.8 GB budget) + CpuPool (cores/RAM)
+                    Resource Manager ── ChipLedger (8 × ceiling × 16 GB budget) + CpuPool (cores/RAM)
                                │            ▲
                     Autoscaler ┘            └── Memory Watchdog (per-chip HBM sampling)
                                │
@@ -227,7 +227,7 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
                     Weight Cache: /kaggle/input (disk) → /dev/shm (host RAM) → HBM
 ```
 
-### 4.2 ModelSpec registry (`model_specs.yaml`, profiled values filled in by the spike)
+### 4.2 ModelSpec registry (`worker/model_specs.json`, profiled values filled in by the spikes)
 | model | backend | chips/replica | HBM/chip (profiled) | CPU fallback | min/max replicas | batchable |
 |---|---|---|---|---|---|---|
 | magi_v2 | torch-xla or cpu | 1 | ~3–5 GB | yes | 0 / 8 | yes |
@@ -236,16 +236,18 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
 | omnivoice | torch-xla or cpu | 1 | ~3–6 GB | yes | 0 / 8 | yes |
 | remotion | node/cpu | 0 | — | n/a | 0 / ⌊cores/concurrency⌋ | per-chapter |
 
-### 4.3 How the 80% ceiling is guaranteed (three layers)
-1. **Admission control (static):** a replica is placed only if `profiled_hbm_per_chip ≤ 12.8 GB` on every chip it would lease. Chips are process-exclusive (R1), so per-chip correctness implies total ≤ 80%.
-2. **Framework caps (runtime):** each replica starts with its allocator capped at 0.8:
-   - vLLM `gpu_memory_utilization=0.8`.
-   - JAX `XLA_PYTHON_CLIENT_MEM_FRACTION=0.8` with `PREALLOCATE=false` for small models.
+### 4.3 How the HBM ceiling is guaranteed (three layers)
+The ceiling is one config value, `hbm_ceiling` (default 0.80; spike 6 may raise it to 0.90). The per-chip budget, allocator caps and watchdog thresholds all derive from it (`jumbo_worker/pool/`).
+
+1. **Admission control (static):** the registry refuses any model whose `hbm_gb_per_chip` exceeds `hbm_ceiling × 16 GB`, and chips are leased whole, as aligned 1/2/4/8-chip slices, best-fit. Chips are process-exclusive (R1), so per-chip correctness implies the total stays under the ceiling.
+2. **Framework caps (runtime):** each replica starts with its allocator capped at the ceiling:
+   - vLLM `gpu_memory_utilization` = ceiling (passed as `JUMBO_GPU_MEMORY_UTILIZATION`).
+   - JAX `XLA_PYTHON_CLIENT_MEM_FRACTION` = ceiling with `PREALLOCATE=false`.
    - torch-xla equivalent PJRT limits.
    - Chip binding through `TPU_VISIBLE_CHIPS`, `TPU_CHIPS_PER_PROCESS_BOUNDS`, `TPU_PROCESS_BOUNDS`, and `TPU_PROCESS_PORT`.
 3. **Watchdog (enforcement):** samples `device.memory_stats()` (JAX) or `xm.get_memory_info` (torch-xla) every 1 s.
-   - **> 76%:** soft. Shrink batch size and stop admitting new work.
-   - **≥ 80%:** hard. SIGTERM the offending replica, then requeue its job (jobs are idempotent).
+   - **Soft (≥ ceiling − 4 points, and above the replica's own profiled footprint):** stop admitting new work to it until it drops back. The footprint test matters for vLLM, which pre-allocates each chip up to the ceiling by design.
+   - **Hard (above the ceiling):** kill the replica and retry its requests on another (jobs are idempotent). Exactly at the ceiling is allowed, since that is where the allocator caps put a fully used replica.
    - Peaks are recorded and surfaced in `pool.status`.
 
 ### 4.4 Sleep / offload / wake
@@ -360,7 +362,7 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
   6. Remotion render throughput on Kaggle host CPUs.
   7. Actual host RAM and vCPU counts.
 
-  Each result is recorded as an ADR and written into `model_specs.yaml`.
+  Each result is recorded as an ADR and written into `worker/model_specs.json`.
 
 **Step 2: Local core (Rust, no GUI yet).** `jumbo-core` (project manifest, dir schema, state machines, atomic writes, project lock, journal) and `jumbo-ledger` (event log, validator, materializer, snapshots plus hash chain, LOCK). Driven by a dev CLI and tests.
 
@@ -402,8 +404,8 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
   - From the app, launch to `Ready` with no manual input.
   - Chaos tests recover automatically: kill `cloudflared` (epoch reconnect), kill the kernel (`SessionLost` then relaunch & resume), unauthenticated requests rejected, and a 500 MB upload resumes after an interruption.
 - **Step 4:**
-  - A randomized load simulation with fake models asserts that per-chip usage never exceeds 80%.
-  - On the real TPU, watchdog peak logs stay ≤ 80% per chip across a full chapter run, and sleep/wake timings are recorded.
+  - A randomized load simulation with fake models, at ceilings 0.80 and 0.90, asserts that no chip is shared or over budget and that all work completes across phase switches (`worker/tests/test_pool_manager.py`).
+  - On the real TPU, watchdog peak logs stay ≤ the ceiling per chip across a full chapter run, and sleep/wake timings are recorded.
 - **Steps 5–7:** a golden sample chapter in each layout (strip and page) produces `panels.json` with polygons, a script, a validated delta, audio, and an MP4. Results are reviewed manually in the Gate and the Player.
 - **End-to-end continuity test:**
   - Process chapters 1–3, press Stop, and confirm the snapshot is locked.
