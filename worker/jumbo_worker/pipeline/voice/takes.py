@@ -2,7 +2,7 @@
 
 Drama 3 has no duration control: the panel holds as long as its line (buildEpisodeSpec). What can still go
 wrong is the take itself (a stall, silence, words skipped or a line that runs on), so each take is judged and
-spoken again with another seed when it fails. Nothing is time-stretched or re-encoded: the only edit is
+spoken again with another seed when it fails (or stalls into a long silence mid-line). Nothing is time-stretched or re-encoded: the only edit is
 cutting digital silence off both ends, which removes no sample of speech.
 """
 
@@ -25,6 +25,12 @@ SILENT_DBFS = -45.0
 TRIM_DBFS = -60.0
 KEEP_S = 0.04
 ATTEMPTS = 3
+# A pause inside a take longer than this is a stall, not acting: the longest in spikes 4 and 5's good takes
+# was 2.45 s (a dramatic beat after [sighs]); spike 5's 4-bit run stalled for 7.9 s mid-line at a
+# normal-looking length.
+MAX_PAUSE_S = 3.5
+PAUSE_DBFS = -45.0
+_WINDOW_S = 0.05
 
 _CUE = re.compile(r"\[[^\]]*\]|<\|[^|]*\|>")
 
@@ -56,6 +62,24 @@ def trim(pcm: np.ndarray, rate: int) -> tuple[np.ndarray, int, int]:
     return pcm[start:end], int(start), int(len(pcm) - end)
 
 
+def longest_pause(pcm: np.ndarray, rate: int) -> float:
+    """Seconds of the longest run of quiet 50 ms windows between the first and last sound."""
+    win = max(1, int(_WINDOW_S * rate))
+    n = len(pcm) // win
+    if n == 0:
+        return 0.0
+    frames = pcm[: n * win].reshape(n, win).astype(np.float64) / 32768
+    quiet = np.sqrt(np.mean(frames**2, axis=1)) < 10 ** (PAUSE_DBFS / 20)
+    loud = np.flatnonzero(~quiet)
+    if len(loud) < 2:
+        return 0.0
+    inner, longest, run = quiet[loud[0] : loud[-1] + 1], 0, 0
+    for q in inner:
+        run = run + 1 if q else 0
+        longest = max(longest, run)
+    return longest * win / rate
+
+
 def problem(text: str, pcm: np.ndarray, rate: int, stop: str | None) -> str | None:
     """Why a take must be spoken again, or None when it is fine."""
     if stop not in (None, "complete"):
@@ -67,6 +91,8 @@ def problem(text: str, pcm: np.ndarray, rate: int, stop: str | None) -> str | No
         return f"too short ({seconds:.1f} s for ~{want:.1f} s of text)"
     if seconds > LONG * want + SLACK_S:
         return f"too long ({seconds:.1f} s for ~{want:.1f} s of text)"
+    if (pause := longest_pause(pcm, rate)) > MAX_PAUSE_S:
+        return f"stalls ({pause:.1f} s of silence mid-line)"
     return None
 
 

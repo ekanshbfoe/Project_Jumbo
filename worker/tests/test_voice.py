@@ -62,6 +62,12 @@ def test_take_checks():
     assert takes.problem(text, np.zeros(RATE * 4, "<i2"), RATE, "complete") == "silent"
     assert takes.problem(text, speech(0.9), RATE, "complete").startswith("too short")
     assert takes.problem(text, speech(14.0), RATE, "complete").startswith("too long")
+    # A stall: normal length overall, but a long silence in the middle.
+    stalled = np.concatenate([speech(2.0), np.zeros(int(4.0 * RATE), "<i2"), speech(2.0)])
+    assert takes.problem(text, stalled, RATE, "complete") == "stalls (4.0 s of silence mid-line)"
+    # A dramatic pause, like the 2.45 s one after [sighs] in spike 4, is acting and stays.
+    breath = np.concatenate([speech(2.0), np.zeros(int(2.5 * RATE), "<i2"), speech(2.0)])
+    assert takes.problem(text, breath, RATE, "complete") is None
     # Cues and speaker tags are not spoken, so they do not lengthen the expectation.
     assert takes.expected_seconds("[sighs] <|speaker:0|> " + text) == takes.expected_seconds(text)
 
