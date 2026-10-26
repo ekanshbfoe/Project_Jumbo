@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from jumbo_worker.contracts import AudioManifest, EpisodeSpec, LedgerEvent, MemoryDelta, PanelsDoc, ScriptDoc
-from jumbo_worker.contracts.rules import ContractError, parse, problems
+from jumbo_worker.contracts.rules import ContractError, narration_problem, parse, problems, script_problems
 
 FIXTURES = Path(__file__).resolve().parents[2] / "packages" / "schema" / "fixtures"
 
@@ -114,3 +114,14 @@ def test_parse_raises_with_every_problem():
     with pytest.raises(ContractError) as err:
         parse(ScriptDoc, data)
     assert err.value.problems == ["lines.2.id: duplicate line id l_0001"]
+
+
+def test_narration_is_devanagari_or_mixed_hinglish():
+    cases = fixture("hinglish-cases.json")
+    assert [narration_problem(t) for t in cases["ok"]] == [None] * len(cases["ok"])
+    assert all("Latin letters" in narration_problem(t) for t in cases["romanized"])
+    assert all("at least half" in narration_problem(t) for t in cases["too_little_devanagari"])
+    assert "(ki, thi, lekin, kuch, tha)" in narration_problem(cases["romanized"][0])
+
+    data = broken("script-doc.sample.json", lambda d: d["lines"][1].update(narration=cases["romanized"][0]))
+    assert [p.split(":")[0] for p in script_problems(parse(ScriptDoc, data))] == ["lines.1.narration"]

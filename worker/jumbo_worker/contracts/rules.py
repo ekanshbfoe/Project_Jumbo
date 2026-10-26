@@ -6,6 +6,7 @@ ranges; these check how fields relate. Every message matches its zod counterpart
 
 from __future__ import annotations
 
+import re
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, RootModel
@@ -75,6 +76,33 @@ def panels_doc(doc: PanelsDoc) -> list[str]:
         for j, character in enumerate(panel.characters or []):
             out += _bbox(f"panels.{i}.characters.{j}", character.bbox)
     return out
+
+
+# packages/schema/src/hinglish.ts: narration is Devanagari or Mixed Hinglish, never Hindi in Latin letters.
+ROMANIZED_HINDI = frozenset(
+    "hai hain tha thi thay ka ki ke ko ne se mein aur nahi nahin kya kyun kyon toh bhi yeh ye woh wo ek lekin sirf abhi "
+    "kuch raha rahi rahe hoga hogi gaya gayi uska uski uske apna apni mera meri tera teri".split()
+)
+_CUE = re.compile(r"\[[^\]]*\]")
+_DEVANAGARI = re.compile("[\u0900-\u097F]")
+_LATIN = re.compile("[A-Za-z]")
+
+
+def narration_problem(text: str) -> str | None:
+    """Why `text` breaks the writing rule, or None when it is Devanagari or Mixed Hinglish."""
+    words = [w for w in _CUE.sub(" ", text).split() if _DEVANAGARI.search(w) or _LATIN.search(w)]
+    devanagari = sum(1 for w in words if _DEVANAGARI.search(w))
+    romanized = [b for w in words if not _DEVANAGARI.search(w) and (b := re.sub("[^a-z]", "", w.lower())) in ROMANIZED_HINDI]
+    if romanized:
+        return f"narration has Hindi in Latin letters ({', '.join(dict.fromkeys(romanized))}); write it in Devanagari"
+    if devanagari == 0 or devanagari * 2 < len(words):
+        return "narration must be Devanagari or Mixed Hinglish: at least half its words in Devanagari, English words may stay in Latin"
+    return None
+
+
+def script_problems(doc: ScriptDoc) -> list[str]:
+    """The writing rule over a script meant for voicing; not part of the ScriptDoc shape (see hinglish.ts)."""
+    return [f"lines.{i}.narration: {p}" for i, line in enumerate(doc.lines) if (p := narration_problem(line.narration))]
 
 
 def script_doc(doc: ScriptDoc) -> list[str]:

@@ -28,7 +28,7 @@ export const ScriptLine = z
   .object({
     id: LineId,
     panel_ids: z.array(PanelId).min(1).max(3),
-    /** Hinglish narration spoken over the beat. */
+    /** Narration spoken over the beat. Scripts for voicing are Devanagari or Mixed Hinglish (scriptProblems). */
     narration: z.string().min(1).max(600),
     emotion: Emotion,
     voice: VoiceDirection.prefault({}),

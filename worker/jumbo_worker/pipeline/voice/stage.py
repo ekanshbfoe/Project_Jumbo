@@ -30,7 +30,7 @@ import tempfile
 from pathlib import Path
 
 from ...contracts import AudioManifest, ScriptDoc
-from ...contracts.rules import parse
+from ...contracts.rules import parse, script_problems
 from ...jobs import JobContext, JobError
 from .direction import NEUTRAL, pick_prompt, speed_for
 
@@ -46,6 +46,8 @@ async def run(ctx: JobContext) -> str:
     except (OSError, ValueError) as e:
         raise JobError(f"voice needs a JSON request blob: {e}") from e
     script = parse(ScriptDoc, request.get("script"))
+    if problems := script_problems(script):
+        raise JobError("script is not Devanagari or Mixed Hinglish: " + "; ".join(problems))
     chapter = script.chapter_id
     voices: dict[str, dict] = request.get("voices") or {}
     durations: dict[str, float] = request.get("durations") or {}

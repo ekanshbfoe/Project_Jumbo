@@ -27,11 +27,11 @@ const script = ScriptDoc.parse({
   chapter_id: "ch_0001",
   title: "Pehla Darwaza",
   lines: [
-    { id: "l_0001", panel_ids: ["p_0001"], narration: "Ek do teen chaar paanch", emotion: "calm", preset: { name: "pan" } },
+    { id: "l_0001", panel_ids: ["p_0001"], narration: "एक दो तीन चार पाँच", emotion: "calm", preset: { name: "pan" } },
     {
       id: "l_0002",
       panel_ids: ["p_0001", "p_0002"],
-      narration: "Aamne saamne",
+      narration: "आमने सामने",
       emotion: "tense",
       preset: { name: "split_screen" },
       transition_in: { name: "fade", duration: 0.5 },

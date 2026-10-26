@@ -138,3 +138,12 @@ async def test_voice_job_creates_missing_voices_once_and_reuses_emotion_clips(tm
     assert all(store.has(h) for h in manifest["files"].values())
     report = {r["line_id"]: r for r in manifest["report"]["lines"]}
     assert report[lines[-1]["id"]]["emotion_clip"] == "sad"
+
+
+async def test_voice_job_refuses_hindi_in_latin_letters(tmp_path):
+    store = BlobStore(tmp_path / "store")
+    script = json.loads(json.dumps(SCRIPT))
+    script["lines"][0]["narration"] = "Seoul ki raat hamesha shaant lagti thi."
+    job = JobRunner(store, EventBus()).submit("voice", store.put(json.dumps({"script": script}).encode()))
+    await asyncio.wait_for(job.task, 10)
+    assert job.status == "failed" and "lines.0.narration: narration has Hindi in Latin letters (ki, thi)" in job.error

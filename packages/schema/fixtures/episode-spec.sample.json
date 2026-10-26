@@ -162,7 +162,7 @@
       "panel_ids": [
         "p_0001"
       ],
-      "narration": "Duniya ka sabse kamzor hunter, aur aaj woh pehli baar muskura raha hai.",
+      "narration": "दुनिया का सबसे कमज़ोर hunter, और आज वो पहली बार मुस्कुरा रहा है।",
       "emotion": "mysterious",
       "preset": {
         "name": "zoom",
@@ -191,7 +191,7 @@
         "p_0002",
         "p_0003"
       ],
-      "narration": "Dono taraf dushman, beech mein sirf woh.",
+      "narration": "दोनों तरफ़ दुश्मन, बीच में सिर्फ़ वो।",
       "emotion": "tense",
       "preset": {
         "name": "split_screen",
@@ -215,7 +215,7 @@
       "panel_ids": [
         "p_0003"
       ],
-      "narration": "Aur tabhi system ne awaaz di.",
+      "narration": "और तभी system ने आवाज़ दी।",
       "emotion": "shock",
       "preset": {
         "name": "hud_popup",
