@@ -59,7 +59,7 @@ def test_runner_passes_voice_speed_and_a_fitted_duration(tmp_path):
     call = model.calls[0]
     assert call["text"] == "Ek do teen" and call["voice_clone_prompt"] == "PROMPT" and call["speed"] == 1.12
     # Fitted to a panel: silence trimming would make the clip shorter than asked.
-    assert call["duration"] == 2.0 and call["postprocess_output"] is False
+    assert call["duration"] == 2.0 and call["postprocess_output"] is False and call["pad_duration"] == 0.0
 
 
 def test_omnivoice_gets_its_own_env_and_fits_a_t4():

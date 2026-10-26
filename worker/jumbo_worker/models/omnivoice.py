@@ -119,8 +119,10 @@ class OmniVoiceRunner:
             if payload.get(key) is not None:
                 kwargs[key] = payload[key]
         if payload.get("duration") is not None:
-            # Trimming trailing silence would undercut a duration fitted to the panel.
+            # Fitted to a panel: trimming silence would undercut it and the default 0.1 s padding on
+            # each side would overshoot it (spike 3: 4.0 s asked, 4.2 s returned).
             kwargs["postprocess_output"] = False
+            kwargs["pad_duration"] = 0.0
         [audio] = self.model.generate(**kwargs)
         return {"duration": round(write_wav(payload["out"], audio), 4), "sample_rate": SAMPLE_RATE}
 

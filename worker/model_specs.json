@@ -33,9 +33,9 @@
       "concurrency": 1,
       "priority": 4,
       "wake_s": 180,
-      "job_s": 4,
+      "job_s": 2,
       "phase": "vision",
-      "notes": "OmniVoice 0.2.1 (k2-fsa, CC-BY-NC weights): cloned or designed voices, 24 kHz, one request per script line. Needs transformers>=5.3, so it runs in its own env (pip). First wake builds the env and downloads ~2.5 GB. HBM estimate until spike 3.",
+      "notes": "OmniVoice 0.2.1 (k2-fsa, CC-BY-NC weights): cloned or designed voices, 24 kHz, one request per script line. Needs transformers>=5.3, so it runs in its own env (pip). Spike 3 on a T4 (fp16): load 52 s with the 2.5 GB download, peak 4.1 GB, 0.3-0.6x real time per line.",
       "pip": [
         "omnivoice==0.2.1"
       ]
