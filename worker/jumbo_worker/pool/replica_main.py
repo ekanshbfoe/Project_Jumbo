@@ -123,6 +123,7 @@ RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {
     "vllm-tpu": _not_yet("vllm-tpu"),
     "jax": _not_yet("jax"),
     "torch-xla": _not_yet("torch-xla"),
+    "ggml": _not_yet("ggml"),
     "cpu": _not_yet("cpu"),
     "node": _not_yet("node"),
 }
@@ -135,13 +136,13 @@ def _magi(spec: ModelSpec) -> Runner:
 
 
 # Runners for specific models, imported only inside the replica that serves them.
-def _omnivoice(spec: ModelSpec) -> Runner:
-    from ..models.omnivoice import OmniVoiceRunner
+def _drama3(spec: ModelSpec) -> Runner:
+    from ..models.drama3 import Drama3Runner
 
-    return OmniVoiceRunner(spec)
+    return Drama3Runner(spec)
 
 
-MODEL_RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {"magi_v2": _magi, "omnivoice": _omnivoice}
+MODEL_RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {"magi_v2": _magi, "drama3": _drama3}
 
 
 def make_runner(spec: ModelSpec) -> Runner:

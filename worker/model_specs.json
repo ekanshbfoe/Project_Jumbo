@@ -21,24 +21,24 @@
       "phase": "vision",
       "notes": "Magi v2 (ragavsachdeva/magiv2, personal/non-commercial weights): panels, texts + OCR, speakers, characters per image. Tall slices are tiled. First wake downloads ~2 GB from the HF Hub. Spike 2 profiles HBM and speed."
     },
-    "omnivoice": {
-      "backend": "torch-xla",
+    "drama3": {
+      "backend": "ggml",
       "chips": 1,
-      "hbm_gb_per_chip": 5.0,
-      "cpu_cores": 1,
-      "host_ram_gb": 6,
+      "hbm_gb_per_chip": 11.5,
+      "cpu_cores": 3,
+      "host_ram_gb": 21,
       "cpu_fallback": true,
-      "max_replicas": 8,
+      "max_replicas": 2,
       "target_queue_per_replica": 2,
       "concurrency": 1,
       "priority": 4,
-      "wake_s": 180,
-      "job_s": 2,
+      "wake_s": 240,
+      "job_s": 8,
       "phase": "vision",
-      "notes": "OmniVoice 0.2.1 (k2-fsa, CC-BY-NC weights): cloned or designed voices, 24 kHz, one request per script line. Needs transformers>=5.3, so it runs in its own env (pip). Spike 3 on a T4 (fp16): load 52 s with the 2.5 GB download, peak 4.1 GB, 0.3-0.6x real time per line.",
-      "pip": [
-        "omnivoice==0.2.1"
-      ]
+      "options": {
+        "quant": "q6_k"
+      },
+      "notes": "Fish Audio Drama 3 (35B MoE, 3B active) through speech.cpp 0.8.11 built for CUDA sm_75 with the dual-GPU and memory-cap patch; weights sakasegawa/drama-3-GGUF. Spike 4 on a T4 (Q6_K, uncapped): 14 of 40 layers' experts on the card, the rest on 4 CPU threads; peak 14.7 GB GPU, 20.8 GB RAM, load 120 s, 1.6 s per second of audio. 44.1 kHz. Quant and replica layout are set by spike 5. On a TPU host it does not run yet (no ggml TPU backend; TorchTPU is the path to test)."
     },
     "qwen25vl_72b_int8": {
       "backend": "vllm-tpu",

@@ -1,7 +1,7 @@
 """Isolated Python environments for models whose dependencies clash with the worker's own.
 
-Magi's remote code needs transformers 4.46, OmniVoice needs 5.3 or newer: one interpreter cannot
-hold both. Every replica is its own process anyway, so a model that lists `pip` requirements in its
+Magi's remote code needs transformers 4.46; a model that needs a newer one cannot share its
+interpreter. Every replica is its own process anyway, so a model that lists `pip` requirements in its
 spec runs in a virtualenv of its own. The env sees the host's packages (torch, CUDA, numpy are
 preinstalled on Kaggle and reused, not downloaded again) and installs only its requirements on top,
 which take precedence. It is built on the first wake and reused while the requirements match.

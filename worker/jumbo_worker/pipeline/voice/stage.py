@@ -3,28 +3,33 @@
 Input blob (JSON):
 
     {"script": ScriptDoc,
-     "voices": {"narrator": {"design": "male, young adult, low pitch",     # used once, to create it
-                             "language": "hi",                             # optional language hint
-                             "prompts": {"neutral": "<blob>", "sad": "<blob>"}}},
-     "durations": {"l_0001": 4.5}}                                         # optional, seconds
+     "voices": {"narrator": {"design": "deep, calm Indian male narrator voice",  # used once, to create it
+                             "prompts": {"neutral": "<blob>", "sad": "<blob>"}}},  # voice files
+     "seed": 7}                                                                  # optional
 
-A voice with no prompts yet is created on first use: the model speaks the voice's first line in the
-designed voice, and that take becomes the voice's neutral reference. The new prompt comes back in
+A voice with no prompts yet is created on first use: the model speaks the voice's first line in a voice
+it invents from the description, and that take becomes the voice's neutral reference. The new prompt comes back in
 the manifest for the app to keep in the project's voice library, so the voice sounds the same in
 every later chapter. Emotion clips (`sad`, `tense`, ...) are added to a voice from reference audio;
 until then lines fall back to neutral.
 
+Each take is checked (pipeline/voice/takes.py) and spoken again with the next seed when it stopped early, is
+silent, or is far off the length its text should take; the best of ATTEMPTS is kept and the report says so.
+Silence is cut off both ends; nothing else touches the audio. The lines' lengths then set the panels'
+(buildEpisodeSpec), so nothing is fitted to a duration.
+
 Output manifest:
 
     {"chapter_id", "audio": AudioManifest, "files": {"audio/l_0001.wav": "<blob>"},
-     "voices": {"narrator": {"neutral": "<blob>"}},  # prompts created by this run
-     "report": {"lines": [{"line_id", "voice", "emotion_clip", "duration", "speed"}]}}
+     "voices": {"narrator": {"neutral": "<blob>"}},  # voice files created by this run
+     "report": {"lines": [{"line_id", "voice", "emotion_clip", "duration", "attempts", "seed", "problem"?}]}}
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import shutil
 import tempfile
 from pathlib import Path
@@ -32,12 +37,16 @@ from pathlib import Path
 from ...contracts import AudioManifest, ScriptDoc
 from ...contracts.rules import parse, script_problems
 from ...jobs import JobContext, JobError
-from .direction import NEUTRAL, pick_prompt, speed_for
+from ...models.wav import read_pcm, write_pcm
+from . import takes
+from .direction import NEUTRAL, pick_prompt
 
-MODEL = "omnivoice"
-SAMPLE_RATE = 24000
+log = logging.getLogger(__name__)
+
+MODEL = "drama3"
 PARALLEL_LINES = 8
-DEFAULT_DESIGN = "male, young adult, moderate pitch"
+DEFAULT_DESIGN = "calm Indian male narrator voice"
+DEFAULT_SEED = 7
 
 
 async def run(ctx: JobContext) -> str:
@@ -50,7 +59,7 @@ async def run(ctx: JobContext) -> str:
         raise JobError("script is not Devanagari or Mixed Hinglish: " + "; ".join(problems))
     chapter = script.chapter_id
     voices: dict[str, dict] = request.get("voices") or {}
-    durations: dict[str, float] = request.get("durations") or {}
+    seed = int(request.get("seed", DEFAULT_SEED))
     store = ctx.store
     work = Path(tempfile.mkdtemp(prefix="voice-", dir=store.root))
     try:
@@ -69,6 +78,7 @@ async def run(ctx: JobContext) -> str:
                 prompts[voice][NEUTRAL] = str(prompt)
                 created.setdefault(voice, {})[NEUTRAL] = await asyncio.to_thread(store.put, prompt.read_bytes())
 
+        rates: set[int] = set()
         files: dict[str, str] = {}
         clips: dict[str, dict] = {}
         report: dict[str, dict] = {}
@@ -79,17 +89,20 @@ async def run(ctx: JobContext) -> str:
             nonlocal done
             voice, line_id = _speaker(line), line.id
             used, prompt = pick_prompt(prompts[voice], line.emotion) or (NEUTRAL, prompts[voice][NEUTRAL])
-            pace = (line.voice.pace if line.voice else None) or "normal"
-            out = work / f"{line_id}.wav"
-            payload = {"text": line.narration, "out": str(out), "voice": prompt, "speed": speed_for(pace), "duration": durations.get(line_id)}
-            if voices.get(voice, {}).get("language"):
-                payload["language"] = voices[voice]["language"]
+            direction = line.voice
+            payload = {"text": line.narration, "voice": prompt, "emotion": line.emotion,
+                       "tone": direction.tone if direction else None, "pace": direction.pace if direction else None}
             async with gate:
-                result = await ctx.call(MODEL, "speak", payload)
+                take = await _best_take(ctx, work, line_id, payload, seed)
+            rates.add(take["rate"])
             rel = f"audio/{line_id}.wav"
-            files[rel] = await asyncio.to_thread(store.put, out.read_bytes())
-            clips[line_id] = {"line_id": line_id, "src": f"chapters/{chapter}/{rel}", "duration": result["duration"]}
-            report[line_id] = {"line_id": line_id, "voice": voice, "emotion_clip": used, "duration": result["duration"], "speed": payload["speed"]}
+            files[rel] = await asyncio.to_thread(store.put, Path(take["path"]).read_bytes())
+            duration = round(len(take["pcm"]) / take["rate"], 4)
+            clips[line_id] = {"line_id": line_id, "src": f"chapters/{chapter}/{rel}", "duration": duration}
+            report[line_id] = {"line_id": line_id, "voice": voice, "emotion_clip": used, "duration": duration,
+                               "attempts": take["attempts"], "seed": take["seed"], "trimmed_s": take["trimmed_s"]}
+            if take["problem"]:
+                report[line_id]["problem"] = take["problem"]
             done += 1
             ctx.progress(0.1 + 0.85 * done / len(script.lines), f"voiced {done}/{len(script.lines)} lines")
 
@@ -102,7 +115,9 @@ async def run(ctx: JobContext) -> str:
             await asyncio.gather(*tasks, return_exceptions=True)
 
         order = [line.id for line in script.lines]
-        audio = parse(AudioManifest, {"schema_version": 1, "chapter_id": chapter, "sample_rate": SAMPLE_RATE, "clips": [clips[i] for i in order]})
+        if len(rates) != 1:
+            raise JobError(f"voice replicas spoke at different sample rates: {sorted(rates)}")
+        audio = parse(AudioManifest, {"schema_version": 1, "chapter_id": chapter, "sample_rate": rates.pop(), "clips": [clips[i] for i in order]})
         manifest = {
             "chapter_id": chapter,
             "audio": audio.model_dump(mode="json", exclude_none=True),
@@ -120,12 +135,31 @@ def _speaker(line) -> str:
     return (line.voice.speaker if line.voice else None) or "narrator"
 
 
+async def _best_take(ctx: JobContext, work: Path, name: str, payload: dict, seed: int) -> dict:
+    """Speaks a line until a take passes the checks (at most takes.ATTEMPTS), trimmed of its silent ends.
+    When none passes, the take closest to the text's expected length is kept and its problem reported."""
+    best = None
+    for attempt in range(1, takes.ATTEMPTS + 1):
+        raw = work / f"{name}.{attempt}.raw.wav"
+        result = await ctx.call(MODEL, "speak", {**payload, "out": str(raw), "seed": seed + attempt - 1})
+        pcm, rate = await asyncio.to_thread(read_pcm, raw)
+        trimmed, head, tail = takes.trim(pcm, rate)
+        take = {"pcm": trimmed, "rate": rate, "seed": result.get("seed", seed + attempt - 1), "attempts": attempt,
+                "trimmed_s": round((head + tail) / rate, 3), "problem": takes.problem(payload["text"], trimmed, rate, result.get("stop"))}
+        if best is None or take["problem"] is None or takes.distance(payload["text"], trimmed, rate) < takes.distance(payload["text"], best["pcm"], best["rate"]):
+            best = {**take, "attempts": attempt}
+        if take["problem"] is None:
+            break
+        log.info("%s: take %d %s; speaking it again", name, attempt, take["problem"])
+    best["attempts"] = attempt
+    best["path"] = str(work / f"{name}.wav")
+    await asyncio.to_thread(write_pcm, best["path"], best["pcm"], best["rate"])
+    return best
+
+
 async def _create_voice(ctx: JobContext, work: Path, voice: str, spec: dict, sample: str) -> Path:
-    """Designs the voice from its description, then clones that take so later lines match it."""
-    take, prompt = work / f"{voice}.design.wav", work / f"{voice}.neutral.pt"
-    payload = {"text": sample, "out": str(take), "instruct": spec.get("design") or DEFAULT_DESIGN}
-    if spec.get("language"):
-        payload["language"] = spec["language"]
-    await ctx.call(MODEL, "speak", payload)
-    await ctx.call(MODEL, "enroll", {"ref_audio": str(take), "ref_text": sample, "out": str(prompt)})
+    """Invents the voice from its description, then makes a voice file of that take so later lines match it."""
+    prompt = work / f"{voice}.neutral.voice.gguf"
+    take = await _best_take(ctx, work, f"{voice}.design", {"text": sample, "design": spec.get("design") or DEFAULT_DESIGN}, DEFAULT_SEED)
+    await ctx.call(MODEL, "enroll", {"ref_audio": take["path"], "ref_text": sample, "out": str(prompt)})
     return prompt

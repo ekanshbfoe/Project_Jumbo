@@ -9,10 +9,10 @@ async def test_a_model_env_is_built_once_and_rebuilt_when_its_requirements_chang
     async def run(cmd):
         commands.append(cmd)
 
-    py = await ensure_env("omnivoice", ["omnivoice==0.2.1"], tmp_path, run)
+    py = await ensure_env("tts", ["somepkg==0.2.1"], tmp_path, run)
     assert py.endswith("bin/python") and len(commands) == 2
-    assert "--system-site-packages" in commands[0] and commands[1][-1] == "omnivoice==0.2.1"
-    await ensure_env("omnivoice", ["omnivoice==0.2.1"], tmp_path, run)
+    assert "--system-site-packages" in commands[0] and commands[1][-1] == "somepkg==0.2.1"
+    await ensure_env("tts", ["somepkg==0.2.1"], tmp_path, run)
     assert len(commands) == 2
-    await ensure_env("omnivoice", ["omnivoice==0.2.2"], tmp_path, run)
+    await ensure_env("tts", ["somepkg==0.2.2"], tmp_path, run)
     assert len(commands) == 4

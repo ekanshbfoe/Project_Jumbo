@@ -24,7 +24,7 @@ SOFT_MARGIN = 0.04
 # Usable memory of one Kaggle T4 (16 GB nominal, about 15 GB after the driver's reserve).
 GPU_HBM_GB = 15.0
 
-Backend = Literal["vllm-tpu", "jax", "torch-xla", "cpu", "node", "fake"]
+Backend = Literal["vllm-tpu", "jax", "torch-xla", "ggml", "cpu", "node", "fake"]
 
 
 class ModelSpec(BaseModel):
@@ -59,8 +59,10 @@ class ModelSpec(BaseModel):
     # Weight files, relative to the weights root (a Kaggle input mount).
     weights: str | None = None
     # Extra pip requirements: the replica then runs in an isolated env of its own (pool/envs.py),
-    # for models whose dependencies clash with the worker's (OmniVoice needs a newer transformers).
+    # for models whose dependencies clash with the worker's (e.g. a newer transformers than Magi's).
     pip: list[str] = Field(default_factory=list)
+    # Model-specific settings its runner reads, e.g. {"quant": "q6_k"} for Drama 3.
+    options: dict[str, str] = Field(default_factory=dict)
     notes: str = ""
 
     @model_validator(mode="after")
