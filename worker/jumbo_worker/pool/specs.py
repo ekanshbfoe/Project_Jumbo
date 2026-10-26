@@ -58,6 +58,9 @@ class ModelSpec(BaseModel):
     phase: str | None = None
     # Weight files, relative to the weights root (a Kaggle input mount).
     weights: str | None = None
+    # Extra pip requirements: the replica then runs in an isolated env of its own (pool/envs.py),
+    # for models whose dependencies clash with the worker's (OmniVoice needs a newer transformers).
+    pip: list[str] = Field(default_factory=list)
     notes: str = ""
 
     @model_validator(mode="after")

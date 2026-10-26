@@ -17,6 +17,7 @@ from typing import AsyncIterator, Awaitable, Callable, Protocol
 from .autoscaler import Plan, ReplicaView, plan
 from .chips import ChipLease, ChipLedger, GpuLedger, LeaseError
 from .cpu import CpuLease, CpuPool
+from .envs import ensure_env
 from .replica import Replica, ReplicaDied, ReplicaError, replica_env
 from .specs import ModelSpec, PoolConfig
 from .watchdog import Watchdog
@@ -374,6 +375,7 @@ class ResourceManager:
 
     async def _spawn_process(self, spec: ModelSpec, chips: ChipLease | None, cpu: CpuLease, weights: Path | None, gpu: int | None = None) -> Handle:
         extra = {**self.extra_env, **({"JUMBO_WEIGHTS": str(weights)} if weights else {})}
-        replica = Replica(spec, chips, cpu, replica_env(spec, self.config, chips, cpu, extra, gpu=gpu), log_dir=self.log_dir)
+        python = await ensure_env(spec.name, spec.pip) if spec.pip else None
+        replica = Replica(spec, chips, cpu, replica_env(spec, self.config, chips, cpu, extra, gpu=gpu), log_dir=self.log_dir, python=python)
         await replica.start(timeout=spec.wake_s * 3 + 60)
         return replica

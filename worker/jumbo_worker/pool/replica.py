@@ -82,13 +82,16 @@ class Replica:
 
     _ids = itertools.count(1)
 
-    def __init__(self, spec: ModelSpec, chips: ChipLease | None, cpu: CpuLease, env: dict[str, str], log_dir: Path | None = None) -> None:
+    def __init__(
+        self, spec: ModelSpec, chips: ChipLease | None, cpu: CpuLease, env: dict[str, str], log_dir: Path | None = None, python: str | None = None
+    ) -> None:
         self.id = f"{spec.name}#{next(self._ids)}"
         self.spec = spec
         self.chips = chips
         self.cpu = cpu
         self._env = env
         self._log_dir = log_dir
+        self._python = python or sys.executable
         self.state = "starting"
         self.inflight = 0
         self.last_used = time.monotonic()
@@ -109,7 +112,7 @@ class Replica:
             self._log_dir.mkdir(parents=True, exist_ok=True)
             stderr = open(self._log_dir / f"{self.id.replace('#', '-')}.log", "ab")  # noqa: SIM115 - owned by the child
         self._proc = await asyncio.create_subprocess_exec(
-            sys.executable,
+            self._python,
             "-m",
             "jumbo_worker.pool.replica_main",
             stdin=asyncio.subprocess.PIPE,
