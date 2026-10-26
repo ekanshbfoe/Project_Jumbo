@@ -96,6 +96,7 @@ class ResourceManager:
         self._wake = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
         self._last_status: dict | None = None
+        self._closing = False
         self.kills = 0
 
     # --- lifecycle ---------------------------------------------------------------------------
@@ -104,6 +105,10 @@ class ResourceManager:
         self._tasks = [asyncio.create_task(self._scale_loop()), asyncio.create_task(self._watch_loop())]
 
     async def close(self) -> None:
+        # The loops also stop on this flag: on Python 3.11, asyncio.wait_for can swallow a
+        # cancellation that lands as its inner wait completes, so cancelling alone may not stop them.
+        self._closing = True
+        self._wake.set()
         for task in self._tasks:
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
@@ -174,10 +179,12 @@ class ResourceManager:
     # --- scaling -----------------------------------------------------------------------------
 
     async def _scale_loop(self) -> None:
-        while True:
+        while not self._closing:
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self._wake.wait(), self.config.tick_s)
             self._wake.clear()
+            if self._closing:
+                return
             try:
                 await self.reconcile()
             except Exception:  # noqa: BLE001 - the loop must survive any single bad round
@@ -267,7 +274,7 @@ class ResourceManager:
     # --- watchdog ----------------------------------------------------------------------------
 
     async def _watch_loop(self) -> None:
-        while True:
+        while not self._closing:
             await asyncio.sleep(self.sample_s)
             for slot in [s for s in self.slots.values() if s.state == "ready" and s.chips]:
                 try:
