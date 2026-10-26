@@ -25,6 +25,30 @@ fn bundle_carries_the_whole_worker_package() {
     assert!(!bundle.as_object().expect("object").keys().any(|k| k.contains("test")));
 }
 
+/// Subpackages (pool/, pipeline/ …) must ship too, or the kernel would fail to import them.
+#[test]
+fn bundle_matches_every_worker_source_file_on_disk() {
+    fn walk(dir: &std::path::Path, base: &std::path::Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).expect("read_dir") {
+            let path = entry.expect("entry").path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|n| n != "__pycache__") {
+                    walk(&path, base, out);
+                }
+            } else if path.extension().is_some_and(|e| e == "py") {
+                out.push(path.strip_prefix(base).expect("prefix").to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    let worker = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../worker");
+    let mut on_disk = vec!["pyproject.toml".to_owned()];
+    walk(&worker.join("jumbo_worker"), &worker, &mut on_disk);
+    on_disk.sort();
+    let bundle: Value = serde_json::from_str(worker_bundle()).expect("bundle json");
+    let bundled: Vec<String> = bundle.as_object().expect("object").keys().cloned().collect();
+    assert_eq!(bundled, on_disk);
+}
+
 #[test]
 fn kernel_push_targets_the_configured_kernel() {
     let config = LaunchConfig {
