@@ -14,6 +14,7 @@ class PanelId(RootModel[str]):
 
 
 class VoiceDirection(BaseModel):
+    speaker: Annotated[str | None, Field(pattern="^[a-z][a-z0-9_]{0,39}$")] = "narrator"
     tone: Annotated[str | None, Field(max_length=40, min_length=1)] = "neutral"
     pace: Literal["slow", "normal", "fast"] | None = "normal"
     intensity: Annotated[float | None, Field(ge=0.0, le=1.0)] = 0.5

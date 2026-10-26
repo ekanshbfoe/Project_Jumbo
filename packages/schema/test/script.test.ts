@@ -15,7 +15,7 @@ const doc = (lines: unknown[]) => ({ schema_version: 1, chapter_id: "ch_0001", l
 describe("ScriptDoc", () => {
   it("accepts a valid script and fills voice and transition defaults", () => {
     const parsed = ScriptDoc.parse(doc([line()]));
-    expect(parsed.lines[0]?.voice).toEqual({ tone: "neutral", pace: "normal", intensity: 0.5 });
+    expect(parsed.lines[0]?.voice).toEqual({ speaker: "narrator", tone: "neutral", pace: "normal", intensity: 0.5 });
     expect(parsed.lines[0]?.transition_in).toEqual({ name: "cut", duration: 0.4 });
   });
 

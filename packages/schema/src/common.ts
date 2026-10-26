@@ -8,6 +8,8 @@ export const ChapterId = z.string().regex(/^ch_\d{4}$/, "expected ch_0001 style 
 export const PanelId = z.string().regex(/^p_\d{4}$/, "expected p_0001 style id");
 export const BubbleId = z.string().regex(/^b_\d{4}$/, "expected b_0001 style id");
 export const LineId = z.string().regex(/^l_\d{4}$/, "expected l_0001 style id");
+/** A voice in the project's voice library: "narrator", or a character voice like "jinwoo". */
+export const VoiceId = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/, "expected a lowercase voice id like narrator or jinwoo");
 
 /** Coordinate normalized to the source image: 0 = left/top edge, 1 = right/bottom edge. */
 const Unit = z.number().min(0).max(1);

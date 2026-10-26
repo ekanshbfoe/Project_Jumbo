@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ChapterId, LineId, PanelId, SchemaVersion } from "./common";
+import { ChapterId, LineId, PanelId, SchemaVersion, VoiceId } from "./common";
 import { MULTI_PANEL_PRESETS, PresetSpec, TransitionSpec } from "./presets";
 
 export const Emotion = z.enum([
@@ -16,6 +16,8 @@ export const Emotion = z.enum([
 
 /** Delivery hints for the voice engine. */
 export const VoiceDirection = z.object({
+  /** Who speaks the line: the narrator, or a character's voice from the project's voice library. */
+  speaker: VoiceId.default("narrator"),
   /** Free-form tone tag, e.g. "whispered", "excited", "menacing". */
   tone: z.string().min(1).max(40).default("neutral"),
   pace: z.enum(["slow", "normal", "fast"]).default("normal"),
