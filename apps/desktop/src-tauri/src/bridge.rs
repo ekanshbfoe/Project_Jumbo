@@ -1,5 +1,6 @@
 //! Session control for the Kaggle bridge: credentials, settings, boot, live events, the bridge
-//! self-test and stop. Secrets live in the OS credential store; settings in the app config dir.
+//! self-test and stop. Secrets live in the OS credential store (see `credentials`); settings in the
+//! app config dir.
 
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -20,7 +21,8 @@ use serde_json::{Value, json};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-const KEYRING_SERVICE: &str = "dev.jumbo.desktop";
+use crate::credentials::{self, Keyring, Storage};
+
 const KAGGLE_SECRET: &str = "kaggle";
 const GITHUB_SECRET: &str = "github-gist";
 
@@ -30,12 +32,16 @@ fn msg(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
-fn secret(name: &str) -> Option<String> {
-    keyring::Entry::new(KEYRING_SERVICE, name).ok()?.get_password().ok()
+fn config_dir(app: &AppHandle) -> CmdResult<PathBuf> {
+    app.path().app_config_dir().map_err(msg)
 }
 
-fn set_secret(name: &str, value: &str) -> CmdResult<()> {
-    keyring::Entry::new(KEYRING_SERVICE, name).and_then(|e| e.set_password(value)).map_err(msg)
+fn secret(app: &AppHandle, name: &str) -> Option<String> {
+    credentials::get(&Keyring, &config_dir(app).ok()?, name)
+}
+
+fn set_secret(app: &AppHandle, name: &str, value: &str) -> CmdResult<()> {
+    credentials::set(&Keyring, &config_dir(app)?, name, value).map(drop).map_err(msg)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
@@ -62,6 +68,7 @@ pub struct BridgeSettings {
 pub struct CredentialStatus {
     kaggle: bool,
     github: bool,
+    storage: Storage,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -117,7 +124,7 @@ fn set_view(app: &AppHandle, view: SessionView) {
 }
 
 fn settings_path(app: &AppHandle) -> CmdResult<PathBuf> {
-    Ok(app.path().app_config_dir().map_err(msg)?.join("bridge.json"))
+    Ok(config_dir(app)?.join("bridge.json"))
 }
 
 fn load_settings(app: &AppHandle) -> CmdResult<BridgeSettings> {
@@ -137,40 +144,44 @@ pub fn save_bridge_settings(app: AppHandle, settings: BridgeSettings) -> CmdResu
 }
 
 #[tauri::command]
-pub fn credential_status() -> CredentialStatus {
-    CredentialStatus { kaggle: secret(KAGGLE_SECRET).is_some(), github: secret(GITHUB_SECRET).is_some() }
+pub fn credential_status(app: AppHandle) -> CmdResult<CredentialStatus> {
+    Ok(CredentialStatus {
+        kaggle: secret(&app, KAGGLE_SECRET).is_some(),
+        github: secret(&app, GITHUB_SECRET).is_some(),
+        storage: credentials::storage(&config_dir(&app)?),
+    })
 }
 
 /// Stores the username and key from a kaggle.json file in the OS credential store.
 #[tauri::command]
-pub fn import_kaggle_json(path: String) -> CmdResult<()> {
+pub fn import_kaggle_json(app: AppHandle, path: String) -> CmdResult<()> {
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
     KaggleAuth::from_kaggle_json(&text).map_err(|e| format!("not a valid kaggle.json: {e}"))?;
-    set_secret(KAGGLE_SECRET, &text)
+    set_secret(&app, KAGGLE_SECRET, &text)
 }
 
 /// Stores a Kaggle API token (the newer alternative to kaggle.json).
 #[tauri::command]
-pub fn set_kaggle_token(token: String) -> CmdResult<()> {
+pub fn set_kaggle_token(app: AppHandle, token: String) -> CmdResult<()> {
     let token = token.trim();
     if token.is_empty() {
         return Err("token is empty".into());
     }
-    set_secret(KAGGLE_SECRET, &json!({ "token": token }).to_string())
+    set_secret(&app, KAGGLE_SECRET, &json!({ "token": token }).to_string())
 }
 
 /// Stores the GitHub token (classic, `gist` scope only) used to read the rendezvous gist.
 #[tauri::command]
-pub fn set_github_token(token: String) -> CmdResult<()> {
+pub fn set_github_token(app: AppHandle, token: String) -> CmdResult<()> {
     let token = token.trim();
     if token.is_empty() {
         return Err("token is empty".into());
     }
-    set_secret(GITHUB_SECRET, token)
+    set_secret(&app, GITHUB_SECRET, token)
 }
 
-fn kaggle_auth() -> CmdResult<KaggleAuth> {
-    let raw = secret(KAGGLE_SECRET).ok_or("add your Kaggle credentials first")?;
+fn kaggle_auth(app: &AppHandle) -> CmdResult<KaggleAuth> {
+    let raw = secret(app, KAGGLE_SECRET).ok_or("add your Kaggle credentials first")?;
     let value: Value = serde_json::from_str(&raw).map_err(msg)?;
     match value["token"].as_str() {
         Some(token) => Ok(KaggleAuth::Token(token.to_owned())),
@@ -249,7 +260,7 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
             if !settings.kernel_slug.contains('/') {
                 return Err("set the Kaggle kernel as owner/kernel-slug in Bridge settings".into());
             }
-            let token = secret(GITHUB_SECRET).ok_or("add the GitHub gist token first")?;
+            let token = secret(&app, GITHUB_SECRET).ok_or("add the GitHub gist token first")?;
             let config = LaunchConfig {
                 kernel_slug: settings.kernel_slug.trim().to_owned(),
                 machine_shape: (settings.mode == BridgeMode::KaggleTpu).then(|| "TpuV5E8".to_owned()),
@@ -257,7 +268,7 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
                 dataset_sources: vec![],
             };
             let reader = RendezvousReader::Gist(GistReader::new(http.clone(), &gist_id, &token));
-            (reader, Some((KaggleClient::new(http.clone(), kaggle_auth()?), config)))
+            (reader, Some((KaggleClient::new(http.clone(), kaggle_auth(&app)?), config)))
         }
     };
 

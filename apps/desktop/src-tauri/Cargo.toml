@@ -22,5 +22,13 @@ tauri-plugin-dialog = "2.8.1"
 time.workspace = true
 tokio = { version = "1.53.2", features = ["sync", "time"] }
 
+# Persistent Secret Service store (GNOME Keyring, KWallet) on Linux. Without a platform feature the
+# crate silently uses an in-memory mock, so saved credentials were lost when the app closed.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6.3", features = ["sync-secret-service", "crypto-rust"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

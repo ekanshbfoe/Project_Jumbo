@@ -128,6 +128,8 @@ export interface BridgeSettings {
 export interface CredentialStatus {
   kaggle: boolean;
   github: boolean;
+  /** "file" when no OS credential store was available and secrets fell back to a private file. */
+  storage: "os" | "file";
 }
 
 export type BootState =

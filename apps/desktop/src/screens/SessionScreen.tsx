@@ -242,7 +242,14 @@ export function SessionScreen(_: ScreenProps) {
       {!local ? (
         <div className="card stack" style={{ marginTop: 16 }}>
           <strong>Credentials</strong>
-          <span className="muted">Stored in Windows Credential Manager, never in the project folder.</span>
+          {credentials.data?.storage === "file" ? (
+            <span className="muted">
+              <span className="badge warn">Stored in a private file</span> No system keyring was found, so tokens are kept in a file only
+              your user can read, in the app settings folder.
+            </span>
+          ) : (
+            <span className="muted">Stored in the system credential store, never in the project folder.</span>
+          )}
           <div className="row">
             <span className={`badge ${credentials.data?.kaggle ? "ok" : "warn"}`}>Kaggle {credentials.data?.kaggle ? "✓" : "missing"}</span>
             <button

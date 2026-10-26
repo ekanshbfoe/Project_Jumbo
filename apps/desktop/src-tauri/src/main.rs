@@ -3,6 +3,7 @@
 
 mod bridge;
 mod commands;
+mod credentials;
 mod recent;
 
 use tauri::Manager;
