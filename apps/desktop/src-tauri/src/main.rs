@@ -34,6 +34,7 @@ fn main() {
             commands::import_chapters,
             commands::book_overview,
             commands::verify_book,
+            commands::chapter_preview,
             bridge::bridge_settings,
             bridge::save_bridge_settings,
             bridge::credential_status,

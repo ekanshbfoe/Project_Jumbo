@@ -4,9 +4,10 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use jumbo_core::{ChapterManifest, Project, chapter};
+use jumbo_core::{ChapterId, ChapterManifest, Project, chapter};
 use jumbo_ledger::{Entity, LockState, ReceiptBook, SnapshotManifest, VerifyReport};
 use serde::Serialize;
+use serde_json::Value;
 use tauri::{AppHandle, Manager, State};
 use time::format_description::well_known::Rfc3339;
 
@@ -70,6 +71,9 @@ fn config_dir(app: &AppHandle) -> CmdResult<PathBuf> {
 
 fn install(app: &AppHandle, state: &State<AppState>, project: Project) -> CmdResult<ProjectInfo> {
     let info = ProjectInfo::of(&project);
+    // Lets the live preview load this project's panels and audio through the asset protocol. The
+    // scope only ever holds folders the user opened, and lasts until the app quits.
+    app.asset_protocol_scope().allow_directory(project.paths().root(), true).map_err(msg)?;
     // Recent-list failures must not block opening the project.
     let _ = config_dir(app).map(|dir| recent::touch(&dir, &info.root, &info.title));
     // Replacing the old project drops it, which releases its lock.
@@ -155,4 +159,84 @@ pub fn book_overview(state: State<AppState>) -> CmdResult<BookOverview> {
 #[tauri::command]
 pub fn verify_book(state: State<AppState>) -> CmdResult<VerifyReport> {
     with_project(&state, |p| ReceiptBook::open(p).and_then(|b| b.verify()).map_err(msg))
+}
+
+/// The files a chapter's live preview can be built from, as raw JSON. The frontend validates them
+/// against the shared schema, so a broken file shows a precise error instead of a blank player.
+#[derive(Serialize)]
+pub struct PreviewSources {
+    /// `render/episode.json`, when one has been built.
+    episode: Option<Value>,
+    /// `script/approved.json`, or else the newest `script/draft.vN.json`.
+    script: Option<Value>,
+    script_file: Option<String>,
+    panels: Option<Value>,
+    audio: Option<Value>,
+}
+
+fn read_json(path: &std::path::Path) -> CmdResult<Option<Value>> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str(&text).map(Some).map_err(|e| format!("{}: {e}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
+/// `approved.json` if the script was approved, else the highest-numbered draft.
+fn script_file(dir: &std::path::Path) -> Option<String> {
+    if dir.join("approved.json").is_file() {
+        return Some("approved.json".to_owned());
+    }
+    let drafts = std::fs::read_dir(dir).ok()?.filter_map(|e| e.ok()?.file_name().into_string().ok());
+    drafts
+        .filter_map(|name| {
+            let n = name.strip_prefix("draft.v")?.strip_suffix(".json")?.parse::<u32>().ok()?;
+            Some((n, name))
+        })
+        .max()
+        .map(|(_, name)| name)
+}
+
+#[tauri::command]
+pub fn chapter_preview(state: State<AppState>, chapter: String) -> CmdResult<PreviewSources> {
+    with_project(&state, |p| {
+        let id: ChapterId = chapter.parse().map_err(msg)?;
+        let dir = chapter::chapter_dir(p, id);
+        let script_file = script_file(&dir.join("script"));
+        Ok(PreviewSources {
+            episode: read_json(&dir.join("render").join("episode.json"))?,
+            script: match &script_file {
+                Some(name) => read_json(&dir.join("script").join(name))?,
+                None => None,
+            },
+            script_file,
+            panels: read_json(&dir.join("panels").join("panels.json"))?,
+            audio: read_json(&dir.join("audio").join("audio.manifest.json"))?,
+        })
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefers_the_approved_script_then_the_newest_draft() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(script_file(dir.path()), None);
+        for name in ["draft.v2.json", "draft.v10.json", "draft.v9.json", "notes.md"] {
+            std::fs::write(dir.path().join(name), "{}").expect("write");
+        }
+        assert_eq!(script_file(dir.path()).as_deref(), Some("draft.v10.json"));
+        std::fs::write(dir.path().join("approved.json"), "{}").expect("write");
+        assert_eq!(script_file(dir.path()).as_deref(), Some("approved.json"));
+    }
+
+    #[test]
+    fn missing_files_are_none_and_broken_ones_are_errors() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(read_json(&dir.path().join("nope.json")).expect("missing"), None);
+        std::fs::write(dir.path().join("bad.json"), "{ not json").expect("write");
+        assert!(read_json(&dir.path().join("bad.json")).expect_err("broken").contains("bad.json"));
+    }
 }
