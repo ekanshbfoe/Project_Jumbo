@@ -126,6 +126,22 @@ mod tests {
     }
 
     #[test]
+    fn events_appended_after_a_crash_are_not_lost() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let project = Project::create(dir.path(), "J").expect("create");
+        append(&project, &JobEvent::now("aaa", "magi_detect", JobStatus::Queued)).expect("append");
+        let mut f = fs::OpenOptions::new().append(true).open(project.paths().journal()).expect("open");
+        f.write_all(b"{\"ts\":\"2026-10-19T").expect("torn write");
+        drop(f);
+        append(&project, &JobEvent::now("aaa", "magi_detect", JobStatus::Done)).expect("append");
+
+        let read = read(&project).expect("read");
+        assert_eq!(read.events.len(), 2);
+        assert_eq!(read.skipped_lines, vec![2]);
+        assert!(unfinished(&project).expect("unfinished").is_empty());
+    }
+
+    #[test]
     fn missing_journal_reads_as_empty() {
         let dir = tempfile::tempdir().expect("tempdir");
         let project = Project::create(dir.path(), "J").expect("create");

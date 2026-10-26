@@ -2,7 +2,7 @@
 //! leaves either the old contents or the new contents, never a torn file.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use serde::Serialize;
@@ -46,13 +46,22 @@ pub fn atomic_write_toml<T: Serialize + ?Sized>(path: &Path, value: &T) -> io::R
     atomic_write(path, text.as_bytes())
 }
 
-/// Appends one line and fsyncs before returning, for append-only logs.
+/// Appends one line and fsyncs before returning, for append-only logs. If a crash left a torn final
+/// line without its newline, the record starts on a fresh line instead of merging into the torn one.
 pub fn append_line(path: &Path, line: &str) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-    let mut buf = Vec::with_capacity(line.len() + 1);
+    let mut file = OpenOptions::new().create(true).read(true).append(true).open(path)?;
+    let mut buf = Vec::with_capacity(line.len() + 2);
+    if file.metadata()?.len() > 0 {
+        let mut last = [0u8; 1];
+        file.seek(SeekFrom::End(-1))?;
+        file.read_exact(&mut last)?;
+        if last[0] != b'\n' {
+            buf.push(b'\n');
+        }
+    }
     buf.extend_from_slice(line.as_bytes());
     buf.push(b'\n');
     file.write_all(&buf)?;
@@ -90,5 +99,14 @@ mod tests {
         append_line(&path, "{\"a\":1}").expect("append");
         append_line(&path, "{\"a\":2}").expect("append");
         assert_eq!(fs::read_to_string(&path).expect("read"), "{\"a\":1}\n{\"a\":2}\n");
+    }
+
+    #[test]
+    fn append_line_after_a_torn_line_starts_a_new_line() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("log.jsonl");
+        fs::write(&path, "{\"a\":1}\n{\"a\":").expect("torn write");
+        append_line(&path, "{\"a\":2}").expect("append");
+        assert_eq!(fs::read_to_string(&path).expect("read"), "{\"a\":1}\n{\"a\":\n{\"a\":2}\n");
     }
 }
