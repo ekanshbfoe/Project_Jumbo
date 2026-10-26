@@ -57,9 +57,19 @@ function requireUnsatisfiableDefaults(schema: Json): Json {
   return schema;
 }
 
+/** zod exports `z.literal(1)` as `"type": "number"`, so typed consumers would read 1.0. Say integer. */
+function integerConsts(node: unknown): void {
+  if (Array.isArray(node)) return node.forEach(integerConsts);
+  if (!node || typeof node !== "object") return;
+  const obj = node as Json;
+  if (obj.type === "number" && Number.isInteger(obj.const)) obj.type = "integer";
+  Object.values(obj).forEach(integerConsts);
+}
+
 export function renderContract(name: keyof typeof CONTRACTS): string {
   // "input" describes what producers may send: fields with defaults are optional.
   const schema = requireUnsatisfiableDefaults(z.toJSONSchema(CONTRACTS[name], { io: "input", unrepresentable: "any" }) as Json);
+  integerConsts(schema);
   return `${JSON.stringify({ $id: `https://jumbo.local/schema/${name}.schema.json`, title: name, ...schema }, null, 2)}\n`;
 }
 

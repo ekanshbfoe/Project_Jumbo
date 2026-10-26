@@ -34,6 +34,11 @@ describe("exported JSON Schema", () => {
     expect(defs.ZoomPreset.properties.params.default).toEqual({});
   });
 
+  it("exports integer literals such as schema_version as integers", () => {
+    expect(JSON.parse(renderContract("MemoryDelta")).properties.schema_version).toEqual({ type: "integer", const: 1 });
+    expect(JSON.parse(renderContract("SessionTicket")).properties.proto).toEqual({ type: "integer", const: 1 });
+  });
+
   it("marks defaulted fields optional for producers", () => {
     const script = JSON.parse(renderContract("ScriptDoc"));
     expect(script.properties.lines.items).toEqual({ $ref: "#/$defs/ScriptLine" });

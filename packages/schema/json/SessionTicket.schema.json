@@ -5,7 +5,7 @@
   "type": "object",
   "properties": {
     "proto": {
-      "type": "number",
+      "type": "integer",
       "const": 1
     },
     "session_id": {
