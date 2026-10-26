@@ -8,10 +8,12 @@ fn main() {
     let worker = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("manifest dir")).join("../../worker");
     let package = worker.join("jumbo_worker");
     println!("cargo:rerun-if-changed={}", package.display());
-    println!("cargo:rerun-if-changed={}", worker.join("pyproject.toml").display());
-
     let mut files = BTreeMap::new();
-    files.insert("pyproject.toml".to_owned(), read(&worker.join("pyproject.toml")));
+    // Project metadata and the model registry the resource manager loads.
+    for name in ["pyproject.toml", "model_specs.json"] {
+        println!("cargo:rerun-if-changed={}", worker.join(name).display());
+        files.insert(name.to_owned(), read(&worker.join(name)));
+    }
     let mut sources = Vec::new();
     collect_py(&package, &mut sources);
     sources.sort();

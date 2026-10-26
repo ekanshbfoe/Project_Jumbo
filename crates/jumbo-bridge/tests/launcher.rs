@@ -41,7 +41,7 @@ fn bundle_matches_every_worker_source_file_on_disk() {
         }
     }
     let worker = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../worker");
-    let mut on_disk = vec!["pyproject.toml".to_owned()];
+    let mut on_disk = vec!["model_specs.json".to_owned(), "pyproject.toml".to_owned()];
     walk(&worker.join("jumbo_worker"), &worker, &mut on_disk);
     on_disk.sort();
     let bundle: Value = serde_json::from_str(worker_bundle()).expect("bundle json");

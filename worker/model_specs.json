@@ -1,0 +1,72 @@
+{
+  "$comment": "Resource registry for jumbo_worker.pool. HBM figures are estimates from docs/architecture.md §4.2 until the S0 spikes profile them; hbm_ceiling is set by spike 6 (0.80 or 0.90).",
+  "hbm_ceiling": 0.8,
+  "models": {
+    "magi_v2": {
+      "backend": "torch-xla",
+      "chips": 1,
+      "hbm_gb_per_chip": 5.0,
+      "cpu_cores": 2,
+      "host_ram_gb": 6,
+      "cpu_fallback": true,
+      "max_replicas": 8,
+      "target_queue_per_replica": 8,
+      "wake_s": 20,
+      "job_s": 1.5,
+      "phase": "vision",
+      "notes": "Panel/bubble/character detection per page or strip slice. Estimate; spike 2."
+    },
+    "omnivoice": {
+      "backend": "torch-xla",
+      "chips": 1,
+      "hbm_gb_per_chip": 6.0,
+      "cpu_cores": 2,
+      "host_ram_gb": 6,
+      "cpu_fallback": true,
+      "max_replicas": 8,
+      "target_queue_per_replica": 6,
+      "wake_s": 25,
+      "job_s": 4,
+      "phase": "vision",
+      "notes": "0.6B TTS, 24 kHz, one job per script line. Estimate; spike 3."
+    },
+    "qwen25vl_72b_int8": {
+      "backend": "vllm-tpu",
+      "chips": 8,
+      "hbm_gb_per_chip": 12.5,
+      "cpu_cores": 8,
+      "host_ram_gb": 90,
+      "max_replicas": 1,
+      "target_queue_per_replica": 64,
+      "wake_s": 600,
+      "job_s": 90,
+      "phase": "director",
+      "weights": "qwen25vl-72b-int8",
+      "notes": "TP=8 Director. vLLM fills each chip to gpu_memory_utilization (= hbm_ceiling). Unvalidated on vLLM TPU; spike 6."
+    },
+    "librarian": {
+      "backend": "vllm-tpu",
+      "chips": 2,
+      "hbm_gb_per_chip": 10.0,
+      "cpu_cores": 4,
+      "host_ram_gb": 20,
+      "cpu_fallback": false,
+      "max_replicas": 4,
+      "target_queue_per_replica": 8,
+      "wake_s": 120,
+      "job_s": 20,
+      "phase": "librarian",
+      "notes": "Memory-R2 7B or the Qwen2.5-7B fallback, guided MemoryDelta output. Spike 4."
+    },
+    "remotion": {
+      "backend": "node",
+      "cpu_cores": 4,
+      "host_ram_gb": 4,
+      "max_replicas": 4,
+      "target_queue_per_replica": 1,
+      "wake_s": 3,
+      "job_s": 240,
+      "notes": "One chapter render per replica. Throughput from spike 5."
+    }
+  }
+}
