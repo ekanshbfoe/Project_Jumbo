@@ -151,6 +151,7 @@ async def run(ctx: JobContext) -> str:
         "canvases": [{"pages": [p + 1 for p in c.pages], "kind": c.kind, "size": [int(c.image.shape[1]), int(c.image.shape[0])]} for c in canvases],
         "images": len(images),
         "panels": len(panels),
+        "text_only_folded": getattr(detector, "folded", 0),
     }
     manifest = {"schema_version": 1, "chapter_id": chapter, "panels": doc.model_dump(mode="json", exclude_none=True), "files": files, "report": report}
     ctx.progress(1.0, f"{len(panels)} panels from {report['pages']} pages")

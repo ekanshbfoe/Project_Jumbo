@@ -1,6 +1,7 @@
 import asyncio
 import json
 
+import cv2
 import numpy as np
 import pytest
 from vision_fixtures import art, cut, grid_page, strip, write_pdf
@@ -127,9 +128,47 @@ async def test_magi_results_are_attached_to_their_panels():
             "characters": [{"bbox": [20, 20, 60, 90], "cluster": "c_1"}],
         }
 
-    panels = await MagiDetector(call).detect(np.zeros((240, 200, 3), np.uint8), "x.webp")
+    panels = await MagiDetector(call).detect(art(240, 200, seed=4), "x.webp")
     assert [len(p.bubbles) for p in panels] == [0, 2] and sorted(b["text"] for b in panels[1].bubbles) == ["Later...", "Run!"]
     assert [len(p.characters) for p in panels] == [1, 0]
+
+
+def bubble_strip() -> tuple[np.ndarray, dict]:
+    """A webtoon slice: a lone speech balloon on white above a drawn scene, as Magi reports it (the
+    balloon boxed as a panel of its own, no character in it)."""
+    image = np.full((900, 600, 3), 255, np.uint8)
+    cv2.ellipse(image, (300, 150), (180, 90), 0, 0, 360, (0, 0, 0), 3)
+    cv2.putText(image, "WHERE ARE YOU", (180, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+    image[300:880] = art(580, 600, seed=6)
+    result = {
+        "panels": [{"polygon": [[100, 50], [500, 50], [500, 250], [100, 250]]}, {"polygon": [[0, 300], [600, 300], [600, 880], [0, 880]]}],
+        "texts": [{"polygon": [[175, 135], [425, 135], [425, 170], [175, 170]], "kind": "speech", "text": "Where are you?", "speaker": None}],
+        "characters": [{"bbox": [200, 400, 400, 800], "cluster": "c_1"}],
+    }
+    return image, result
+
+
+async def test_a_lone_bubble_box_gives_its_text_to_the_real_panel_without_moving_its_box():
+    image, result = bubble_strip()
+
+    async def call(model, kind, payload):
+        return result
+
+    detector = MagiDetector(call)
+    [panel] = await detector.detect(image, "x.webp")
+    assert detector.folded == 1
+    # Data only: the scene keeps its own box (the crop stays on the artwork) and gains the line.
+    assert panel.box == (0, 300, 600, 880)
+    assert [b["text"] for b in panel.bubbles] == ["Where are you?"]
+
+
+async def test_painted_art_without_a_detected_character_is_not_folded():
+    # Smooth painted art has few hard edges; its colour keeps it a panel even when Magi finds no one in it.
+    image, result = bubble_strip()
+    image[50:250, 100:500] = art(200, 400, seed=8)
+    detector = MagiDetector(lambda *_: asyncio.sleep(0, result))
+    panels = await detector.detect(image, "x.webp")
+    assert detector.folded == 0 and len(panels) == 2
 
 
 def test_rasterize_keeps_the_drawn_pixels(tmp_path):

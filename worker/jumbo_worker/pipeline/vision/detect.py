@@ -27,6 +27,7 @@ import numpy as np
 
 from .slicer import INK_TOLERANCE
 from .stitch import background_level, gray
+from .textonly import is_text_only
 from .tiling import dedupe, merge_panels, tile_spans
 
 Point = tuple[float, float]
@@ -144,7 +145,8 @@ class MagiDetector:
     """Magi v2 through the model pool. `call` is `JobContext.call`.
 
     Images taller than a page are detected in overlapping tiles (see tiling.py); the tile images are
-    written next to `path` for the replica to read.
+    written next to `path` for the replica to read. Boxes around a lone bubble or caption are folded
+    (see textonly.py).
     """
 
     name = "magi"
@@ -152,6 +154,8 @@ class MagiDetector:
     def __init__(self, call: Callable[[str, str, dict], Awaitable[object]], model: str = "magi_v2") -> None:
         self.call = call
         self.model = model
+        # Text-only boxes folded into real panels, for the stage report.
+        self.folded = 0
 
     async def _detect_file(self, path: Path) -> dict:
         result = await self.call(self.model, "detect", {"image": str(path)})
@@ -196,4 +200,20 @@ class MagiDetector:
             owner = next((d for d in panels if _inside(((x0 + x1) / 2, (y0 + y1) / 2), d.polygon)), None)
             if owner:
                 owner.characters.append({"cluster": str(char["cluster"]), "bbox": (x0, y0, x1, y1)})
-        return panels
+        return self._fold_text_only(image, panels)
+
+    def _fold_text_only(self, image: np.ndarray, panels: list[Detection]) -> list[Detection]:
+        """Moves the texts of text-only boxes into the nearest real panel and drops the boxes. Only
+        text data moves: the real panels' boxes are left exactly as detected."""
+        text_only = [is_text_only(image, d.box, [_poly_box(b["polygon"]) for b in d.bubbles], len(d.characters)) for d in panels]
+        real = [d for d, t in zip(panels, text_only) if not t]
+        if not real or len(real) == len(panels):
+            return panels
+        for d, t in zip(panels, text_only):
+            if t:
+                for bubble in d.bubbles:
+                    target = _nearest(real, _center(bubble["polygon"]))
+                    assert target is not None
+                    target.bubbles.append(bubble)
+        self.folded += len(panels) - len(real)
+        return real
