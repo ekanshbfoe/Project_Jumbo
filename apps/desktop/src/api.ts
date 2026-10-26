@@ -192,6 +192,8 @@ export interface PoolStatus {
   phase?: string | null;
   hbm_ceiling?: number;
   chips?: { chip: number; replica: string | null; reserved_gb: number; peak: number }[];
+  gpus?: number;
+  gpu_cards?: { gpu: number; reserved_gb: number; used_gb: number; peak: number; replicas: string[] }[];
   cpu?: { cores: number; ram_gb: number; used_cores: number; used_ram_gb: number };
   replicas?: { id: string; model: string; where: string; state: string; busy: number; throttled: boolean }[];
   queued?: Record<string, number>;

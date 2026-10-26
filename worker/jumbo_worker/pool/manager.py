@@ -303,6 +303,8 @@ class ResourceManager:
                     slot.gpu_used_gb = sum(sample.values())
             for card in range(self.config.gpus):
                 await self.judge_card(card)
+            if self.config.gpus:
+                self._publish_status()
 
     async def judge_card(self, card: int) -> None:
         """Layer 3 on a shared GPU: the sum of what every replica on the card reports."""
