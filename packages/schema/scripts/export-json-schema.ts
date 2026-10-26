@@ -9,9 +9,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { AudioManifest, EpisodeSpec, MemoryDelta, PanelsDoc, ScriptDoc } from "../src";
+import { AudioManifest, EpisodeSpec, LedgerEvent, MemoryDelta, PanelsDoc, ScriptDoc, SessionTicket } from "../src";
 
-export const CONTRACTS = { PanelsDoc, ScriptDoc, AudioManifest, EpisodeSpec, MemoryDelta } as const;
+export const CONTRACTS = { PanelsDoc, ScriptDoc, AudioManifest, EpisodeSpec, MemoryDelta, LedgerEvent, SessionTicket } as const;
 
 export const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "json");
 

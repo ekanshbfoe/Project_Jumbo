@@ -52,3 +52,16 @@ fn opens_the_sealed_record_python_produced() {
     let stranger = AppKeys::generate().expect("keys");
     assert!(stranger.unseal(v["sealed"]["box"].as_str().expect("box")).is_err());
 }
+
+/// packages/schema validates the same ticket with zod, so the launcher's ticket matches the contract.
+#[test]
+fn parses_the_shared_session_ticket_fixture() {
+    use jumbo_bridge::protocol::{RendezvousSpec, SessionTicket};
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/schema/fixtures/session-ticket.sample.json");
+    let ticket: SessionTicket = serde_json::from_str(&std::fs::read_to_string(path).expect("read")).expect("parse");
+    assert_eq!(ticket.proto, jumbo_bridge::protocol::PROTO);
+    assert_eq!(ticket.rendezvous, RendezvousSpec::Gist { gist_id: "f9b3e91ef19772d3d607cfbaf38f5b53".into() });
+    let again: SessionTicket = serde_json::from_value(serde_json::to_value(&ticket).expect("ser")).expect("parse");
+    assert_eq!(ticket, again);
+}

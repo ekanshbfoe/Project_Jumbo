@@ -1,0 +1,8 @@
+{
+  "proto": 1,
+  "session_id": "0123456789abcdef0123456789abcdef",
+  "app_pk": "j0DFrbaPJWJK5bIU6nZ6bslNgp09e14a0bpvPiE4KF8=",
+  "deadline_s": 30600,
+  "idle_s": 1800,
+  "rendezvous": { "kind": "gist", "gist_id": "f9b3e91ef19772d3d607cfbaf38f5b53" }
+}
