@@ -65,3 +65,16 @@ fn parses_the_shared_session_ticket_fixture() {
     let again: SessionTicket = serde_json::from_value(serde_json::to_value(&ticket).expect("ser")).expect("parse");
     assert_eq!(ticket, again);
 }
+
+/// Tickets the launcher really creates satisfy the shared schema.
+#[test]
+fn launcher_tickets_match_the_generated_contract() {
+    use jumbo_bridge::crypto::AppKeys;
+    use jumbo_bridge::protocol::{RendezvousSpec, SessionTicket};
+    let ticket = SessionTicket::new(&AppKeys::generate().expect("keys"), RendezvousSpec::Gist { gist_id: "g".into() })
+        .expect("ticket");
+    let json = serde_json::to_string(&ticket).expect("ser");
+    let generated: jumbo_contracts::session_ticket::SessionTicket =
+        serde_json::from_str(&json).expect("schema accepts");
+    assert_eq!(generated.session_id.as_str(), ticket.session_id);
+}

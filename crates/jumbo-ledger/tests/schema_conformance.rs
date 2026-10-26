@@ -37,3 +37,27 @@ fn loads_the_shared_ledger_fixture_with_an_intact_chain() {
     assert_eq!(ledger.len(), 3);
     assert_eq!(ledger.events()[0].session.as_deref(), Some("0123456789abcdef0123456789abcdef"));
 }
+
+/// What this crate writes must satisfy the generated (schema-derived) types, and what they accept
+/// must mean the same thing here.
+#[test]
+fn hand_written_and_generated_types_agree() {
+    use jumbo_contracts::{ledger_event, memory_delta};
+
+    let delta: MemoryDelta = serde_json::from_str(&fixture("memory-delta.sample.json")).expect("parse");
+    let written = serde_json::to_string(&delta).expect("serialize");
+    let generated: memory_delta::MemoryDelta = serde_json::from_str(&written).expect("schema accepts our output");
+    let back: MemoryDelta = serde_json::from_str(&serde_json::to_string(&generated).expect("ser")).expect("parse");
+    assert_eq!(back, delta);
+
+    for line in fixture("ledger.sample.jsonl").lines() {
+        let event: jumbo_ledger::LedgerEvent = serde_json::from_str(line).expect("parse");
+        let generated: ledger_event::LedgerEvent =
+            serde_json::from_str(&serde_json::to_string(&event).expect("ser")).expect("schema accepts our output");
+        let back: jumbo_ledger::LedgerEvent =
+            serde_json::from_str(&serde_json::to_string(&generated).expect("ser")).expect("parse");
+        assert_eq!(back, event);
+        // Still the same bytes under the hash, so the chain survives any consumer's round trip.
+        assert_eq!(back.compute_hash(), event.hash);
+    }
+}
