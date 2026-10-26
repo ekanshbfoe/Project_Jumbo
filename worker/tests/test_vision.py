@@ -13,7 +13,7 @@ from jumbo_worker.jobs import JobContext, JobRunner
 from jumbo_worker.pipeline.vision.detect import MagiDetector, OpenCVDetector
 from jumbo_worker.pipeline.vision.order import reading_order
 from jumbo_worker.pipeline.vision.raster import rasterize
-from jumbo_worker.pipeline.vision.slicer import slice_strip
+from jumbo_worker.pipeline.vision.slicer import merge_slivers, slice_strip
 from jumbo_worker.pipeline.vision.stitch import chapter_layout, find_joins, stitch
 
 # A webtoon strip: four panels; the PDF pages cut it at 1500 and 3000 rows.
@@ -87,6 +87,19 @@ def test_borderless_shots_fading_through_black_are_sliced_apart():
     slices = slice_strip(strip_image)
     assert len(slices) == 2, slices
     assert slices[0][1] <= 700 + 80 + 5 and slices[1][0] >= 700 + 80 + 90 - 5
+
+
+def test_slivers_are_merged_into_the_neighbour_across_the_narrower_gap():
+    # A caption line (20 rows) floating 50 rows under one panel and 200 rows above the next.
+    assert merge_slivers([(0, 500), (550, 570), (770, 1300)], 100) == [(0, 570), (770, 1300)]
+    assert merge_slivers([(0, 500), (700, 720), (750, 1300)], 100) == [(0, 500), (700, 1300)]
+    assert merge_slivers([(0, 30)], 100) == [(0, 30)]
+    # A strip with a thin caption between two panels slices into two images, not three.
+    image = np.full((1500, 800, 3), 255, np.uint8)
+    image[50:650] = art(600, 800, seed=1)
+    image[700:730, 200:600] = 0
+    image[900:1450] = art(550, 800, seed=2)
+    assert slice_strip(image) == [(50, 730), (900, 1450)]
 
 
 def test_reading_order_rows_then_columns():

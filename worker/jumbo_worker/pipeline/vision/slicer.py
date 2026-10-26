@@ -3,6 +3,10 @@
 Two kinds of gutter: blank background rows, and long dark bands with almost no detail. The second
 is how borderless webtoons separate shots: one scene fades to black, a caption floats on black, the
 next scene fades in. Detectors trained on bordered pages see such a run as one giant panel.
+
+Slices much shorter than the strip is wide are not panels: a caption line floating between scenes,
+or the thin edge of a dark drawing cut off by a dark band. They are merged into the neighbour across
+the narrower gap, so their text stays with the story and no sliver becomes a panel of its own.
 """
 
 from __future__ import annotations
@@ -20,6 +24,8 @@ GUTTER_INK = 0.005
 QUIET_DARK_MEAN = 60
 QUIET_EDGE = 12
 QUIET_BUSY = 0.01
+# Slices shorter than this share of the strip width are merged into a neighbour.
+MIN_SLICE = 0.2
 
 
 def ink_rows(image: np.ndarray) -> np.ndarray:
@@ -72,4 +78,20 @@ def slice_strip(image: np.ndarray, min_gap: int | None = None, min_height: int |
                 start, gap = None, 0
     if start is not None:
         slices.append((start, len(drawn) - gap))
-    return [(top, bottom) for top, bottom in slices if bottom - top >= min_height]
+    return merge_slivers([(top, bottom) for top, bottom in slices if bottom - top >= min_height], round(MIN_SLICE * width))
+
+
+def merge_slivers(slices: list[tuple[int, int]], min_slice: int) -> list[tuple[int, int]]:
+    """Merges every slice shorter than `min_slice` into the neighbour across the narrower gap."""
+    slices = list(slices)
+    while len(slices) > 1:
+        short = [i for i, (top, bottom) in enumerate(slices) if bottom - top < min_slice]
+        if not short:
+            break
+        i = min(short, key=lambda i: slices[i][1] - slices[i][0])
+        gap_above = slices[i][0] - slices[i - 1][1] if i > 0 else None
+        gap_below = slices[i + 1][0] - slices[i][1] if i + 1 < len(slices) else None
+        j = i - 1 if gap_below is None or (gap_above is not None and gap_above <= gap_below) else i + 1
+        a, b = sorted((i, j))
+        slices[a:b + 1] = [(slices[a][0], slices[b][1])]
+    return slices
