@@ -135,7 +135,13 @@ def _magi(spec: ModelSpec) -> Runner:
 
 
 # Runners for specific models, imported only inside the replica that serves them.
-MODEL_RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {"magi_v2": _magi}
+def _omnivoice(spec: ModelSpec) -> Runner:
+    from ..models.omnivoice import OmniVoiceRunner
+
+    return OmniVoiceRunner(spec)
+
+
+MODEL_RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {"magi_v2": _magi, "omnivoice": _omnivoice}
 
 
 def make_runner(spec: ModelSpec) -> Runner:
