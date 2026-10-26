@@ -7,8 +7,10 @@ holds exactly the bytes its name promises or does not exist.
 
 from __future__ import annotations
 
+import itertools
 import os
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,6 +53,7 @@ class BlobStore:
         self.root = root
         self._done = root / "blobs"
         self._partial = root / "partial"
+        self._seq = itertools.count()
         self._done.mkdir(parents=True, exist_ok=True)
         self._partial.mkdir(parents=True, exist_ok=True)
 
@@ -99,7 +102,8 @@ class BlobStore:
         """Stores bytes produced on the worker (e.g. job outputs) and returns their name."""
         name = hash_bytes(data)
         if not self.has(name):
-            tmp = self._partial / f"{name}.local"
+            # Unique per writer: two jobs storing the same bytes at once must not share a temp file.
+            tmp = self._partial / f"{name}.{os.getpid()}.{threading.get_ident()}.{next(self._seq)}.local"
             tmp.write_bytes(data)
             os.replace(tmp, self.path(name))
         return name

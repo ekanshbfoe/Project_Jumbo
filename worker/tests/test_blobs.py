@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from jumbo_worker.blobs import BlobError, BlobStore, hash_bytes
@@ -42,3 +44,11 @@ def test_rejects_bad_names_and_overlong_chunks(store):
 
 def test_put_is_idempotent(store):
     assert store.put(b"out") == store.put(b"out") == hash_bytes(b"out")
+
+
+def test_same_bytes_stored_from_many_threads_at_once(tmp_path):
+    store = BlobStore(tmp_path)
+    with ThreadPoolExecutor(8) as pool:
+        names = set(pool.map(lambda _: store.put(b"x" * 100_000), range(64)))
+    assert len(names) == 1 and store.has(names.pop())
+    assert not list((tmp_path / "partial").iterdir())
