@@ -12,6 +12,7 @@ tauri-build = { version = "2.7.1", features = [] }
 
 [dependencies]
 jumbo-bridge = { path = "../../../crates/jumbo-bridge" }
+jumbo-contracts.workspace = true
 jumbo-core.workspace = true
 jumbo-ledger.workspace = true
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native"] }
@@ -30,6 +31,7 @@ keyring = { version = "3.6.3", features = ["sync-secret-service", "crypto-rust"]
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio = { version = "1.53.2", features = ["macros", "rt"] }
 
 [lints]
 workspace = true

@@ -367,7 +367,7 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
     Ok(())
 }
 
-async fn current_client(state: &BridgeState) -> CmdResult<Arc<WorkerClient>> {
+pub(crate) async fn current_client(state: &BridgeState) -> CmdResult<Arc<WorkerClient>> {
     state.client.lock().await.clone().ok_or_else(|| "no worker is connected".to_owned())
 }
 

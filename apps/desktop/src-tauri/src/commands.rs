@@ -19,9 +19,9 @@ pub struct AppState {
     project: Mutex<Option<Project>>,
 }
 
-type CmdResult<T> = Result<T, String>;
+pub(crate) type CmdResult<T> = Result<T, String>;
 
-fn msg(e: impl std::fmt::Display) -> String {
+pub(crate) fn msg(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
@@ -59,7 +59,7 @@ pub struct BookOverview {
     repaired: Option<String>,
 }
 
-fn with_project<T>(state: &State<AppState>, f: impl FnOnce(&Project) -> CmdResult<T>) -> CmdResult<T> {
+pub(crate) fn with_project<T>(state: &State<AppState>, f: impl FnOnce(&Project) -> CmdResult<T>) -> CmdResult<T> {
     let guard = state.project.lock().map_err(msg)?;
     let project = guard.as_ref().ok_or("no project is open")?;
     f(project)

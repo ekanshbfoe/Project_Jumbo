@@ -2524,6 +2524,7 @@ name = "jumbo-desktop"
 version = "0.1.0"
 dependencies = [
  "jumbo-bridge",
+ "jumbo-contracts",
  "jumbo-core",
  "jumbo-ledger",
  "keyring",

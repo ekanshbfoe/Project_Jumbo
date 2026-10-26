@@ -5,6 +5,7 @@ mod bridge;
 mod commands;
 mod credentials;
 mod recent;
+mod vision;
 
 use tauri::Manager;
 
@@ -45,6 +46,8 @@ fn main() {
             bridge::start_session,
             bridge::run_bridge_test,
             bridge::pool_status,
+            vision::analyze_chapter,
+            vision::chapter_panels,
             bridge::stop_session,
         ])
         .run(tauri::generate_context!())

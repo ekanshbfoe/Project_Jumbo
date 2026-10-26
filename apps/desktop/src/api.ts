@@ -106,6 +106,26 @@ export interface PreviewSources {
   audio: unknown | null;
 }
 
+/** Panel detector for the vision stage. Magi v2 on Kaggle is the production path; OpenCV only tests the plumbing. */
+export type Detector = "magi" | "opencv";
+
+/** `vision://progress` events while a chapter is analyzed. */
+export interface VisionProgress {
+  chapter: string;
+  progress: number;
+  message: string;
+}
+
+/** panels/vision.report.json: how pages were stitched and what was found. */
+export interface VisionReport {
+  pages: number;
+  detector: string;
+  joins: { after_page: number; kind: "vertical" | "horizontal" | "none"; reason: string; cross: number; inner: number; correlation: number }[];
+  canvases: { pages: number[]; kind: "page" | "strip" | "spread"; size: [number, number] }[];
+  images: number;
+  panels: number;
+}
+
 export const api = {
   createProject: (path: string, title: string) => invoke<ProjectInfo>("create_project", { path, title }),
   openProject: (path: string) => invoke<ProjectInfo>("open_project", { path }),
@@ -118,6 +138,8 @@ export const api = {
   bookOverview: () => invoke<BookOverview>("book_overview"),
   verifyBook: () => invoke<VerifyReport>("verify_book"),
   chapterPreview: (chapter: string) => invoke<PreviewSources>("chapter_preview", { chapter }),
+  analyzeChapter: (chapter: string, detector: Detector) => invoke<ChapterManifest>("analyze_chapter", { chapter, detector }),
+  chapterPanels: (chapter: string) => invoke<{ panels: unknown; report: VisionReport | null }>("chapter_panels", { chapter }),
 };
 
 /** Tauri rejects with the Rust error string; normalise anything else. */

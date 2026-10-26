@@ -1,6 +1,7 @@
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useState } from "react";
-import { api, CHAPTER_STATES, errorText, type ChapterManifest } from "../api";
+import { useEffect, useState } from "react";
+import { api, bridgeApi, CHAPTER_STATES, errorText, type ChapterManifest, type Detector, type VisionProgress } from "../api";
 import type { ScreenProps } from "../hub/modules";
 import { useAsync } from "../useAsync";
 
@@ -15,10 +16,43 @@ function Pipeline({ chapter }: { chapter: ChapterManifest }) {
   );
 }
 
+const DETECTORS: { id: Detector; label: string }[] = [
+  { id: "magi", label: "Magi v2 (Kaggle)" },
+  { id: "opencv", label: "OpenCV (local plumbing test only)" },
+];
+
 export function ChaptersScreen(_: ScreenProps) {
   const chapters = useAsync(api.listChapters);
+  const session = useAsync(bridgeApi.view);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [detector, setDetector] = useState<Detector>("magi");
+  const [analyzing, setAnalyzing] = useState<Record<string, VisionProgress>>({});
+  const connected = session.data?.phase === "ready";
+
+  useEffect(() => {
+    const offs = [
+      listen<VisionProgress>("vision://progress", (e) => setAnalyzing((a) => (e.payload.chapter in a ? { ...a, [e.payload.chapter]: e.payload } : a))),
+      // Analyze needs a connected worker; follow the session as it starts and stops.
+      listen("bridge://state", () => session.reload()),
+    ];
+    return () => {
+      offs.forEach((off) => off.then((f) => f()));
+    };
+  }, [session.reload]);
+
+  const analyze = async (chapter: string) => {
+    setError(undefined);
+    setAnalyzing((a) => ({ ...a, [chapter]: { chapter, progress: 0, message: "starting" } }));
+    try {
+      await api.analyzeChapter(chapter, detector);
+    } catch (e) {
+      setError(`${chapter}: ${errorText(e)}`);
+    } finally {
+      setAnalyzing(({ [chapter]: _, ...rest }) => rest);
+      chapters.reload();
+    }
+  };
 
   const importPdfs = async () => {
     const picked = await open({
@@ -46,9 +80,18 @@ export function ChaptersScreen(_: ScreenProps) {
     <div>
       <div className="page-header">
         <h1>Chapters</h1>
-        <button className="primary" disabled={busy} onClick={importPdfs}>
-          {busy ? "Importing…" : "Import PDFs…"}
-        </button>
+        <div className="row">
+          <select value={detector} onChange={(e) => setDetector(e.target.value as Detector)} title="Panel detector for Analyze">
+            {DETECTORS.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+          <button className="primary" disabled={busy} onClick={importPdfs}>
+            {busy ? "Importing…" : "Import PDFs…"}
+          </button>
+        </div>
       </div>
       {error || chapters.error ? <p className="error">{error ?? chapters.error}</p> : null}
       <div className="card">
@@ -61,6 +104,7 @@ export function ChaptersScreen(_: ScreenProps) {
                 <th>Stage</th>
                 <th>Progress</th>
                 <th>Updated</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -76,6 +120,21 @@ export function ChaptersScreen(_: ScreenProps) {
                     <Pipeline chapter={c} />
                   </td>
                   <td className="muted">{new Date(c.updated_at).toLocaleString()}</td>
+                  <td>
+                    {analyzing[c.id] ? (
+                      <span className="muted">
+                        {Math.round(analyzing[c.id]!.progress * 100)}% {analyzing[c.id]!.message}
+                      </span>
+                    ) : (
+                      <button
+                        disabled={!connected || CHAPTER_STATES.indexOf(c.state) > CHAPTER_STATES.indexOf("analyzed")}
+                        title={connected ? "Find panels with the selected detector" : "Launch a worker on the Session screen first"}
+                        onClick={() => analyze(c.id)}
+                      >
+                        {c.state === "analyzed" ? "Re-analyze" : "Analyze"}
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
