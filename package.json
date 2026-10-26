@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "codegen": "node scripts/codegen.mjs"
   },
   "engines": {
     "node": ">=20"
