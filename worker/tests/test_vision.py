@@ -11,7 +11,7 @@ from jumbo_worker.contracts import PanelsDoc
 from jumbo_worker.contracts.rules import parse
 from jumbo_worker.events import EventBus
 from jumbo_worker.jobs import JobContext, JobRunner
-from jumbo_worker.pipeline.vision.detect import MagiDetector, OpenCVDetector
+from jumbo_worker.pipeline.vision.detect import Detection, MagiDetector, OpenCVDetector
 from jumbo_worker.pipeline.vision.order import reading_order
 from jumbo_worker.pipeline.vision.raster import rasterize
 from jumbo_worker.pipeline.vision.slicer import merge_slivers, slice_strip
@@ -214,6 +214,33 @@ async def test_vision_stage_on_pages_and_a_spread(tmp_path):
     assert [c["kind"] for c in manifest["report"]["canvases"]] == ["page", "spread"]
     # 4 grid panels plus the spread as one full-bleed panel, not two halves.
     assert len(manifest["panels"]["panels"]) == 5 and manifest["panels"]["layout"] == "page"
+
+
+async def test_images_are_detected_in_parallel_and_kept_in_chapter_order(tmp_path, monkeypatch):
+    from jumbo_worker.pipeline.vision import stage
+
+    running = peak = 0
+
+    class SlowDetector:
+        name = "slow"
+
+        async def detect(self, image, path):
+            nonlocal running, peak
+            running += 1
+            peak = max(peak, running)
+            # Later pages finish first, so order can only come from the stage, not from timing.
+            await asyncio.sleep(0.05 * (1 + (image.shape[0] % 7 == 0)))
+            running -= 1
+            h, w = image.shape[:2]
+            return [Detection([(0, 0), (w, 0), (w, h), (0, h)])]
+
+    monkeypatch.setattr(stage, "make_detector", lambda name, ctx: SlowDetector())
+    pages = [grid_page(h=1400 + 7 * i) for i in range(12)]
+    store, job = await run_vision(tmp_path, pages)
+    assert job.status == "done", job.error
+    assert peak == stage.PARALLEL_IMAGES
+    panels = json.loads(store.path(job.output).read_bytes())["panels"]["panels"]
+    assert [p["page"] for p in panels] == [f"chapters/ch_0003/pages/page_{n:03d}.webp" for n in range(1, 13)]
 
 
 async def test_magi_is_the_default_and_needs_the_pool(tmp_path):

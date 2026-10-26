@@ -16,6 +16,7 @@ worker host>}`), all coordinates in pixels of that image (jumbo_worker/models/ma
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -145,8 +146,8 @@ class MagiDetector:
     """Magi v2 through the model pool. `call` is `JobContext.call`.
 
     Images taller than a page are detected in overlapping tiles (see tiling.py); the tile images are
-    written next to `path` for the replica to read. Boxes around a lone bubble or caption are folded
-    (see textonly.py).
+    written next to `path` for the replica to read, and all tiles are sent at once so the pool can
+    spread them over replicas. Boxes around a lone bubble or caption are folded (see textonly.py).
     """
 
     name = "magi"
@@ -168,13 +169,15 @@ class MagiDetector:
         if len(spans) == 1:
             results = [(0, await self._detect_file(path))]
         else:
-            results = []
             folder = Path(tempfile.mkdtemp(prefix="tiles-", dir=Path(path).parent))
             try:
+                tiles = []
                 for n, (top, bottom) in enumerate(spans):
                     tile = folder / f"tile_{n:03d}.png"
                     cv2.imwrite(str(tile), cv2.cvtColor(image[top:bottom], cv2.COLOR_RGB2BGR))
-                    results.append((top, await self._detect_file(tile)))
+                    tiles.append(tile)
+                found = await asyncio.gather(*(self._detect_file(tile) for tile in tiles))
+                results = [(top, r) for (top, _), r in zip(spans, found)]
             finally:
                 shutil.rmtree(folder, ignore_errors=True)
 

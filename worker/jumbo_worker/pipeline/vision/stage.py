@@ -36,6 +36,9 @@ from .slicer import slice_strip
 from .stitch import chapter_layout, find_joins, stitch
 
 WEBP_QUALITY = 92
+# Images detected at once. The pool scales replicas from its backlog, so a chapter only spreads over
+# several replicas (and GPUs) when this many requests are in flight together.
+PARALLEL_IMAGES = 8
 
 
 def encode_webp(image: np.ndarray) -> bytes:
@@ -101,14 +104,32 @@ async def run(ctx: JobContext) -> str:
     layout = "strip" if strip_rows > page_rows else "page"
 
     files: dict[str, str] = {}
+    per_image: list[list[Detection]] = [[] for _ in images]
+    gate = asyncio.Semaphore(PARALLEL_IMAGES)
+    done = 0
+
+    async def detect_one(n: int, image: np.ndarray) -> None:
+        nonlocal done
+        rel = f"pages/page_{n + 1:03d}.webp"
+        async with gate:
+            files[rel] = await asyncio.to_thread(store.put, await asyncio.to_thread(encode_webp, image))
+            per_image[n] = await detector.detect(image, store.path(files[rel]))
+        done += 1
+        ctx.progress(0.2 + 0.7 * done / len(images), f"{detector.name}: {done}/{len(images)} images")
+
+    tasks = [asyncio.ensure_future(detect_one(n, image)) for n, (image, _) in enumerate(images)]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        # One failed image fails the job: stop the others instead of leaving them running.
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    # Back in chapter order, whatever order the replicas finished in.
     found: list[tuple[str, np.ndarray, Detection]] = []
-    for n, (image, _) in enumerate(images, 1):
-        rel = f"pages/page_{n:03d}.webp"
-        files[rel] = await asyncio.to_thread(store.put, await asyncio.to_thread(encode_webp, image))
-        detections = await detector.detect(image, store.path(files[rel]))
+    for n, ((image, _), detections) in enumerate(zip(images, per_image)):
         for i in reading_order([d.box for d in detections], rtl):
-            found.append((rel, image, detections[i]))
-        ctx.progress(0.2 + 0.7 * n / len(images), f"{detector.name}: {n}/{len(images)} images, {len(found)} panels")
+            found.append((f"pages/page_{n + 1:03d}.webp", image, detections[i]))
     if not found:
         raise JobError(f"{detector.name} found no panels in this chapter")
 
