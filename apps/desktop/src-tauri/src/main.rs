@@ -44,6 +44,7 @@ fn main() {
             bridge::session_view,
             bridge::start_session,
             bridge::run_bridge_test,
+            bridge::pool_status,
             bridge::stop_session,
         ])
         .run(tauri::generate_context!())

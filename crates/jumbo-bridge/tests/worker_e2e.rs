@@ -81,6 +81,9 @@ async fn round_trips_a_file_through_the_real_worker() {
     let client = WorkerClient::new(http::client(), endpoint);
     assert!(client.health().await);
     assert_eq!(client.session().await.expect("session")["session_id"], ticket.session_id.as_str());
+    let pool = client.pool().await.expect("pool");
+    assert_eq!(pool["enabled"], true, "the worker runs a model pool: {pool}");
+    assert!(pool["hbm_ceiling"].as_f64().is_some_and(|c| c > 0.5));
 
     // A request signed with the wrong key is refused.
     let mut forged = client.endpoint().clone();

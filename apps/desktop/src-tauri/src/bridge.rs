@@ -411,6 +411,12 @@ pub async fn run_bridge_test(state: State<'_, BridgeState>) -> CmdResult<BridgeT
     Ok(BridgeTestReport { bytes: data.len() as u64, upload_ms, job_ms, download_ms, verified })
 }
 
+/// The worker's model pool snapshot; live updates follow as `pool.status` events.
+#[tauri::command]
+pub async fn pool_status(state: State<'_, BridgeState>) -> CmdResult<Value> {
+    current_client(&state).await?.pool().await.map_err(msg)
+}
+
 /// Asks the worker to drain and exit (ending the Kaggle session), then resets the session.
 #[tauri::command]
 pub async fn stop_session(app: AppHandle, state: State<'_, BridgeState>) -> CmdResult<()> {

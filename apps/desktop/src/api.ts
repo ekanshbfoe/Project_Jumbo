@@ -164,6 +164,18 @@ export interface BridgeTestReport {
   verified: boolean;
 }
 
+/** Worker model pool (`GET /v1/pool` and `pool.status` events; worker/jumbo_worker/pool/manager.py). */
+export interface PoolStatus {
+  enabled: boolean;
+  phase?: string | null;
+  hbm_ceiling?: number;
+  chips?: { chip: number; replica: string | null; reserved_gb: number; peak: number }[];
+  cpu?: { cores: number; ram_gb: number; used_cores: number; used_ram_gb: number };
+  replicas?: { id: string; model: string; where: string; state: string; busy: number; throttled: boolean }[];
+  queued?: Record<string, number>;
+  broken?: Record<string, string>;
+}
+
 export const bridgeApi = {
   settings: () => invoke<BridgeSettings>("bridge_settings"),
   saveSettings: (settings: BridgeSettings) => invoke<void>("save_bridge_settings", { settings }),
@@ -175,4 +187,5 @@ export const bridgeApi = {
   start: () => invoke<void>("start_session"),
   test: () => invoke<BridgeTestReport>("run_bridge_test"),
   stop: () => invoke<void>("stop_session"),
+  pool: () => invoke<PoolStatus>("pool_status"),
 };

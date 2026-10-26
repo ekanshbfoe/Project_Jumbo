@@ -11,6 +11,7 @@ import {
   type SessionView,
 } from "../api";
 import type { ScreenProps } from "../hub/modules";
+import { PoolMeter } from "./PoolMeter";
 import { useAsync } from "../useAsync";
 
 const MODES: { id: BridgeMode; label: string; hint: string }[] = [
@@ -47,6 +48,18 @@ function describe(event: Record<string, unknown>): string {
       return `tunnel moved to epoch ${event.epoch}`;
     case "session.draining":
       return `worker draining (${event.reason})`;
+    case "pool.phase":
+      return `TPU phase ${event.from ?? "idle"} → ${event.to} (${event.reason})`;
+    case "pool.replica_ready":
+      return `${event.replica} ready on ${event.where} in ${event.wake_s}s`;
+    case "pool.replica_failed":
+      return `${event.replica} failed to start: ${event.error}`;
+    case "pool.hbm_soft":
+      return `${event.replica} throttled at ${Math.round(Number(event.fraction) * 100)}% HBM on chip ${event.chip}`;
+    case "pool.hbm_ok":
+      return `${event.replica} back under the soft HBM limit`;
+    case "pool.hbm_kill":
+      return `${event.replica} killed at ${Math.round(Number(event.fraction) * 100)}% HBM on chip ${event.chip}; work retried`;
     default:
       return String(event.type);
   }
@@ -101,9 +114,11 @@ export function SessionScreen(_: ScreenProps) {
     bridgeApi.view().then(setView).catch(() => {});
     const unlisten = [
       listen<SessionView>("bridge://state", (e) => setView(e.payload)),
-      listen<Record<string, unknown>>("bridge://event", (e) =>
-        setLog((lines) => [...lines.slice(-79), { ts: Date.now(), text: describe(e.payload) }]),
-      ),
+      listen<Record<string, unknown>>("bridge://event", (e) => {
+        // Pool snapshots drive the resource meter; the log keeps the discrete events.
+        if (e.payload.type === "pool.status") return;
+        setLog((lines) => [...lines.slice(-79), { ts: Date.now(), text: describe(e.payload) }]);
+      }),
     ];
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => {
@@ -192,6 +207,8 @@ export function SessionScreen(_: ScreenProps) {
                   {report.job_ms} ms · download {report.download_ms} ms
                 </div>
               ) : null}
+              <strong>Resources</strong>
+              <PoolMeter />
             </>
           ) : null}
         </div>

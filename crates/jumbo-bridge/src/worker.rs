@@ -105,6 +105,11 @@ impl WorkerClient {
         self.json(Method::GET, "/v1/session", Value::Null).await
     }
 
+    /// The model pool: TPU phase, chip leases and HBM peaks, CPU use, replicas and queues.
+    pub async fn pool(&self) -> Result<Value> {
+        self.json(Method::GET, "/v1/pool", Value::Null).await
+    }
+
     /// Asks the worker to drain and exit.
     pub async fn stop(&self) -> Result<()> {
         self.json::<Value>(Method::POST, "/v1/session/stop", Value::Null).await.map(|_| ())
