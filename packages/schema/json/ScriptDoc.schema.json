@@ -519,12 +519,12 @@
           "const": "hud_popup"
         },
         "params": {
-          "default": {},
           "$ref": "#/$defs/HudPopupParams"
         }
       },
       "required": [
-        "name"
+        "name",
+        "params"
       ],
       "description": "Game-style info panel types onto the screen over the panel. Use for system messages, stats and level-ups."
     },

@@ -26,9 +26,40 @@ export const CONTRACTS = { PanelsDoc, ScriptDoc, AudioManifest, EpisodeSpec, Mem
 
 export const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "json");
 
+type Json = { [key: string]: unknown };
+
+/**
+ * `prefault({})` makes zod parse an omitted object as `{}`, which still fails when the object has
+ * required fields (e.g. hud_popup's `text`). JSON Schema would call such a field optional with an
+ * invalid default, so producers (and constrained decoding) would leave it out. Make it required.
+ */
+function requireUnsatisfiableDefaults(schema: Json): Json {
+  const defs = (schema.$defs ?? {}) as Record<string, Json>;
+  const target = (node: Json): Json => {
+    const ref = node.$ref;
+    return typeof ref === "string" && ref.startsWith("#/$defs/") ? (defs[ref.slice(8)] ?? node) : node;
+  };
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (!node || typeof node !== "object") return;
+    const obj = node as Json;
+    const props = obj.properties as Record<string, Json> | undefined;
+    for (const [key, prop] of Object.entries(props ?? {})) {
+      const isEmptyDefault = prop.default !== undefined && JSON.stringify(prop.default) === "{}";
+      if (isEmptyDefault && ((target(prop).required as string[] | undefined) ?? []).length > 0) {
+        delete prop.default;
+        obj.required = [...new Set([...((obj.required as string[] | undefined) ?? []), key])];
+      }
+    }
+    Object.values(obj).forEach(visit);
+  };
+  visit(schema);
+  return schema;
+}
+
 export function renderContract(name: keyof typeof CONTRACTS): string {
   // "input" describes what producers may send: fields with defaults are optional.
-  const schema = z.toJSONSchema(CONTRACTS[name], { io: "input", unrepresentable: "any" });
+  const schema = requireUnsatisfiableDefaults(z.toJSONSchema(CONTRACTS[name], { io: "input", unrepresentable: "any" }) as Json);
   return `${JSON.stringify({ $id: `https://jumbo.local/schema/${name}.schema.json`, title: name, ...schema }, null, 2)}\n`;
 }
 

@@ -172,7 +172,7 @@ class HudPopupPreset(BaseModel):
     """
 
     name: Literal["hud_popup"]
-    params: Annotated[HudPopupParams | None, Field(validate_default=True)] = {}
+    params: HudPopupParams
 
 
 class ZoomPreset(BaseModel):

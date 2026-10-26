@@ -26,6 +26,14 @@ describe("exported JSON Schema", () => {
     expect(episode.$defs.HoldPreset.description).toMatch(/^Static panel/);
   });
 
+  it("requires params a preset cannot default (hud_popup needs its text)", () => {
+    const defs = JSON.parse(renderContract("ScriptDoc")).$defs;
+    expect(defs.HudPopupPreset.required).toEqual(["name", "params"]);
+    expect(defs.HudPopupPreset.properties.params.default).toBeUndefined();
+    expect(defs.ZoomPreset.required).toEqual(["name"]);
+    expect(defs.ZoomPreset.properties.params.default).toEqual({});
+  });
+
   it("marks defaulted fields optional for producers", () => {
     const script = JSON.parse(renderContract("ScriptDoc"));
     expect(script.properties.lines.items).toEqual({ $ref: "#/$defs/ScriptLine" });
