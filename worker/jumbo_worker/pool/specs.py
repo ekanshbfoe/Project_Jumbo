@@ -100,7 +100,9 @@ class PoolConfig(BaseModel):
                     f"{spec.name}: {spec.hbm_gb_per_chip} GB/chip exceeds the {self.chip_budget_gb:.1f} GB budget "
                     f"({self.hbm_ceiling:.0%} of {self.chip_hbm_gb} GB)"
                 )
-            if spec.chips > self.chips:
+            # A host without a TPU (local worker, Kaggle CPU) still loads every model: TPU models
+            # run on their CPU fallback there, or report that they cannot start.
+            if 0 < self.chips < spec.chips:
                 raise ValueError(f"{spec.name}: needs {spec.chips} chips, the host has {self.chips}")
         return self
 
@@ -124,6 +126,15 @@ class PoolConfig(BaseModel):
             return self.models[name]
         except KeyError:
             raise KeyError(f"unknown model {name!r}") from None
+
+
+def detect_tpu_chips(dev: Path = Path("/dev")) -> int:
+    """TPU chips this host exposes: /dev/accel* on older TPU VMs, /dev/vfio/<n> on v5e and later."""
+    accel = list(dev.glob("accel[0-9]*"))
+    if accel:
+        return len(accel)
+    vfio = dev / "vfio"
+    return sum(1 for p in vfio.iterdir() if p.name.isdigit()) if vfio.is_dir() else 0
 
 
 def load_specs(path: Path = DEFAULT_SPECS, **overrides) -> PoolConfig:

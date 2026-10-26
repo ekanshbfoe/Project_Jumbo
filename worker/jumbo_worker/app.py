@@ -61,6 +61,11 @@ def create_app(
         await authed(request)
         return session.info()
 
+    @app.get("/v1/pool")
+    async def pool_status(request: Request) -> dict:
+        await authed(request)
+        return {"enabled": True, **runner.pool.status()} if runner.pool else {"enabled": False}
+
     @app.post("/v1/session/stop")
     async def stop(request: Request) -> dict:
         await authed(request)

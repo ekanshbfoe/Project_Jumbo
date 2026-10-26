@@ -6,12 +6,15 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable
+from typing import TYPE_CHECKING, AsyncContextManager, Awaitable, Callable
 
 import blake3
 
 from .blobs import BlobStore, check_hash
 from .events import EventBus
+
+if TYPE_CHECKING:
+    from .pool.manager import Handle, ResourceManager
 
 
 class JobError(Exception):
@@ -25,9 +28,23 @@ class JobContext:
     params: dict
     store: BlobStore
     _report: Callable[[float, str], None]
+    pool: ResourceManager | None = None
 
     def progress(self, fraction: float, message: str = "") -> None:
         self._report(fraction, message)
+
+    def lease(self, model: str) -> AsyncContextManager[Handle]:
+        """Holds a replica of `model` (waiting for the pool to place one) for several requests."""
+        return self._pool().lease(model)
+
+    async def call(self, model: str, kind: str, payload: dict) -> object:
+        """One request to `model`, retried on another replica if the serving one dies."""
+        return await self._pool().run(model, kind, payload)
+
+    def _pool(self) -> ResourceManager:
+        if self.pool is None:
+            raise JobError("this worker has no model pool")
+        return self.pool
 
 
 JobHandler = Callable[[JobContext], Awaitable[str]]
@@ -60,8 +77,9 @@ async def echo(ctx: JobContext) -> str:
 
 
 class JobRunner:
-    def __init__(self, store: BlobStore, bus: EventBus, handlers: dict[str, JobHandler] | None = None) -> None:
+    def __init__(self, store: BlobStore, bus: EventBus, handlers: dict[str, JobHandler] | None = None, pool: ResourceManager | None = None) -> None:
         self.store = store
+        self.pool = pool
         self.bus = bus
         self.handlers = handlers or {"echo": echo}
         self.jobs: dict[str, Job] = {}
@@ -95,7 +113,7 @@ class JobRunner:
         job.status = "running"
         self.bus.publish({"type": "job.started", "job_id": job.id, "kind": job.kind})
         try:
-            ctx = JobContext(job.id, job.input, job.params, self.store, report)
+            ctx = JobContext(job.id, job.input, job.params, self.store, report, self.pool)
             job.output = await self.handlers[job.kind](ctx)
             job.status, job.progress = "done", 1.0
             self.bus.publish({"type": "job.done", "job_id": job.id, "output": job.output})

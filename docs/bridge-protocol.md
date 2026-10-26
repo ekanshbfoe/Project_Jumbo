@@ -68,6 +68,7 @@ sig = hex(HMAC-SHA256(K, "v1\n" + METHOD + "\n" + PATH_AND_QUERY + "\n" + ts + "
 |---|---|---|
 | GET | `/health` | Unauthenticated liveness: `{"ok": true, "proto": 1}` |
 | GET | `/v1/session` | Session id, epoch, timings and host facts. `warming` is true while models load; the app waits for it to clear |
+| GET | `/v1/pool` | Model pool snapshot: TPU phase, HBM ceiling, per-chip owner, reserved GB and peak, CPU use, replicas, queued requests, models that cannot start. `{"enabled": false}` on a worker without a pool |
 | POST | `/v1/session/stop` | Start draining; the worker exits after in-flight work |
 | POST | `/v1/blobs/missing` | `{"hashes": [...]}` → `{"missing": [...]}` |
 | GET | `/v1/blobs/{hash}/status` | `{"received": n, "complete": bool}` (resume point) |
@@ -75,6 +76,6 @@ sig = hex(HMAC-SHA256(K, "v1\n" + METHOD + "\n" + PATH_AND_QUERY + "\n" + ts + "
 | GET | `/v1/blobs/{hash}` | Download, with `Range` support |
 | POST | `/v1/jobs` | `{"kind", "input", "params"}` → `{"job_id"}`. The id is derived from the inputs, so retries are idempotent |
 | GET | `/v1/jobs/{job_id}` | Job status and output blob |
-| WS | `/v1/events` | Server pushes `job.progress`, `job.done`, `job.failed`, `session.draining` and `log` |
+| WS | `/v1/events` | Server pushes `job.progress`, `job.done`, `job.failed`, `session.draining` and `log`, plus pool events: `pool.status` (same body as `/v1/pool`, sent when it changes), `pool.phase`, `pool.replica_ready`, `pool.replica_failed`, `pool.hbm_soft` / `pool.hbm_ok` (throttle on/off) and `pool.hbm_kill` |
 
 Blobs are content-addressed by lowercase-hex blake3. Chunking keeps every request under the quick tunnel's 100 MB body limit, and `Range` makes downloads resumable.

@@ -21,6 +21,9 @@ from .app import create_app
 from .blobs import BlobStore
 from .events import EventBus
 from .jobs import JobRunner
+from .pool.manager import ResourceManager
+from .pool.specs import detect_tpu_chips, load_specs
+from .pool.weights import WeightCache
 from .rendezvous import FileRendezvous, GistRendezvous, Rendezvous, build_record
 from .session import Session, SessionTicket
 from .tunnel import CloudflaredTunnel, DirectTunnel
@@ -36,8 +39,24 @@ def host_facts() -> dict:
         facts["ram_gb"] = round(kb / 1024 / 1024, 1)
     except (OSError, StopIteration, ValueError):
         pass
-    facts["tpu"] = Path("/dev/accel0").exists() or bool(os.environ.get("TPU_NAME"))
+    facts["tpu_chips"] = detect_tpu_chips()
+    facts["tpu"] = facts["tpu_chips"] > 0 or bool(os.environ.get("TPU_NAME"))
     return facts
+
+
+KAGGLE_INPUT = Path("/kaggle/input")
+
+
+def make_pool(data: Path, bus: EventBus) -> ResourceManager:
+    """The model pool, sized to this host: real chip count, cores and RAM; weights staged in RAM on Kaggle."""
+    weights = WeightCache(KAGGLE_INPUT) if KAGGLE_INPUT.is_dir() and Path("/dev/shm").is_dir() else None
+    return ResourceManager(
+        load_specs(chips=detect_tpu_chips()),
+        publish=bus.publish,
+        log_dir=data / "replicas",
+        weights=weights,
+        compile_cache=data / "xla_cache",
+    )
 
 
 SECRETS_DATASET = "jumbo-secrets"
@@ -87,7 +106,9 @@ async def serve(args: argparse.Namespace) -> None:
     session = Session(SessionTicket.from_dict(raw))
     bus = EventBus()
     store = BlobStore(Path(args.data))
-    runner = JobRunner(store, bus)
+    pool = make_pool(Path(args.data), bus)
+    pool.start()
+    runner = JobRunner(store, bus, pool=pool)
     rendezvous = make_rendezvous(raw, args.rendezvous)
     stop = asyncio.Event()
 
@@ -119,6 +140,7 @@ async def serve(args: argparse.Namespace) -> None:
     tasks = [asyncio.create_task(server.serve()), asyncio.create_task(tunnel.run()), asyncio.create_task(watchdog())]
     await stop.wait()
     await runner.drain()
+    await pool.close()
     try:
         await rendezvous.remove(session.ticket.session_id)
     except Exception as e:  # noqa: BLE001 - shutting down regardless

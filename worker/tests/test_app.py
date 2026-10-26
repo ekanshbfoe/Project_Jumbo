@@ -101,3 +101,9 @@ def test_stop_drains_and_refuses_new_jobs(world):
     assert session.draining and stops == ["stop requested"]
     body = json.dumps({"kind": "echo", "input": "0" * 64}).encode()
     assert client.post("/v1/jobs", content=body, headers=signer.headers("POST", "/v1/jobs", body)).status_code == 409
+
+
+def test_pool_status_needs_a_signature_and_reports_disabled_without_a_pool(world):
+    client, signer, _, _ = world
+    assert client.get("/v1/pool").status_code == 401
+    assert client.get("/v1/pool", headers=signer.headers("GET", "/v1/pool")).json() == {"enabled": False}
