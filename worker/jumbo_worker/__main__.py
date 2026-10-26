@@ -22,7 +22,7 @@ from .blobs import BlobStore
 from .events import EventBus
 from .jobs import JobRunner
 from .pool.manager import ResourceManager
-from .pool.specs import detect_tpu_chips, load_specs
+from .pool.specs import detect_cuda_gpus, detect_tpu_chips, load_specs
 from .pool.weights import WeightCache
 from .rendezvous import FileRendezvous, GistRendezvous, Rendezvous, build_record
 from .session import Session, SessionTicket
@@ -40,6 +40,7 @@ def host_facts() -> dict:
     except (OSError, StopIteration, ValueError):
         pass
     facts["tpu_chips"] = detect_tpu_chips()
+    facts["gpus"] = detect_cuda_gpus()
     facts["tpu"] = facts["tpu_chips"] > 0 or bool(os.environ.get("TPU_NAME"))
     return facts
 
@@ -51,7 +52,7 @@ def make_pool(data: Path, bus: EventBus) -> ResourceManager:
     """The model pool, sized to this host: real chip count, cores and RAM; weights staged in RAM on Kaggle."""
     weights = WeightCache(KAGGLE_INPUT) if KAGGLE_INPUT.is_dir() and Path("/dev/shm").is_dir() else None
     return ResourceManager(
-        load_specs(chips=detect_tpu_chips()),
+        load_specs(chips=detect_tpu_chips(), gpus=detect_cuda_gpus()),
         publish=bus.publish,
         log_dir=data / "replicas",
         weights=weights,

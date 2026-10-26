@@ -130,16 +130,16 @@ def plan(
     for spec in order:
         want = desired(spec, backlog[spec.name])
         if spec.on_tpu and spec.phase == new_phase:
-            while tpu_count[spec.name] + cpu_count[spec.name] < want and chips.can_place(spec.chips, spec.hbm_gb_per_chip) and cores.can_lease(spec.cores(False), spec.host_ram_gb):
+            while tpu_count[spec.name] + cpu_count[spec.name] < want and chips.can_place(spec.chips, spec.hbm_gb_per_chip) and cores.can_lease(config.replica_cores(spec, True), spec.host_ram_gb):
                 chips.lease(f"plan:{spec.name}:{tpu_count[spec.name]}", spec.chips, spec.hbm_gb_per_chip)
-                cores.lease(f"plan:{spec.name}:t{tpu_count[spec.name]}", spec.cores(False), spec.host_ram_gb)
+                cores.lease(f"plan:{spec.name}:t{tpu_count[spec.name]}", config.replica_cores(spec, True), spec.host_ram_gb)
                 out.start.append(Start(spec.name, on_cpu=False))
                 tpu_count[spec.name] += 1
         # CPU replicas: CPU-only models, and fallbacks for TPU models the chips cannot serve right now.
         cpu_ok = not spec.on_tpu or (spec.cpu_fallback and queued.get(spec.name, 0) > 0 and tpu_count[spec.name] == 0)
         if cpu_ok:
-            while tpu_count[spec.name] + cpu_count[spec.name] < want and cores.can_lease(spec.cores(True), spec.host_ram_gb):
-                cores.lease(f"plan:{spec.name}:c{cpu_count[spec.name]}", spec.cores(True), spec.host_ram_gb)
+            while tpu_count[spec.name] + cpu_count[spec.name] < want and cores.can_lease(config.replica_cores(spec, False), spec.host_ram_gb):
+                cores.lease(f"plan:{spec.name}:c{cpu_count[spec.name]}", config.replica_cores(spec, False), spec.host_ram_gb)
                 out.start.append(Start(spec.name, on_cpu=True))
                 cpu_count[spec.name] += 1
     return out

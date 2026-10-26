@@ -80,6 +80,8 @@ class ModelSpec(BaseModel):
 class PoolConfig(BaseModel):
     hbm_ceiling: float = Field(0.80, gt=0.5, le=0.95)
     chips: int = Field(TPU_CHIPS, ge=0)
+    # CUDA GPUs on the host (Kaggle's T4 x2). Accelerator models without chips run on them, shared.
+    gpus: int = Field(0, ge=0)
     chip_hbm_gb: float = Field(CHIP_HBM_GB, gt=0)
     # A phase switch must win by this many seconds of queued work beyond the swap cost.
     phase_hysteresis_s: float = Field(60.0, ge=0)
@@ -120,6 +122,12 @@ class PoolConfig(BaseModel):
     def soft_limit(self) -> float:
         return self.hbm_ceiling - SOFT_MARGIN
 
+    def replica_cores(self, spec: ModelSpec, on_chips: bool) -> int:
+        """Cores a replica leases: its CPU-fallback share only when it computes on the CPU itself."""
+        if on_chips or (spec.on_tpu and self.gpus):
+            return spec.cpu_cores
+        return spec.cores(True)
+
     def phases(self) -> dict[str, list[ModelSpec]]:
         out: dict[str, list[ModelSpec]] = {}
         for spec in self.models.values():
@@ -141,6 +149,11 @@ def detect_tpu_chips(dev: Path = Path("/dev")) -> int:
         return len(accel)
     vfio = dev / "vfio"
     return sum(1 for p in vfio.iterdir() if p.name.isdigit()) if vfio.is_dir() else 0
+
+
+def detect_cuda_gpus(dev: Path = Path("/dev")) -> int:
+    """NVIDIA GPUs this host exposes (/dev/nvidia0, /dev/nvidia1, ...)."""
+    return sum(1 for p in dev.glob("nvidia*") if p.name[len("nvidia"):].isdigit())
 
 
 def load_specs(path: Path = DEFAULT_SPECS, **overrides) -> PoolConfig:

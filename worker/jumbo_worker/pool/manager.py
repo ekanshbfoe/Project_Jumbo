@@ -32,8 +32,8 @@ class Handle(Protocol):
     async def kill(self) -> None: ...
 
 
-# (spec, chip lease or None for CPU, CPU lease, staged weights folder or None) -> running replica
-Spawn = Callable[[ModelSpec, "ChipLease | None", CpuLease, "Path | None"], Awaitable[Handle]]
+# (spec, chip lease or None, CPU lease, staged weights folder or None, gpu=CUDA index or None) -> running replica
+Spawn = Callable[..., Awaitable[Handle]]
 
 
 @dataclass
@@ -51,11 +51,15 @@ class Slot:
     last_used: float = 0.0
     throttled: bool = False
     pinned: bool = False
+    # CUDA device on a GPU host (accelerator models placed without TPU chips).
+    gpu: int | None = None
     task: asyncio.Task | None = field(default=None, repr=False)
 
     @property
     def where(self) -> str:
-        return "cpu" if self.chips is None else "tpu:" + ",".join(map(str, self.chips.chips))
+        if self.chips is not None:
+            return "tpu:" + ",".join(map(str, self.chips.chips))
+        return "cpu" if self.gpu is None else f"gpu:{self.gpu}"
 
 
 class ResourceManager:
@@ -225,15 +229,25 @@ class ResourceManager:
         except LeaseError:
             return
         try:
-            cpu = self.cpu.lease(slot_id, spec.cores(on_cpu), spec.host_ram_gb)
+            cpu = self.cpu.lease(slot_id, self.config.replica_cores(spec, not on_cpu), spec.host_ram_gb)
         except LeaseError:
             if chips:
                 self.ledger.release(chips)
             return
         now = self.clock()
-        slot = Slot(slot_id, spec, chips, cpu, started=now, last_used=now)
+        slot = Slot(slot_id, spec, chips, cpu, started=now, last_used=now, gpu=self._pick_gpu(spec, chips))
         self.slots[slot_id] = slot
         slot.task = asyncio.create_task(self._boot(slot))
+
+    def _pick_gpu(self, spec: ModelSpec, chips: ChipLease | None) -> int | None:
+        """The least loaded CUDA card for an accelerator model that got no TPU chips."""
+        if chips is not None or not spec.on_tpu or not self.config.gpus:
+            return None
+        load = [0] * self.config.gpus
+        for s in self.slots.values():
+            if s.gpu is not None:
+                load[s.gpu] += 1
+        return min(range(self.config.gpus), key=lambda g: load[g])
 
     async def _boot(self, slot: Slot) -> None:
         try:
@@ -242,7 +256,7 @@ class ResourceManager:
                 staged = await self.weights.ensure(slot.spec.weights)
                 self.weights.pin(slot.spec.weights)
                 slot.pinned = True
-            slot.handle = await self._spawn(slot.spec, slot.chips, slot.cpu, staged)
+            slot.handle = await self._spawn(slot.spec, slot.chips, slot.cpu, staged, gpu=slot.gpu)
         except Exception as e:  # noqa: BLE001 - recorded; waiters for this model fail fast
             log.error("%s failed to start: %s", slot.id, e)
             self.broken[slot.spec.name] = str(e)
@@ -306,6 +320,7 @@ class ResourceManager:
         return {
             "phase": self.phase,
             "hbm_ceiling": self.config.hbm_ceiling,
+            "gpus": self.config.gpus,
             "chips": [
                 {"chip": c["chip"], "replica": owners.get(c["chip"]), "reserved_gb": c["reserved_gb"], "peak": round(self.watchdog.peaks.get(c["chip"], 0.0), 4)}
                 for c in self.ledger.snapshot()
@@ -324,8 +339,8 @@ class ResourceManager:
 
     # --- default spawner ---------------------------------------------------------------------
 
-    async def _spawn_process(self, spec: ModelSpec, chips: ChipLease | None, cpu: CpuLease, weights: Path | None) -> Handle:
+    async def _spawn_process(self, spec: ModelSpec, chips: ChipLease | None, cpu: CpuLease, weights: Path | None, gpu: int | None = None) -> Handle:
         extra = {**self.extra_env, **({"JUMBO_WEIGHTS": str(weights)} if weights else {})}
-        replica = Replica(spec, chips, cpu, replica_env(spec, self.config, chips, cpu, extra), log_dir=self.log_dir)
+        replica = Replica(spec, chips, cpu, replica_env(spec, self.config, chips, cpu, extra, gpu=gpu), log_dir=self.log_dir)
         await replica.start(timeout=spec.wake_s * 3 + 60)
         return replica

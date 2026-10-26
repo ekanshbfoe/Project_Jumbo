@@ -61,3 +61,57 @@ def test_a_host_without_a_tpu_still_loads_every_model():
     assert config.spec("qwen25vl_72b_int8").chips == 8
     with pytest.raises(ValueError, match="needs 8 chips, the host has 4"):
         load_specs(DEFAULT_SPECS, chips=4)
+
+
+def test_cuda_gpus_are_counted_from_device_nodes(tmp_path):
+    from jumbo_worker.pool.specs import detect_cuda_gpus
+
+    for name in ("nvidia0", "nvidia1", "nvidiactl", "nvidia-uvm"):
+        (tmp_path / name).touch()
+    assert detect_cuda_gpus(tmp_path) == 2
+
+
+async def test_on_a_gpu_host_accelerator_models_share_the_cards_and_cpu_stages_get_none():
+    from jumbo_worker.pool.replica import replica_env
+
+    cfg = PoolConfig.model_validate(
+        {
+            "chips": 0,
+            "gpus": 2,
+            "tick_s": 0.02,
+            "models": {
+                "det": {"backend": "fake", "chips": 1, "hbm_gb_per_chip": 3, "phase": "vision", "cpu_fallback": True, "cpu_fallback_cores": 3, "max_replicas": 3, "target_queue_per_replica": 1, "wake_s": 0},
+                "render": {"backend": "fake", "cpu_cores": 1, "max_replicas": 1, "wake_s": 0},
+            },
+        }
+    )
+    placed = []
+
+    async def spawn(spec, chips, cpu, weights=None, gpu=None):
+        placed.append((spec.name, gpu, cpu.cores, replica_env(spec, cfg, chips, cpu, gpu=gpu)["CUDA_VISIBLE_DEVICES"]))
+
+        class Handle:
+            async def run(self, kind, payload):
+                await asyncio.sleep(0.05)
+                return gpu
+
+            async def memory(self):
+                return {}
+
+            async def stop(self):
+                pass
+
+            async def kill(self):
+                pass
+
+        return Handle()
+
+    pool = ResourceManager(cfg, cpu=CpuPool(8, 32), spawn=spawn)
+    pool.start()
+    gpus = await asyncio.gather(*(pool.run("det", "x", {}) for _ in range(6)), pool.run("render", "x", {}))
+    await pool.close()
+    dets = [p for p in placed if p[0] == "det"]
+    # Spread over both cards, each replica pinned to one; with a GPU they lease their normal cpu_cores, not the CPU-fallback 3.
+    assert {g for _, g, _, _ in dets} == {0, 1} and all(env == str(g) and cores == 1 for _, g, cores, env in dets)
+    assert ("render", None, 1, "") in placed
+    assert set(gpus[:6]) <= {0, 1}

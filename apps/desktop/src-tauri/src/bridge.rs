@@ -51,6 +51,8 @@ pub enum BridgeMode {
     /// TPU v5e-8 on Kaggle: production.
     #[default]
     KaggleTpu,
+    /// Two NVIDIA T4s on Kaggle: GPU models (Magi, OmniVoice) without waiting in the TPU queue.
+    KaggleGpu,
     /// A CPU Kaggle machine: tests the whole cloud path without spending TPU quota.
     KaggleCpu,
     /// A worker started on this PC: tests the app and protocol without Kaggle or a tunnel.
@@ -284,7 +286,7 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
             }
             (RendezvousReader::Folder(rv), None)
         }
-        BridgeMode::KaggleTpu | BridgeMode::KaggleCpu => {
+        BridgeMode::KaggleTpu | BridgeMode::KaggleGpu | BridgeMode::KaggleCpu => {
             if !settings.kernel_slug.contains('/') {
                 return Err("set the Kaggle kernel as owner/kernel-slug in Bridge settings".into());
             }
@@ -292,7 +294,12 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
             let kernel_slug = settings.kernel_slug.trim().to_owned();
             let owner = kernel_slug.split_once('/').map_or("", |(owner, _)| owner).to_owned();
             let config = LaunchConfig {
-                machine_shape: (settings.mode == BridgeMode::KaggleTpu).then(|| "TpuV5E8".to_owned()),
+                machine_shape: match settings.mode {
+                    BridgeMode::KaggleTpu => Some("TpuV5E8".to_owned()),
+                    // Kaggle's T4 shape comes with two cards.
+                    BridgeMode::KaggleGpu => Some("NvidiaTeslaT4".to_owned()),
+                    _ => None,
+                },
                 model_sources: vec![],
                 // The worker reads its gist token from here (Kaggle's API cannot attach Kaggle Secrets).
                 dataset_sources: vec![secrets_slug(&owner)],

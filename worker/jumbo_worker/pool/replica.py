@@ -32,7 +32,9 @@ class ReplicaDied(ReplicaError):
     """The process is gone (crashed, killed by the watchdog, or put to sleep): the work can be retried."""
 
 
-def replica_env(spec: ModelSpec, config: PoolConfig, chips: ChipLease | None, cpu: CpuLease, extra: dict[str, str] | None = None) -> dict[str, str]:
+def replica_env(
+    spec: ModelSpec, config: PoolConfig, chips: ChipLease | None, cpu: CpuLease, extra: dict[str, str] | None = None, gpu: int | None = None
+) -> dict[str, str]:
     """Environment that binds a replica to its lease and caps its allocator at the HBM ceiling
     (layer 2 of the ceiling; admission is layer 1 and the watchdog layer 3)."""
     env = {
@@ -44,6 +46,10 @@ def replica_env(spec: ModelSpec, config: PoolConfig, chips: ChipLease | None, cp
     if chips is None:
         # CPU replicas (and CPU fallbacks) must not open the TPU: libtpu would lock every chip.
         env.update({"JAX_PLATFORMS": "cpu", "PJRT_DEVICE": "CPU", "TPU_VISIBLE_CHIPS": ""})
+        # On a GPU host an accelerator model sees exactly its one card; everything else sees none.
+        env["CUDA_VISIBLE_DEVICES"] = "" if gpu is None else str(gpu)
+        if gpu is not None:
+            env["JUMBO_DEVICE"] = "cuda"
     else:
         env.update(
             {

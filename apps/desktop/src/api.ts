@@ -149,7 +149,7 @@ export function errorText(e: unknown): string {
 
 // Bridge (src-tauri/src/bridge.rs).
 
-export type BridgeMode = "kaggle_tpu" | "kaggle_cpu" | "local";
+export type BridgeMode = "kaggle_tpu" | "kaggle_gpu" | "kaggle_cpu" | "local";
 
 export interface BridgeSettings {
   mode: BridgeMode;

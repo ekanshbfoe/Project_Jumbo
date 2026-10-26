@@ -3,7 +3,8 @@ character clusters for one image, returned in the contract `pipeline/vision/dete
 
 Weights: personal, research and non-commercial use (see the model card). They come from the staged
 copy in `JUMBO_WEIGHTS` when the pool provides one, else from the Hugging Face Hub at a pinned
-revision. Runs on the TPU through torch-xla when the replica holds chips, otherwise on CPU.
+revision. Runs on the TPU through torch-xla when the replica holds chips, on its CUDA card on a
+GPU host, otherwise on CPU.
 """
 
 from __future__ import annotations
@@ -79,6 +80,9 @@ class MagiRunner:
             import torch_xla.core.xla_model as xm
 
             model = model.to(xm.xla_device())
+        elif os.environ.get("JUMBO_DEVICE") == "cuda" and torch.cuda.is_available():
+            # The pool pins this replica to one card with CUDA_VISIBLE_DEVICES.
+            model = model.to("cuda")
         return model.eval()
 
     def _detect(self, image: np.ndarray) -> dict:
