@@ -49,7 +49,9 @@ def replica_env(
         # On a GPU host an accelerator model sees exactly its one card; everything else sees none.
         env["CUDA_VISIBLE_DEVICES"] = "" if gpu is None else str(gpu)
         if gpu is not None:
-            env["JUMBO_DEVICE"] = "cuda"
+            # JUMBO_GPU is the physical card (for per-process memory reports); inside the replica it
+            # is cuda:0. The allocator cap keeps one process alone under the ceiling.
+            env.update({"JUMBO_DEVICE": "cuda", "JUMBO_GPU": str(gpu), "JUMBO_GPU_MEMORY_FRACTION": f"{config.hbm_ceiling:.2f}"})
     else:
         env.update(
             {

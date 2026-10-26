@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import AsyncIterator, Awaitable, Callable, Protocol
 
 from .autoscaler import Plan, ReplicaView, plan
-from .chips import ChipLease, ChipLedger, LeaseError
+from .chips import ChipLease, ChipLedger, GpuLedger, LeaseError
 from .cpu import CpuLease, CpuPool
 from .replica import Replica, ReplicaDied, ReplicaError, replica_env
 from .specs import ModelSpec, PoolConfig
@@ -51,8 +51,10 @@ class Slot:
     last_used: float = 0.0
     throttled: bool = False
     pinned: bool = False
-    # CUDA device on a GPU host (accelerator models placed without TPU chips).
+    # CUDA device on a GPU host (accelerator models placed without TPU chips), and the GB this
+    # replica last reported using on it.
     gpu: int | None = None
+    gpu_used_gb: float = 0.0
     task: asyncio.Task | None = field(default=None, repr=False)
 
     @property
@@ -89,6 +91,8 @@ class ResourceManager:
         self.extra_env = {**(compile_cache_env(compile_cache) if compile_cache else {}), **(extra_env or {})}
         self.weights = weights
         self.watchdog = Watchdog(config.chip_hbm_gb, config.soft_limit, config.hbm_ceiling)
+        self.gpus = GpuLedger(config.gpus, config.gpu_budget_gb)
+        self.gpu_watchdog = Watchdog(config.gpu_hbm_gb, config.soft_limit, config.hbm_ceiling)
         self.slots: dict[str, Slot] = {}
         self.queued: dict[str, int] = defaultdict(int)
         self.broken: dict[str, str] = {}
@@ -203,7 +207,7 @@ class ResourceManager:
 
     async def reconcile(self) -> None:
         queued = {m: n for m, n in self.queued.items() if n > 0 and m not in self.broken}
-        decided = plan(self.config, queued, self.views(), self.phase, self.clock() - self.phase_since, self.ledger, self.cpu)
+        decided = plan(self.config, queued, self.views(), self.phase, self.clock() - self.phase_since, self.ledger, self.cpu, self.gpus)
         self.last_plan = decided
         if decided.phase != self.phase:
             log.info("phase %s -> %s: %s", self.phase, decided.phase, decided.reason)
@@ -228,26 +232,23 @@ class ResourceManager:
             chips = None if on_cpu else self.ledger.lease(slot_id, spec.chips, spec.hbm_gb_per_chip)
         except LeaseError:
             return
+        gpu = None
+        if chips is None and spec.on_tpu and self.config.gpus:
+            try:
+                gpu = self.gpus.lease(slot_id, spec.hbm_gb_per_chip)
+            except LeaseError:
+                return
         try:
             cpu = self.cpu.lease(slot_id, self.config.replica_cores(spec, not on_cpu), spec.host_ram_gb)
         except LeaseError:
             if chips:
                 self.ledger.release(chips)
+            self.gpus.release(slot_id)
             return
         now = self.clock()
-        slot = Slot(slot_id, spec, chips, cpu, started=now, last_used=now, gpu=self._pick_gpu(spec, chips))
+        slot = Slot(slot_id, spec, chips, cpu, started=now, last_used=now, gpu=gpu)
         self.slots[slot_id] = slot
         slot.task = asyncio.create_task(self._boot(slot))
-
-    def _pick_gpu(self, spec: ModelSpec, chips: ChipLease | None) -> int | None:
-        """The least loaded CUDA card for an accelerator model that got no TPU chips."""
-        if chips is not None or not spec.on_tpu or not self.config.gpus:
-            return None
-        load = [0] * self.config.gpus
-        for s in self.slots.values():
-            if s.gpu is not None:
-                load[s.gpu] += 1
-        return min(range(self.config.gpus), key=lambda g: load[g])
 
     async def _boot(self, slot: Slot) -> None:
         try:
@@ -276,6 +277,7 @@ class ResourceManager:
                 await (slot.handle.kill() if kill else slot.handle.stop())
         if slot.chips:
             self.ledger.release(slot.chips)
+        self.gpus.release(slot.id)
         self.cpu.release(slot.cpu)
         if slot.pinned and self.weights and slot.spec.weights:
             self.weights.unpin(slot.spec.weights)
@@ -290,12 +292,37 @@ class ResourceManager:
     async def _watch_loop(self) -> None:
         while not self._closing:
             await asyncio.sleep(self.sample_s)
-            for slot in [s for s in self.slots.values() if s.state == "ready" and s.chips]:
+            for slot in [s for s in self.slots.values() if s.state == "ready" and (s.chips or s.gpu is not None)]:
                 try:
                     sample = await asyncio.wait_for(slot.handle.memory(), 5)
                 except Exception:  # noqa: BLE001 - a dead or hung replica is handled by the scaler
                     continue
-                await self.judge(slot, sample)
+                if slot.chips:
+                    await self.judge(slot, sample)
+                else:
+                    slot.gpu_used_gb = sum(sample.values())
+            for card in range(self.config.gpus):
+                await self.judge_card(card)
+
+    async def judge_card(self, card: int) -> None:
+        """Layer 3 on a shared GPU: the sum of what every replica on the card reports."""
+        on_card = {s.id: s for s in self.slots.values() if s.gpu == card and s.state == "ready"}
+        verdict = self.gpu_watchdog.judge_card(card, {i: s.gpu_used_gb for i, s in on_card.items()}, {i: s.spec.hbm_gb_per_chip for i, s in on_card.items()})
+        if verdict.kill:
+            slot = on_card[verdict.kill]
+            self.kills += 1
+            log.error("GPU %d at %.0f%%; killing %s (%.1f GB, profiled %.1f)", card, verdict.fraction * 100, slot.id, slot.gpu_used_gb, slot.spec.hbm_gb_per_chip)
+            self._publish({"type": "pool.hbm_kill", "replica": slot.id, "gpu": card, "fraction": round(verdict.fraction, 4)})
+            await self._retire(slot, kill=True)
+            return
+        for slot_id, slot in on_card.items():
+            throttled = slot_id in verdict.throttle
+            if throttled != slot.throttled:
+                slot.throttled = throttled
+                self._publish({"type": "pool.hbm_soft" if throttled else "pool.hbm_ok", "replica": slot_id, "gpu": card, "fraction": round(verdict.fraction, 4)})
+                if not throttled:
+                    async with self._cond:
+                        self._cond.notify_all()
 
     async def judge(self, slot: Slot, sample: dict[int, float]) -> None:
         verdict = self.watchdog.judge(slot.id, sample, slot.spec.hbm_gb_per_chip)
@@ -324,6 +351,10 @@ class ResourceManager:
             "chips": [
                 {"chip": c["chip"], "replica": owners.get(c["chip"]), "reserved_gb": c["reserved_gb"], "peak": round(self.watchdog.peaks.get(c["chip"], 0.0), 4)}
                 for c in self.ledger.snapshot()
+            ],
+            "gpu_cards": [
+                {**c, "used_gb": round(sum(s.gpu_used_gb for s in self.slots.values() if s.gpu == c["gpu"]), 3), "peak": round(self.gpu_watchdog.peaks.get(c["gpu"], 0.0), 4)}
+                for c in self.gpus.snapshot()
             ],
             "cpu": self.cpu.snapshot(),
             "replicas": [{"id": s.id, "model": s.spec.name, "where": s.where, "state": s.state, "busy": s.busy, "throttled": s.throttled} for s in self.slots.values()],

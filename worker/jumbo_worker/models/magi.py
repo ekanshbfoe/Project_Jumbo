@@ -81,7 +81,9 @@ class MagiRunner:
 
             model = model.to(xm.xla_device())
         elif os.environ.get("JUMBO_DEVICE") == "cuda" and torch.cuda.is_available():
-            # The pool pins this replica to one card with CUDA_VISIBLE_DEVICES.
+            # The pool pins this replica to one card with CUDA_VISIBLE_DEVICES and caps its allocator
+            # at the ceiling's share of the card (the card is shared, so the watchdog checks the sum).
+            torch.cuda.set_per_process_memory_fraction(float(os.environ.get("JUMBO_GPU_MEMORY_FRACTION", "0.8")), 0)
             model = model.to("cuda")
         return model.eval()
 

@@ -250,6 +250,11 @@ The ceiling is one config value, `hbm_ceiling` (default 0.80; spike 6 may raise 
    - **Hard (above the ceiling):** kill the replica and retry its requests on another (jobs are idempotent). Exactly at the ceiling is allowed, since that is where the allocator caps put a fully used replica.
    - Peaks are recorded and surfaced in `pool.status`.
 
+**On a GPU host (Kaggle T4 ×2, no chips)** accelerator models run on the CUDA cards, which replicas share, so the same three layers work per card:
+1. **Placement:** every replica reserves its profiled `hbm_gb_per_chip` on one card (`GpuLedger`). A card never has more reserved than `hbm_ceiling × gpu_hbm_gb` (15 GB usable per T4, so 12 GB at 0.80), and new replicas go to the card with the most room left.
+2. **Allocator cap:** each replica sees only its card (`CUDA_VISIBLE_DEVICES`), and torch is capped at the ceiling's share of it (`JUMBO_GPU_MEMORY_FRACTION`).
+3. **Card watchdog:** each replica reports its own usage (NVML per process, or torch reserved plus the CUDA context), and the card is judged on the sum. Above the ceiling, the replica furthest beyond its footprint is killed and its request retried. At the soft limit, replicas beyond their footprint are throttled. `pool.status` lists `gpu_cards` with reserved, used and peak.
+
 ### 4.4 Sleep / offload / wake
 - **Sleep = replica process exits** and releases its chips. Its weights **stay resident in host RAM** (`/dev/shm` safetensors, pre-quantized), so the 330 GB host RAM acts as the offload tier. The real host RAM and vCPU counts are read at boot, not assumed.
 - **Wake = spawn, mmap from `/dev/shm`, load to HBM** (seconds per GB), with XLA compile time cut by the **persistent compilation cache**. The cache is saved back as a Kaggle Dataset version between sessions.

@@ -21,6 +21,8 @@ CHIP_HBM_GB = 16.0
 LEASE_SIZES = (1, 2, 4, 8)
 # Soft watchdog threshold sits this far below the hard ceiling.
 SOFT_MARGIN = 0.04
+# Usable memory of one Kaggle T4 (16 GB nominal, about 15 GB after the driver's reserve).
+GPU_HBM_GB = 15.0
 
 Backend = Literal["vllm-tpu", "jax", "torch-xla", "cpu", "node", "fake"]
 
@@ -80,8 +82,10 @@ class ModelSpec(BaseModel):
 class PoolConfig(BaseModel):
     hbm_ceiling: float = Field(0.80, gt=0.5, le=0.95)
     chips: int = Field(TPU_CHIPS, ge=0)
-    # CUDA GPUs on the host (Kaggle's T4 x2). Accelerator models without chips run on them, shared.
+    # CUDA GPUs on the host (Kaggle's T4 x2). Accelerator models without chips run on them, shared,
+    # each replica reserving its profiled footprint (hbm_gb_per_chip) on one card.
     gpus: int = Field(0, ge=0)
+    gpu_hbm_gb: float = Field(GPU_HBM_GB, gt=0)
     chip_hbm_gb: float = Field(CHIP_HBM_GB, gt=0)
     # A phase switch must win by this many seconds of queued work beyond the swap cost.
     phase_hysteresis_s: float = Field(60.0, ge=0)
@@ -117,6 +121,10 @@ class PoolConfig(BaseModel):
     @property
     def chip_budget_gb(self) -> float:
         return self.hbm_ceiling * self.chip_hbm_gb
+
+    @property
+    def gpu_budget_gb(self) -> float:
+        return self.hbm_ceiling * self.gpu_hbm_gb
 
     @property
     def soft_limit(self) -> float:

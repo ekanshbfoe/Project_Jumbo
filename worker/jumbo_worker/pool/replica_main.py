@@ -28,8 +28,41 @@ def leased_chips() -> list[int]:
     return [int(c) for c in raw.split(",") if c]
 
 
-def tpu_memory_gb() -> dict[int, float]:
-    """GB in use per visible chip, from whichever TPU framework this replica loaded."""
+def leased_gpu() -> int | None:
+    raw = os.environ.get("JUMBO_GPU", "")
+    return int(raw) if raw else None
+
+
+# CUDA context and kernels a process holds outside torch's allocator, when NVML cannot say.
+CUDA_CONTEXT_GB = 0.4
+
+
+def gpu_memory_gb(card: int) -> dict[int, float]:
+    """GB this process uses on its card: NVML's per-process figure (includes the CUDA context), or
+    torch's reserved memory plus a context estimate."""
+    try:
+        import pynvml
+
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(card)
+        for proc in pynvml.nvmlDeviceGetComputeRunningProcesses(handle):
+            if proc.pid == os.getpid() and proc.usedGpuMemory:
+                return {card: proc.usedGpuMemory / 1e9}
+    except Exception:  # noqa: BLE001 - NVML missing or not permitted in this container
+        pass
+    if "torch" in sys.modules:
+        import torch
+
+        if torch.cuda.is_available() and torch.cuda.is_initialized():
+            return {card: torch.cuda.memory_reserved(0) / 1e9 + CUDA_CONTEXT_GB}
+    return {}
+
+
+def device_memory_gb() -> dict[int, float]:
+    """GB in use per leased chip, or on the leased GPU card, from whichever framework this replica loaded."""
+    gpu = leased_gpu()
+    if gpu is not None:
+        return gpu_memory_gb(gpu)
     chips = leased_chips()
     if "jax" in sys.modules:
         import jax
@@ -72,7 +105,9 @@ class FakeRunner:
         return {"kind": kind, "echo": payload.get("echo"), "pid": os.getpid(), "chips": self.chips}
 
     def memory(self) -> dict[int, float]:
-        return {c: self.spec.hbm_gb_per_chip + self.extra for c in self.chips}
+        gpu = leased_gpu()
+        places = self.chips or ([gpu] if gpu is not None else [])
+        return {c: self.spec.hbm_gb_per_chip + self.extra for c in places}
 
 
 def _not_yet(backend: str) -> Callable[[ModelSpec], Runner]:
@@ -134,7 +169,7 @@ async def serve(out) -> None:
             if msg["op"] == "run":
                 result = await runner.run(msg["kind"], msg.get("payload", {}))
             elif msg["op"] == "memory":
-                result = runner.memory() or tpu_memory_gb()
+                result = runner.memory() or device_memory_gb()
             else:
                 raise ValueError(f"unknown op {msg['op']!r}")
             send({"id": msg["id"], "ok": True, "result": result})

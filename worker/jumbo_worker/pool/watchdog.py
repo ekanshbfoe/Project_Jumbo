@@ -6,6 +6,10 @@
 - Above the ceiling it is killed and its jobs are retried (jobs are idempotent). Exactly at the
   ceiling is allowed: that is where the allocator caps put a fully used replica.
 Peaks are kept per chip for `pool.status` and the S0 soak report.
+
+GPU cards are shared by several replicas, so they are judged per card on the sum of what every
+replica on it reports: above the ceiling the replica furthest beyond its profiled footprint is
+killed; at or above the soft limit the replicas beyond their footprint are throttled.
 """
 
 from __future__ import annotations
@@ -19,6 +23,14 @@ class Verdict:
     level: str  # "ok" | "soft" | "hard"
     chip: int | None
     fraction: float
+
+
+@dataclass(frozen=True)
+class CardVerdict:
+    card: int
+    fraction: float
+    kill: str | None
+    throttle: frozenset[str]
 
 
 @dataclass
@@ -43,6 +55,17 @@ class Watchdog:
         else:
             level = "ok"
         return Verdict(replica, level, worst_chip, worst)
+
+    def judge_card(self, card: int, used_gb: dict[str, float], profile_gb: dict[str, float]) -> CardVerdict:
+        """One shared card: `used_gb` is each replica's own usage on it, `profile_gb` its reservation."""
+        fraction = sum(used_gb.values()) / self.chip_hbm_gb
+        self.peaks[card] = max(self.peaks.get(card, 0.0), fraction)
+        over = {r: used - profile_gb.get(r, 0.0) for r, used in used_gb.items()}
+        if used_gb and fraction > self.hard + 1e-9:
+            return CardVerdict(card, fraction, kill=max(used_gb, key=lambda r: (over[r], used_gb[r])), throttle=frozenset())
+        if fraction >= self.soft:
+            return CardVerdict(card, fraction, kill=None, throttle=frozenset(r for r, o in over.items() if o > 1e-9))
+        return CardVerdict(card, fraction, kill=None, throttle=frozenset())
 
     def peak(self) -> float:
         return max(self.peaks.values(), default=0.0)

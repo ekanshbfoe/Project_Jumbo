@@ -73,3 +73,46 @@ class ChipLedger:
 
     def snapshot(self) -> list[dict]:
         return [{"chip": i, "owner": o, "reserved_gb": h} for i, (o, h) in enumerate(zip(self._owner, self._hbm))]
+
+
+class GpuLedger:
+    """CUDA cards on a GPU host. Unlike TPU chips they are shared: every replica on a card holds a
+    reservation of its profiled footprint, and a card never has more reserved than its budget (the
+    ceiling's share of its memory). New replicas go to the card with the most room left."""
+
+    def __init__(self, gpus: int, budget_gb: float) -> None:
+        self.size = gpus
+        self.budget_gb = budget_gb
+        self._held: dict[str, tuple[int, float]] = {}
+
+    def reserved(self) -> list[float]:
+        out = [0.0] * self.size
+        for card, gb in self._held.values():
+            out[card] += gb
+        return out
+
+    def _choose(self, gb: float) -> int | None:
+        reserved = self.reserved()
+        fits = [c for c in range(self.size) if reserved[c] + gb <= self.budget_gb + 1e-9]
+        return min(fits, key=lambda c: (reserved[c], c), default=None)
+
+    def can_place(self, gb: float) -> bool:
+        return self._choose(gb) is not None
+
+    def lease(self, owner: str, gb: float) -> int:
+        card = self._choose(gb)
+        if card is None:
+            raise LeaseError(f"no GPU has {gb} GB left under its {self.budget_gb:.1f} GB budget")
+        self._held[owner] = (card, gb)
+        return card
+
+    def release(self, owner: str) -> None:
+        self._held.pop(owner, None)
+
+    def card_of(self, owner: str) -> int | None:
+        held = self._held.get(owner)
+        return held[0] if held else None
+
+    def snapshot(self) -> list[dict]:
+        reserved = self.reserved()
+        return [{"gpu": c, "reserved_gb": round(reserved[c], 3), "replicas": sorted(o for o, (card, _) in self._held.items() if card == c)} for c in range(self.size)]
