@@ -201,6 +201,9 @@ fn spawn_local_worker(ticket: &SessionTicket, rendezvous: &std::path::Path) -> C
     std::fs::create_dir_all(&home).map_err(msg)?;
     std::fs::write(&ticket_path, serde_json::to_vec(ticket).map_err(msg)?).map_err(msg)?;
     let port = std::net::TcpListener::bind("127.0.0.1:0").and_then(|l| l.local_addr()).map_err(msg)?.port();
+    // Kept next to the ticket so a worker that dies during boot can be diagnosed.
+    let log = std::fs::File::create(home.join("worker.log")).map_err(msg)?;
+    let log_err = log.try_clone().map_err(msg)?;
     Command::new(python)
         .current_dir(&dir)
         .args(["-m", "jumbo_worker", "--tunnel", "direct", "--port", &port.to_string(), "--ticket"])
@@ -209,8 +212,8 @@ fn spawn_local_worker(ticket: &SessionTicket, rendezvous: &std::path::Path) -> C
         .arg(home.join("data"))
         .arg("--rendezvous")
         .arg(format!("file:{}", rendezvous.display()))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::from(log))
+        .stderr(Stdio::from(log_err))
         .spawn()
         .map_err(|e| format!("could not start the local worker: {e}"))
 }
@@ -231,11 +234,15 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
     let ticket = SessionTicket::new(&keys, RendezvousSpec::Gist { gist_id: gist_id.clone() }).map_err(msg)?;
     let http = http::client();
 
+    let mut log_hint = String::new();
     let (reader, kaggle) = match settings.mode {
         BridgeMode::Local => {
             let rv = std::env::temp_dir().join(format!("jumbo-local-{}", ticket.session_id)).join("rv");
             let child = spawn_local_worker(&ticket, &rv)?;
             *state.local_worker.lock().map_err(msg)? = Some(child);
+            if let Some(home) = rv.parent() {
+                log_hint = format!(" (worker log: {})", home.join("worker.log").display());
+            }
             (RendezvousReader::Folder(rv), None)
         }
         BridgeMode::KaggleTpu | BridgeMode::KaggleCpu => {
@@ -269,7 +276,7 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
         };
         let mut client = match boot(&http, launch, &mut reader, &keys, &ticket, &timings, on_state).await {
             Ok(client) => client,
-            Err(e) => return set_view(&app, SessionView::Failed { error: e.to_string() }),
+            Err(e) => return set_view(&app, SessionView::Failed { error: format!("{e}{log_hint}") }),
         };
         // Keep the session: forward worker events, and follow the worker to new epochs if the tunnel drops.
         loop {
