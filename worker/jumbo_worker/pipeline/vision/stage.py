@@ -122,7 +122,9 @@ async def run(ctx: JobContext) -> str:
         crop_rel = f"panels/crops/{pid}.webp"
         files[crop_rel] = await asyncio.to_thread(store.put, await asyncio.to_thread(encode_webp, crop))
         bubbles = []
-        for b in det.bubbles:
+        # Bubbles in reading order, so narration follows the page.
+        boxes = [Detection(b["polygon"]).box for b in det.bubbles]
+        for b in (det.bubbles[i] for i in reading_order(boxes, rtl)):
             bubble_n += 1
             bubbles.append({"id": f"b_{bubble_n:04d}", "kind": b["kind"], "polygon": _norm_polygon(b["polygon"], w, h), "text": b.get("text"), "speaker": b.get("speaker")})
         panels.append(

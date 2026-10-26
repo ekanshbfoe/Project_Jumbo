@@ -119,12 +119,16 @@ async def test_magi_results_are_attached_to_their_panels():
         assert (model, kind) == ("magi_v2", "detect")
         return {
             "panels": [{"polygon": [[0, 0], [100, 0], [100, 100], [0, 100]]}, {"polygon": [[0, 120], [100, 120], [100, 220], [0, 220]]}],
-            "texts": [{"polygon": [[10, 130], [40, 130], [40, 150], [10, 150]], "kind": "speech", "text": "Run!", "speaker": "c_1"}],
+            "texts": [
+                {"polygon": [[10, 130], [40, 130], [40, 150], [10, 150]], "kind": "speech", "text": "Run!", "speaker": "c_1"},
+                # A caption floating below both panels belongs to the nearest one, not nowhere.
+                {"polygon": [[10, 228], [90, 228], [90, 238], [10, 238]], "kind": "narration", "text": "Later...", "speaker": None},
+            ],
             "characters": [{"bbox": [20, 20, 60, 90], "cluster": "c_1"}],
         }
 
     panels = await MagiDetector(call).detect(np.zeros((240, 200, 3), np.uint8), "x.webp")
-    assert [len(p.bubbles) for p in panels] == [0, 1] and panels[1].bubbles[0]["text"] == "Run!"
+    assert [len(p.bubbles) for p in panels] == [0, 2] and sorted(b["text"] for b in panels[1].bubbles) == ["Later...", "Run!"]
     assert [len(p.characters) for p in panels] == [1, 0]
 
 

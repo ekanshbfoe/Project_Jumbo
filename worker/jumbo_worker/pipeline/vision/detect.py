@@ -121,6 +121,16 @@ def _inside(point: Point, polygon: list[Point]) -> bool:
     return cv2.pointPolygonTest(np.array(polygon, dtype=np.float32), point, False) >= 0
 
 
+def _nearest(panels: list[Detection], point: Point) -> Detection | None:
+    """The panel whose box is closest to `point`."""
+
+    def distance(d: Detection) -> float:
+        x0, y0, x1, y1 = d.box
+        return float(np.hypot(max(x0 - point[0], 0, point[0] - x1), max(y0 - point[1], 0, point[1] - y1)))
+
+    return min(panels, key=distance, default=None)
+
+
 def _poly_box(points) -> tuple[float, float, float, float]:
     xs, ys = [p[0] for p in points], [p[1] for p in points]
     return min(xs), min(ys), max(xs), max(ys)
@@ -174,9 +184,11 @@ class MagiDetector:
             [{**c, "bbox": (c["bbox"][0], c["bbox"][1] + top, c["bbox"][2], c["bbox"][3] + top)} for top, r in results for c in r.get("characters", [])],
             lambda c: c["bbox"],
         )
-        # Bubbles and characters belong to the panel that contains their centre.
+        # Bubbles and characters belong to the panel that contains their centre. Text outside every
+        # panel (a caption floating between scenes) goes to the nearest one, so no story text is lost.
         for text in texts:
-            owner = next((d for d in panels if _inside(_center(text["polygon"]), d.polygon)), None)
+            center = _center(text["polygon"])
+            owner = next((d for d in panels if _inside(center, d.polygon)), None) or _nearest(panels, center)
             if owner:
                 owner.bubbles.append({"kind": text.get("kind", "speech"), "polygon": text["polygon"], "text": text.get("text"), "speaker": text.get("speaker")})
         for char in chars:
