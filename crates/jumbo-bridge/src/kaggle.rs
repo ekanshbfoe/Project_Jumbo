@@ -73,9 +73,19 @@ pub struct PushResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KernelStatus {
+    /// Kaggle omits enum fields that hold their first value, so a missing status means QUEUED.
+    #[serde(default = "queued")]
     pub status: String,
     #[serde(default)]
     pub failure_message: Option<String>,
+}
+
+fn queued() -> String {
+    "QUEUED".to_owned()
+}
+
+fn not_yet_persisted() -> String {
+    "NOT_YET_PERSISTED".to_owned()
 }
 
 impl KernelStatus {
@@ -94,6 +104,8 @@ pub struct DatasetFile {
 /// Kaggle's `DatabundleVersionStatus` names, e.g. READY, FAILED, BLOBS_RECEIVED.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct DatasetStatus {
+    /// Omitted when it holds the enum's first value, NOT_YET_PERSISTED.
+    #[serde(default = "not_yet_persisted")]
     pub status: String,
 }
 
@@ -281,6 +293,15 @@ pub fn log_tail(log: &str, lines: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_status_is_the_enums_first_value() {
+        let kernel: KernelStatus = serde_json::from_str("{}").expect("parse");
+        assert_eq!(kernel.status, "QUEUED");
+        assert!(!kernel.is_finished());
+        let dataset: DatasetStatus = serde_json::from_str("{}").expect("parse");
+        assert!(!dataset.is_ready());
+    }
 
     #[test]
     fn flattens_kaggle_log_records_and_keeps_the_tail() {
