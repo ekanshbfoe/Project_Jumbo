@@ -76,12 +76,19 @@ async def echo(ctx: JobContext) -> str:
     return ctx.store.put(data)
 
 
+def default_handlers() -> dict[str, JobHandler]:
+    """Every job kind the worker serves. Stages import lazily so the bridge core stays light."""
+    from .pipeline.vision import stage as vision
+
+    return {"echo": echo, "vision": vision.run}
+
+
 class JobRunner:
     def __init__(self, store: BlobStore, bus: EventBus, handlers: dict[str, JobHandler] | None = None, pool: ResourceManager | None = None) -> None:
         self.store = store
         self.pool = pool
         self.bus = bus
-        self.handlers = handlers or {"echo": echo}
+        self.handlers = handlers or default_handlers()
         self.jobs: dict[str, Job] = {}
 
     @staticmethod

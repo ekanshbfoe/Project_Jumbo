@@ -7,7 +7,10 @@ dependencies = [
   "blake3==1.0.11",
   "fastapi==0.146.0",
   "httpx==0.28.1",
+  "numpy==2.2.6",
+  "opencv-python-headless==4.12.0.88",
   "pydantic==2.14.1",
+  "pymupdf==1.26.3",
   "pynacl==1.6.2",
   "uvicorn[standard]==0.54.0",
 ]
@@ -25,3 +28,5 @@ include = ["jumbo_worker*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# PyMuPDF's SWIG bindings warn on import under Python 3.12+; nothing to act on.
+filterwarnings = ["ignore:builtin type Swig:DeprecationWarning", "ignore:builtin type swigvarlink:DeprecationWarning"]
