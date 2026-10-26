@@ -12,7 +12,7 @@ export const Receipt = z.object({
   panel_id: PanelId,
   /** Verbatim dialogue or a short description of what the panel shows. */
   quote: z.string().max(500).optional(),
-});
+}).meta({ id: "Receipt" });
 
 const Receipts = z.array(Receipt).min(1);
 const Confidence = z.number().min(0).max(1);
@@ -28,7 +28,7 @@ export const AddOp = z.object({
   data: z.record(z.string(), z.unknown()),
   receipts: Receipts,
   confidence: Confidence,
-});
+}).meta({ id: "AddOp" });
 
 export const UpdateOp = z.object({
   op: z.literal("UPDATE"),
@@ -38,7 +38,7 @@ export const UpdateOp = z.object({
   value: z.unknown(),
   receipts: Receipts,
   confidence: Confidence,
-});
+}).meta({ id: "UpdateOp" });
 
 export const DeleteOp = z.object({
   op: z.literal("DELETE"),
@@ -46,12 +46,12 @@ export const DeleteOp = z.object({
   reason: z.string().min(1).max(300),
   receipts: Receipts,
   confidence: Confidence,
-});
+}).meta({ id: "DeleteOp" });
 
 export const NoopOp = z.object({
   op: z.literal("NOOP"),
   reason: z.string().max(300).optional(),
-});
+}).meta({ id: "NoopOp" });
 
 export const MemoryOp = z.discriminatedUnion("op", [AddOp, UpdateOp, DeleteOp, NoopOp]);
 

@@ -20,26 +20,7 @@
     "clips": {
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "line_id": {
-            "type": "string",
-            "pattern": "^l_\\d{4}$"
-          },
-          "src": {
-            "type": "string",
-            "minLength": 1
-          },
-          "duration": {
-            "type": "number",
-            "exclusiveMinimum": 0
-          }
-        },
-        "required": [
-          "line_id",
-          "src",
-          "duration"
-        ]
+        "$ref": "#/$defs/AudioClip"
       }
     }
   },
@@ -48,5 +29,29 @@
     "chapter_id",
     "sample_rate",
     "clips"
-  ]
+  ],
+  "$defs": {
+    "AudioClip": {
+      "type": "object",
+      "properties": {
+        "line_id": {
+          "type": "string",
+          "pattern": "^l_\\d{4}$"
+        },
+        "src": {
+          "type": "string",
+          "minLength": 1
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "line_id",
+        "src",
+        "duration"
+      ]
+    }
+  }
 }

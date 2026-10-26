@@ -3,9 +3,12 @@ import { HexColor, Point } from "./common";
 
 const Direction = z.enum(["left", "right", "up", "down"]);
 
+/** `action_tilt` → `ActionTiltPreset`: the type name code generators give the preset. */
+const presetId = (name: string) => `${name.replace(/(^|_)([a-z])/g, (_, __, c: string) => c.toUpperCase())}Preset`;
+
 const preset = <N extends string, P extends z.ZodObject>(name: N, description: string, params: P) =>
   // Omitted params are parsed as {}, so every field's default applies (and required fields still fail).
-  z.object({ name: z.literal(name), params: params.prefault({} as z.input<P>) }).describe(description);
+  z.object({ name: z.literal(name), params: params.prefault({} as z.input<P>) }).meta({ id: presetId(name), description });
 
 export const HoldPreset = preset("hold", "Static panel. Use for quiet exposition or dialogue-heavy beats.", z.object({}));
 
@@ -147,10 +150,12 @@ export const PRESET_CATALOG: ReadonlyArray<{ name: PresetName; description: stri
   description: o.description ?? "",
 }));
 
-export const TransitionSpec = z.object({
-  name: z.enum(["cut", "fade", "slide", "wipe"]).default("cut"),
-  /** Overlap with the previous beat, in seconds. Ignored for cuts. */
-  duration: z.number().min(0).max(1.5).default(0.4),
-});
+export const TransitionSpec = z
+  .object({
+    name: z.enum(["cut", "fade", "slide", "wipe"]).default("cut"),
+    /** Overlap with the previous beat, in seconds. Ignored for cuts. */
+    duration: z.number().min(0).max(1.5).default(0.4),
+  })
+  .meta({ id: "TransitionSpec" });
 
 export type TransitionSpec = z.infer<typeof TransitionSpec>;

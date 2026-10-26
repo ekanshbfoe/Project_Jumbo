@@ -10,13 +10,13 @@ export const Bubble = z.object({
   text: z.string().optional(),
   /** Magi character cluster id of the speaker, when known. */
   speaker: z.string().nullable().optional(),
-});
+}).meta({ id: "Bubble" });
 
 export const CharacterBox = z.object({
   /** Magi character cluster id, stable within a chapter. */
   cluster: z.string().min(1),
   bbox: BBox,
-});
+}).meta({ id: "CharacterBox" });
 
 export const Panel = z.object({
   id: PanelId,
@@ -34,7 +34,7 @@ export const Panel = z.object({
   clean: AssetPath.optional(),
   bubbles: z.array(Bubble).default([]),
   characters: z.array(CharacterBox).default([]),
-});
+}).meta({ id: "Panel" });
 
 export const PanelsDoc = z
   .object({

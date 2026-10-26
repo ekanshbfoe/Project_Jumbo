@@ -20,7 +20,7 @@ export const VoiceDirection = z.object({
   tone: z.string().min(1).max(40).default("neutral"),
   pace: z.enum(["slow", "normal", "fast"]).default("normal"),
   intensity: z.number().min(0).max(1).default(0.5),
-});
+}).meta({ id: "VoiceDirection" });
 
 export const ScriptLine = z
   .object({
@@ -41,7 +41,8 @@ export const ScriptLine = z
     if (!multi && line.panel_ids.length !== 1) {
       ctx.addIssue({ code: "custom", path: ["panel_ids"], message: `${line.preset.name} takes exactly 1 panel` });
     }
-  });
+  })
+  .meta({ id: "ScriptLine" });
 
 export const ScriptDoc = z
   .object({

@@ -4,7 +4,7 @@ import { z } from "zod";
 export const BRIDGE_PROTO = 1 as const;
 
 export const RendezvousSpec = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("gist"), gist_id: z.string().min(1) }),
+  z.object({ kind: z.literal("gist"), gist_id: z.string().min(1) }).meta({ id: "GistRendezvous" }),
 ]);
 
 /** What the launcher embeds in the kernel it pushes. It contains no secrets. */

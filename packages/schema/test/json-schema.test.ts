@@ -11,9 +11,18 @@ describe("exported JSON Schema", () => {
     });
   }
 
+  it("names shared types so code generators reuse them", () => {
+    const delta = JSON.parse(renderContract("MemoryDelta"));
+    expect(Object.keys(delta.$defs)).toEqual(expect.arrayContaining(["AddOp", "UpdateOp", "DeleteOp", "NoopOp", "Receipt"]));
+    const episode = JSON.parse(renderContract("EpisodeSpec"));
+    expect(Object.keys(episode.$defs)).toEqual(expect.arrayContaining(["Beat", "EpisodePanel", "ActionTiltPreset", "HudPopupPreset"]));
+    expect(episode.$defs.HoldPreset.description).toMatch(/^Static panel/);
+  });
+
   it("marks defaulted fields optional for producers", () => {
     const script = JSON.parse(renderContract("ScriptDoc"));
-    const line = script.properties.lines.items;
+    expect(script.properties.lines.items).toEqual({ $ref: "#/$defs/ScriptLine" });
+    const line = script.$defs.ScriptLine;
     expect(line.required).toEqual(expect.arrayContaining(["id", "panel_ids", "narration", "emotion", "preset"]));
     expect(line.required).not.toContain("voice");
   });

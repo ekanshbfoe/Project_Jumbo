@@ -31,21 +31,7 @@
     "rendezvous": {
       "oneOf": [
         {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "type": "string",
-              "const": "gist"
-            },
-            "gist_id": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "kind",
-            "gist_id"
-          ]
+          "$ref": "#/$defs/GistRendezvous"
         }
       ]
     }
@@ -57,5 +43,24 @@
     "deadline_s",
     "idle_s",
     "rendezvous"
-  ]
+  ],
+  "$defs": {
+    "GistRendezvous": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "gist"
+        },
+        "gist_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "gist_id"
+      ]
+    }
+  }
 }

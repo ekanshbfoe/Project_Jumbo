@@ -21,12 +21,15 @@ export const Polygon = z.array(Point).min(3);
 /** Axis-aligned box in normalized source-image coordinates. */
 export const BBox = z
   .object({ x: Unit, y: Unit, w: Unit.positive(), h: Unit.positive() })
-  .refine((b) => b.x + b.w <= 1 + 1e-6 && b.y + b.h <= 1 + 1e-6, "bbox extends past the image");
+  .refine((b) => b.x + b.w <= 1 + 1e-6 && b.y + b.h <= 1 + 1e-6, "bbox extends past the image")
+  .meta({ id: "BBox" });
 
-export const ImageSize = z.object({
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-});
+export const ImageSize = z
+  .object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  })
+  .meta({ id: "ImageSize" });
 
 /** Project-relative POSIX path, or an absolute http(s)/data URL. */
 export const AssetPath = z

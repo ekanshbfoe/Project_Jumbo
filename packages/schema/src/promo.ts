@@ -24,7 +24,8 @@ export const SocialPromoSettings = z
     end_at: z.number().min(0).max(1).default(0.95),
   })
   .refine((s) => new Set(s.platforms).size === s.platforms.length, "platforms must not repeat")
-  .refine((s) => s.start_at < s.end_at, "start_at must come before end_at");
+  .refine((s) => s.start_at < s.end_at, "start_at must come before end_at")
+  .meta({ id: "SocialPromoSettings" });
 
 export type SocialPlatform = z.infer<typeof SocialPlatform>;
 export type PromoPosition = z.infer<typeof PromoPosition>;

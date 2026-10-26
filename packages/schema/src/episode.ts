@@ -10,7 +10,7 @@ export const AudioClip = z.object({
   src: AssetPath,
   /** Clip length in seconds. */
   duration: z.number().positive(),
-});
+}).meta({ id: "AudioClip" });
 
 export const AudioManifest = z
   .object({
@@ -32,7 +32,7 @@ export const WatermarkSettings = z.object({
   enabled: z.boolean().default(true),
   text: z.string().min(1).max(40).default("Project Jumbo"),
   opacity: z.number().min(0.05).max(1).default(0.55),
-});
+}).meta({ id: "WatermarkSettings" });
 
 /** Motion layered over every beat's blurred backdrop. */
 export const AmbientEffect = z.enum(["none", "dust", "smoke", "city_bokeh"]);
@@ -42,7 +42,7 @@ export const VideoFormat = z.object({
   height: z.number().int().positive().default(1080),
   fps: z.number().int().min(12).max(60).default(30),
   background: HexColor.default("#0b0b10"),
-});
+}).meta({ id: "VideoFormat" });
 
 /** The parts of a detected panel the renderer needs. */
 export const EpisodePanel = Panel.pick({
@@ -54,7 +54,7 @@ export const EpisodePanel = Panel.pick({
   crop: true,
   clean: true,
   bubbles: true,
-});
+}).meta({ id: "EpisodePanel" });
 
 export const Beat = z.object({
   line_id: LineId,
@@ -66,7 +66,7 @@ export const Beat = z.object({
   audio: AudioClip.omit({ line_id: true }).nullable(),
   /** Time on screen in seconds. Never shorter than the narration audio. */
   duration: z.number().positive(),
-});
+}).meta({ id: "Beat" });
 
 /** Everything Remotion needs to render one chapter. Consumed directly as composition input props. */
 export const EpisodeSpec = z
