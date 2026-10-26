@@ -41,18 +41,17 @@ Operational risks to note:
 ## 1. Tech Stack
 
 ### 1.1 Desktop (local control center)
-- **Shell:** Tauri v2 (Rust core, WebView2 on Windows). About 40–80 MB RAM, sub-second startup, MSI/NSIS bundler.
-- **Frontend:** React 18 + TypeScript + Vite.
-  - Zustand for UI state, TanStack Query for command/data caching, Tailwind + shadcn/ui.
+- **Shell:** Tauri v2 (Rust core; WebView2 on Windows, WebKitGTK on Linux). About 40–80 MB RAM, sub-second startup, MSI/NSIS bundler.
+- **Frontend:** React 19 + TypeScript + Vite, styled with plain CSS (`src/styles.css`). Heavier libraries are added only when a screen needs them:
   - React Flow for the character and faction relationship graph.
   - Monaco diff editor for the script and memory-delta diffs.
   - **`@remotion/player`** for live motion preview of the exact `EpisodeSpec` inside the Approval Gate. This is DOM playback, not encoding, so it is consistent with "no rendering locally" and catches bad animation before TPU time is spent on it.
-- **IPC (UI ↔ Rust):** Tauri commands for request/response, plus **Tauri Channels** for streaming progress and logs. Typed TS bindings are generated with **tauri-specta**, so there is no hand-written IPC glue.
+- **IPC (UI ↔ Rust):** Tauri commands for request/response, plus Tauri events for streaming progress and logs. The typed TS client is hand-written in `apps/desktop/src/api.ts`, next to the Rust command structs it mirrors.
 - **Rust crates:**
   - Runtime and networking: `tokio`, `reqwest` (rustls), `tokio-tungstenite`.
   - Data and files: `serde`/`serde_json`/`toml`, `blake3` (content addressing), `notify` (fs watch), `fs4` (file locks).
   - Crypto: `x25519-dalek` + `hkdf` + `hmac`/`sha2` + `chacha20poly1305` (handshake crypto).
-  - Credentials: **`keyring`** (stores `kaggle.json` and the GitHub token in Windows Credential Manager, never plaintext in the project).
+  - Credentials: **`keyring`** stores `kaggle.json` and the GitHub token in the OS store (Windows Credential Manager, macOS Keychain, Linux Secret Service). Without one, they fall back to an owner-only file in the app config dir. Never in the project.
   - Other: `tracing`.
 - **Hub architecture:** Cargo workspace with a `HubModule` trait (`id`, `nav entry`, `commands`, `settings schema`, `lifecycle hooks`). Modules are compiled in through Cargo features. The frontend lazy-loads one route bundle per module. Manhwa Studio is module #1, and later tools plug in the same way without touching the core.
 
@@ -70,6 +69,7 @@ Operational risks to note:
   - SAM-2 (optional) for polygon refinement.
   - LaMa (optional, CPU) for speech-bubble inpainting to produce "clean" panels.
 - **Render:** Node 20 + `@remotion/renderer` (`renderMedia`), invoked as a subprocess. It runs on host CPU cores with high concurrency, so it overlaps with TPU work.
+- **Bootstrap:** the app embeds the worker's source in the kernel it pushes (`crates/jumbo-bridge/src/bootstrap.py`), so every session runs exactly the worker version the app was built with.
 - **Boot speed:** pip wheelhouse, Node `node_modules` tarball, the `cloudflared` binary, model weights (pre-quantized), and the XLA persistent compilation cache all ship as **private Kaggle Datasets/Models**. They are attached through `kernel-metadata.json` `dataset_sources`/`model_sources`, so nothing large is downloaded at boot.
 
 ### 1.3 Shared contract (single source of truth)
@@ -93,7 +93,6 @@ project-jumbo/
   worker/
     jumbo_worker/          # api/, scheduler/, models/, pipeline/, memory/, render/, tunnel/
     model_specs.yaml       # ModelSpec registry
-  notebooks/bootstrap.ipynb  # thin: mount datasets, install wheelhouse, exec worker
   docs/adr/                # architecture decision records
 ```
 
@@ -104,14 +103,14 @@ project-jumbo/
 ### 2.1 One-time setup (done once, guided by an in-app wizard)
 1. The user imports `kaggle.json`, which is stored in the OS keychain.
 2. The user creates a classic GitHub PAT with **only the `gist` scope**, stored in the keychain. The app creates one **secret gist** (`jumbo-rendezvous`) and stores its ID.
-3. The user creates the Kaggle kernel `jumbo-worker` once in the Kaggle UI and attaches the Kaggle Secret `JUMBO_GIST_TOKEN`. This is the only manual Kaggle step, because the API cannot attach secrets. Later API pushes create new versions of the same kernel slug, and the secret stays attached (to be verified in a spike).
+3. Kaggle's API cannot attach Kaggle Secrets, so the app keeps the gist token in a private dataset `<user>/jumbo-secrets` and attaches it to every kernel it pushes. The first push creates the `jumbo-worker` kernel. There are no manual Kaggle steps.
 
 ### 2.2 Per-session boot sequence
 ```
 Desktop (Rust)                         Kaggle API        Worker notebook              GitHub Gist
  1 gen session_id + ephemeral X25519 keypair (app_priv/app_pub)
- 2 ensure worker-code dataset version == app's bundled version (upload if not)
- 3 kernels/push  (session.json = {session_id, app_pub, proto_ver} as notebook param;
+ 2 ensure the private jumbo-secrets dataset holds the current gist token (upload if not)
+ 3 kernels/push  (bootstrap script embedding the worker source and the ticket {session_id, app_pub, proto};
                    TPU v5e-8, internet on, dataset/model sources) ───────▶ queued → running
                                                      4 install wheelhouse, start FastAPI on :8000
                                                      5 gen worker X25519 keypair
@@ -329,17 +328,6 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
   | `hud_popup` | 1 | Game-system message box that types on |
 
 - **Studio compositions:** `Episode` (the render target and a sample chapter) and, in the Gallery folder, `Gallery` (every preset × panel shape), `Ambient-*` previews and `SocialPromo`. The preset catalog, with descriptions, goes into Qwen's system prompt.
-- The same package is imported by the Tauri Approval Gate (`@remotion/player`) and by the worker's render script, so preview and final render are identical.
-
----|---|
-  | **ActionTilt** | Rotation and zoom punch |
-  | **KineticJitter** | Seeded shake with decay |
-  | **PanoramicFade** | Long pan with a crossfade |
-  | **SplitScreen** | 2–3 polygon panels sharing the frame |
-  | **HUDPopup** | Stat or info overlay with a type-on effect |
-  | Zoom, Shake, Pan, Hold | Base primitives |
-
-- **Gallery composition:** renders every preset × fixture-panel shape (rectangle, trapezoid, borderless strip slice, bubble-heavy). It is the visual test bed and the design reference for Qwen's preset vocabulary. The preset catalog, with descriptions, goes into Qwen's system prompt.
 - The same package is imported by the Tauri Approval Gate (`@remotion/player`) and by the worker's render script, so preview and final render are identical.
 
 ---

@@ -21,11 +21,13 @@ See [docs/architecture.md](docs/architecture.md) for the full design and roadmap
 | `worker/` | Python worker for Kaggle: signed API, blob transfer, jobs, cloudflared tunnel, gist rendezvous |
 | `protocol/` | Bridge test vectors shared by the Rust and Python implementations |
 | `apps/desktop` | Tauri v2 + React desktop app (hub shell, chapters, Receipt Book) |
-| `docs/` | Architecture and ADRs |
+| `docs/` | Architecture, bridge protocol and Kaggle setup (ADRs go in `docs/adr/`) |
 
 Setting up Kaggle for the bridge: [docs/kaggle-setup.md](docs/kaggle-setup.md).
 
 ## Development
+
+On a fresh Debian or Ubuntu machine, `bash scripts/cloud-setup.sh` installs everything below and runs the same checks as CI.
 
 ```sh
 npm install
@@ -33,7 +35,7 @@ npm test && npm run typecheck          # TypeScript packages
 cargo test --workspace                  # Rust crates
 npm run tauri dev -w @jumbo/desktop     # desktop app (Vite + Tauri)
 cargo run -p jumbo-cli -- --help        # developer CLI
-python -m venv worker/.venv && worker/.venv/Scripts/pip install -e "worker[dev]"   # worker (Windows path)
-cd worker && .venv/Scripts/python -m pytest   # worker tests
+python -m venv worker/.venv && worker/.venv/bin/pip install -e "worker[dev]"   # worker (Windows: .venv/Scripts/)
+cd worker && .venv/bin/python -m pytest   # worker tests
 npm run studio -w @jumbo/motion         # Remotion Studio
 ```
