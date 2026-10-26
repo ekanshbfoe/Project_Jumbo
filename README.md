@@ -3,7 +3,7 @@
 Automated pipeline that turns raw manhwa PDFs (webtoon strips and page-based chapters) into narrated Hinglish motion-graphic recap videos.
 
 - **Control center:** lightweight Tauri v2 (Rust + React) desktop app. All project state lives locally.
-- **Worker:** ephemeral Kaggle TPU v5e-8 session running Magi v2, Qwen2.5-VL-72B, a Memory-R1 librarian, OmniVoice and Remotion.
+- **Worker:** ephemeral Kaggle TPU v5e-8 session running Magi v2, Qwen2.5-VL-72B, a Memory-R1 librarian and Remotion; Fish Audio Drama 3 voices on Kaggle T4s.
 - **Bridge:** automated Cloudflare quick tunnel with a sealed GitHub Gist rendezvous.
 
 See [docs/architecture.md](docs/architecture.md) for the full design and roadmap.

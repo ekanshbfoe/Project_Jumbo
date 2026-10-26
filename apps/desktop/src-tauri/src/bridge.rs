@@ -51,7 +51,7 @@ pub enum BridgeMode {
     /// TPU v5e-8 on Kaggle: production.
     #[default]
     KaggleTpu,
-    /// Two NVIDIA T4s on Kaggle: GPU models (Magi, OmniVoice) without waiting in the TPU queue.
+    /// Two NVIDIA T4s on Kaggle: GPU models (Magi, Drama 3) without waiting in the TPU queue.
     KaggleGpu,
     /// A CPU Kaggle machine: tests the whole cloud path without spending TPU quota.
     KaggleCpu,

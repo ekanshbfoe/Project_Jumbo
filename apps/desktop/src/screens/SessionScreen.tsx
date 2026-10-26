@@ -16,7 +16,7 @@ import { useAsync } from "../useAsync";
 
 const MODES: { id: BridgeMode; label: string; hint: string }[] = [
   { id: "kaggle_tpu", label: "Kaggle TPU v5e-8", hint: "Production. Uses TPU quota." },
-  { id: "kaggle_gpu", label: "Kaggle GPU (T4 ×2)", hint: "GPU models (Magi, OmniVoice) without the TPU queue. Uses GPU quota." },
+  { id: "kaggle_gpu", label: "Kaggle GPU (T4 ×2)", hint: "GPU models (Magi, Drama 3) without the TPU queue. Uses GPU quota." },
   { id: "kaggle_cpu", label: "Kaggle CPU", hint: "Tests the full cloud path without spending TPU quota." },
   { id: "local", label: "Local worker", hint: "Runs the worker on this PC. No Kaggle, no tunnel." },
 ];

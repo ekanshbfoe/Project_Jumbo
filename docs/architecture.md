@@ -62,7 +62,8 @@ Operational risks to note:
   - JSON lines over each replica subprocess's stdin/stdout for RPC to model workers (stdlib only; the child moves fd 1 to stderr so library output cannot corrupt the protocol).
 - **Inference:**
   - **vLLM TPU backend** for Qwen2.5-VL-72B int8 and the Librarian LLM, with constrained JSON decoding (guided/structured output).
-  - Magi v2 and OmniVoice run under torch-xla or on CPU, as decided by the spike.
+  - Magi v2 runs under torch-xla or on CPU, as decided by the spike.
+  - Voice is Fish Audio Drama 3 through speech.cpp (ggml) built for CUDA, on the T4s (ADR 0003). On the TPU it is untested; TorchTPU with Fish's own code is the path to try.
 - **Vision support:**
   - PyMuPDF for rasterization.
   - OpenCV for strip slicing, gutters and contours, and polygon simplification.
@@ -233,7 +234,7 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
 | magi_v2 | torch-xla or cpu | 1 | ~3–5 GB | yes | 0 / 8 | yes |
 | qwen25vl_72b_int8 | vllm-tpu | 8 (TP=8) | ~12.5 GB at util=0.8 | no | 0 / 1 | continuous batching |
 | librarian (Memory-R1 / fallback) | vllm-tpu | 1–2 | ~9–10 GB | slow | 0 / 4 | yes |
-| omnivoice | torch-xla or cpu | 1 | ~3–6 GB | yes | 0 / 8 | yes |
+| drama3 | ggml (speech.cpp, CUDA) | 1 T4 (or 2, split) | ≤ ceiling (11.5 GB), experts overflow to CPU | experts only | 0 / 2 | one line at a time |
 | remotion | node/cpu | 0 | — | n/a | 0 / ⌊cores/concurrency⌋ | per-chapter |
 
 ### 4.3 How the HBM ceiling is guaranteed (three layers)
@@ -264,7 +265,7 @@ The ceiling is one config value, `hbm_ceiling` (default 0.80; spike 6 may raise 
 - `desired[stage] = clamp(ceil(queue_depth / target_per_replica), min, max)`.
 - **Placement:** best-fit bin-packing onto free chips. CPU-capable stages overflow to the CpuPool when chips are leased.
 - **Phase arbitration:** Qwen needs all 8 chips, so the scheduler runs in **TPU phases**:
-  - `Vision-TPU` (Magi ×N, OmniVoice ×N packed onto 1-chip leases) ⇄ `Director` (Qwen, 8 chips) ⇄ `Librarian`.
+  - `Vision-TPU` (Magi ×N packed onto 1-chip leases; Drama 3 on the T4s) ⇄ `Director` (Qwen, 8 chips) ⇄ `Librarian`.
   - A phase switch happens only when the incoming phase's backlog × cost exceeds the swap cost plus the hysteresis margin, which prevents thrashing.
   - CPU work (Remotion, polygon refinement, inpainting, CPU-fallback models) keeps running alongside any TPU phase.
 - **Idle TTL** per spec (e.g. 120 s) puts replicas to sleep. Stage priority follows pipeline depth, so the stage closest to a finished deliverable goes first.
@@ -361,7 +362,7 @@ The ceiling is one config value, `hbm_ceiling` (default 0.80; spike 6 may raise 
 - **S0 feasibility spikes on a real Kaggle TPU v5e-8** (they gate Steps 4–7):
   1. Qwen2.5-VL-72B int8 on vLLM-TPU at TP=8: load, per-chip HBM at util 0.8, tokens/s, image-token cost.
   2. Magi v2 on TPU vs CPU throughput.
-  3. OmniVoice Hinglish code-switch quality and backend.
+  3. Voice: OmniVoice failed the Hinglish test (accent); Fish Audio Drama 3 passed (spikes 4 and 5, ADR 0003).
   4. Memory-R1 weight availability (otherwise the fallback).
   5. `kernels/push` with the secret staying attached, quick tunnel, and gist rendezvous ("hello worker").
   6. Remotion render throughput on Kaggle host CPUs.
@@ -383,7 +384,7 @@ The ceiling is one config value, `hbm_ceiling` (default 0.80; spike 6 may raise 
 
 **Step 6: Director + Librarian + memory tiers.** Context Assembler with token budget, Qwen prompts with the preset catalog and constrained `ScriptDoc` output, Librarian ops and validation, tier promotion, speculative chaining with stale invalidation.
 
-**Step 7: Voice + render.** OmniVoice replicas, audio manifest, `EpisodeSpec` builder, Remotion `renderMedia` on the worker, MP4 and SRT returned.
+**Step 7: Voice + render.** Drama 3 replicas (checked takes, retakes, silence trim; panels follow the audio), audio manifest, `EpisodeSpec` builder, Remotion `renderMedia` on the worker, MP4 and SRT returned.
 
 **Step 8: Desktop UI.** Projects, Chapters, Approval Gate (diffs, op-level review, Player preview), and the Receipt Book visualizer.
 
