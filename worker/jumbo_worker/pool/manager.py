@@ -225,7 +225,7 @@ class ResourceManager:
         except LeaseError:
             return
         try:
-            cpu = self.cpu.lease(slot_id, spec.cpu_cores, spec.host_ram_gb)
+            cpu = self.cpu.lease(slot_id, spec.cores(on_cpu), spec.host_ram_gb)
         except LeaseError:
             if chips:
                 self.ledger.release(chips)

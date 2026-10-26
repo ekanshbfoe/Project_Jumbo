@@ -7,7 +7,7 @@
   bleeding across gutters, overlapping panels) and is never the production path.
 
 Magi replica contract (`magi_v2` model, request kind `detect`, payload `{"image": <path on the
-worker host>}`), all coordinates in pixels of that image:
+worker host>}`), all coordinates in pixels of that image (jumbo_worker/models/magi.py serves it):
 
     {"panels":     [{"polygon": [[x, y], ...]}],
      "texts":      [{"polygon": [[x, y], ...], "kind": "speech|thought|narration|sfx", "text": "...", "speaker": "c_1" | null}],
@@ -16,6 +16,8 @@ worker host>}`), all coordinates in pixels of that image:
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable, Protocol
@@ -25,6 +27,7 @@ import numpy as np
 
 from .slicer import INK_TOLERANCE
 from .stitch import background_level, gray
+from .tiling import dedupe, merge_panels, tile_spans
 
 Point = tuple[float, float]
 
@@ -118,8 +121,21 @@ def _inside(point: Point, polygon: list[Point]) -> bool:
     return cv2.pointPolygonTest(np.array(polygon, dtype=np.float32), point, False) >= 0
 
 
+def _poly_box(points) -> tuple[float, float, float, float]:
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _shift(points, dy: float) -> list[list[float]]:
+    return [[float(x), float(y) + dy] for x, y in points]
+
+
 class MagiDetector:
-    """Magi v2 through the model pool. `call` is `JobContext.call`."""
+    """Magi v2 through the model pool. `call` is `JobContext.call`.
+
+    Images taller than a page are detected in overlapping tiles (see tiling.py); the tile images are
+    written next to `path` for the replica to read.
+    """
 
     name = "magi"
 
@@ -127,17 +143,40 @@ class MagiDetector:
         self.call = call
         self.model = model
 
-    async def detect(self, image: np.ndarray, path: Path) -> list[Detection]:
+    async def _detect_file(self, path: Path) -> dict:
         result = await self.call(self.model, "detect", {"image": str(path)})
         if not isinstance(result, dict) or not isinstance(result.get("panels"), list):
             raise ValueError(f"{self.model} returned an unexpected result: {str(result)[:200]}")
-        panels = [Detection([(float(x), float(y)) for x, y in p["polygon"]]) for p in result["panels"] if len(p.get("polygon", [])) >= 3]
+        return result
+
+    async def detect(self, image: np.ndarray, path: Path) -> list[Detection]:
+        spans = tile_spans(*image.shape[:2])
+        if len(spans) == 1:
+            results = [(0, await self._detect_file(path))]
+        else:
+            results = []
+            folder = Path(tempfile.mkdtemp(prefix="tiles-", dir=Path(path).parent))
+            try:
+                for n, (top, bottom) in enumerate(spans):
+                    tile = folder / f"tile_{n:03d}.png"
+                    cv2.imwrite(str(tile), cv2.cvtColor(image[top:bottom], cv2.COLOR_RGB2BGR))
+                    results.append((top, await self._detect_file(tile)))
+            finally:
+                shutil.rmtree(folder, ignore_errors=True)
+
+        boxes = merge_panels([[_poly_box(_shift(p["polygon"], top)) for p in r["panels"] if len(p.get("polygon", [])) >= 3] for top, r in results])
+        panels = [Detection([(b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3])]) for b in boxes]
+        texts = dedupe([{**t, "polygon": _shift(t["polygon"], top)} for top, r in results for t in r.get("texts", [])], lambda t: _poly_box(t["polygon"]))
+        chars = dedupe(
+            [{**c, "bbox": (c["bbox"][0], c["bbox"][1] + top, c["bbox"][2], c["bbox"][3] + top)} for top, r in results for c in r.get("characters", [])],
+            lambda c: c["bbox"],
+        )
         # Bubbles and characters belong to the panel that contains their centre.
-        for text in result.get("texts", []):
+        for text in texts:
             owner = next((d for d in panels if _inside(_center(text["polygon"]), d.polygon)), None)
             if owner:
                 owner.bubbles.append({"kind": text.get("kind", "speech"), "polygon": text["polygon"], "text": text.get("text"), "speaker": text.get("speaker")})
-        for char in result.get("characters", []):
+        for char in chars:
             x0, y0, x1, y1 = char["bbox"]
             owner = next((d for d in panels if _inside(((x0 + x1) / 2, (y0 + y1) / 2), d.polygon)), None)
             if owner:

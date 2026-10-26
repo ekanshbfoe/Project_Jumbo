@@ -11,14 +11,15 @@
       "cpu_cores": 2,
       "host_ram_gb": 6,
       "cpu_fallback": true,
+      "cpu_fallback_cores": 3,
       "max_replicas": 8,
       "target_queue_per_replica": 8,
-      "concurrency": 4,
+      "concurrency": 1,
       "priority": 1,
-      "wake_s": 20,
-      "job_s": 1.5,
+      "wake_s": 120,
+      "job_s": 6,
       "phase": "vision",
-      "notes": "Panel/bubble/character detection per page or strip slice. Estimate; spike 2."
+      "notes": "Magi v2 (ragavsachdeva/magiv2, personal/non-commercial weights): panels, texts + OCR, speakers, characters per image. Tall slices are tiled. First wake downloads ~2 GB from the HF Hub. Spike 2 profiles HBM and speed."
     },
     "omnivoice": {
       "backend": "torch-xla",

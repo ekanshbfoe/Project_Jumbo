@@ -16,6 +16,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Installed by the Kaggle bootstrap on top of the image's torch. Magi v2's remote code predates
+# transformers 5, so transformers is pinned to a 4.x release it runs on.
+models = ["einops==0.8.0", "pulp==2.9.0", "timm==1.0.15", "transformers==4.46.3"]
 dev = ["datamodel-code-generator==0.83.0", "pytest==9.1.1", "pytest-asyncio==1.4.0"]
 
 [build-system]

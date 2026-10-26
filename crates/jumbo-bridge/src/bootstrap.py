@@ -31,7 +31,9 @@ def unpack() -> pathlib.Path:
 
 
 def install(src: pathlib.Path) -> None:
-    deps = tomllib.loads((src / "pyproject.toml").read_text())["project"]["dependencies"]
+    # The worker's own dependencies plus the model extras (Magi etc.) that only run on Kaggle.
+    project = tomllib.loads((src / "pyproject.toml").read_text())["project"]
+    deps = project["dependencies"] + project.get("optional-dependencies", {}).get("models", [])
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *deps], check=True)
 
 

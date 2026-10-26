@@ -82,7 +82,7 @@ async def test_magi_results_are_attached_to_their_panels():
             "characters": [{"bbox": [20, 20, 60, 90], "cluster": "c_1"}],
         }
 
-    panels = await MagiDetector(call).detect(np.zeros((240, 120, 3), np.uint8), "x.webp")
+    panels = await MagiDetector(call).detect(np.zeros((240, 200, 3), np.uint8), "x.webp")
     assert [len(p.bubbles) for p in panels] == [0, 1] and panels[1].bubbles[0]["text"] == "Run!"
     assert [len(p.characters) for p in panels] == [1, 0]
 

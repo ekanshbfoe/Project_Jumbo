@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import sys
+import traceback
 from typing import Callable, Protocol
 
 from .specs import ModelSpec
@@ -92,6 +93,20 @@ RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {
 }
 
 
+def _magi(spec: ModelSpec) -> Runner:
+    from ..models.magi import MagiRunner
+
+    return MagiRunner(spec)
+
+
+# Runners for specific models, imported only inside the replica that serves them.
+MODEL_RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {"magi_v2": _magi}
+
+
+def make_runner(spec: ModelSpec) -> Runner:
+    return (MODEL_RUNNERS.get(spec.name) or RUNNERS[spec.backend])(spec)
+
+
 async def serve(out) -> None:
     def send(msg: dict) -> None:
         out.write(json.dumps(msg) + "\n")
@@ -99,9 +114,13 @@ async def serve(out) -> None:
 
     try:
         spec = ModelSpec.model_validate_json(os.environ["JUMBO_REPLICA_SPEC"])
-        runner = RUNNERS[spec.backend](spec)
+        runner = make_runner(spec)
     except Exception as e:  # noqa: BLE001 - reported to the parent, which gives up on this replica
-        send({"ready": False, "error": f"{type(e).__name__}: {e}"})
+        # The full traceback goes to the replica log; the parent gets its tail, which usually names the cause.
+        trace = traceback.format_exc()
+        print(trace, file=sys.stderr, flush=True)
+        tail = " | ".join(line.strip() for line in trace.strip().splitlines()[-6:-1])
+        send({"ready": False, "error": f"{type(e).__name__}: {e} (at {tail})"[:2000]})
         return
     send({"ready": True, "info": {"pid": os.getpid(), "model": spec.name, "chips": leased_chips()}})
 

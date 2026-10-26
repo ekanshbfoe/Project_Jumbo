@@ -37,6 +37,8 @@ class ModelSpec(BaseModel):
     host_ram_gb: float = Field(1.0, ge=0)
     # Runs on the CpuPool when no chips are free (slower, but keeps the stage moving).
     cpu_fallback: bool = False
+    # Cores a replica takes when it runs on CPU instead of chips (default: cpu_cores).
+    cpu_fallback_cores: int | None = Field(None, ge=1)
     min_replicas: int = Field(0, ge=0)
     max_replicas: int = Field(1, ge=0)
     # Queued jobs one replica is expected to keep up with.
@@ -69,6 +71,10 @@ class ModelSpec(BaseModel):
     @property
     def on_tpu(self) -> bool:
         return self.chips > 0
+
+    def cores(self, on_cpu: bool) -> int:
+        """Cores one replica leases: its CPU-fallback share when it runs without chips."""
+        return (self.cpu_fallback_cores or self.cpu_cores) if on_cpu and self.on_tpu else self.cpu_cores
 
 
 class PoolConfig(BaseModel):
