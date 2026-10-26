@@ -6,10 +6,14 @@ separate pages, one panel becomes two half-panels. So every page boundary is tes
 join (bottom edge of page i continues into the top of page i+1) and a horizontal join (the inner
 edges of a spread), and continuous pages are stitched into one canvas.
 
-A boundary is continuous when both edges carry ink (a blank edge is a natural gutter) and the two
-edge lines differ about as little as neighbouring lines inside each page do, or their gradient
-profiles line up. Every decision, with its numbers, goes into the stage report so the thresholds
-can be checked against real chapters.
+A wrongly joined vertical break is harmless (the slicer cuts the run again at its white gutters), but
+a missed one splits a panel in two, so vertical breaks lean towards joining: pages stay apart only
+when both edges are flat white (a gutter) or the drawing stops exactly at the cut on one side.
+Otherwise they are joined when the edge lines continue: they differ about as little as neighbouring
+lines inside each page do, or their gradient profiles line up. That includes flat colour or black
+running across the cut (a night sky split by the page break). Spreads join only on real structure.
+Every decision, with its numbers, goes into the stage report so the thresholds can be checked
+against real chapters.
 """
 
 from __future__ import annotations
@@ -27,9 +31,12 @@ CROSS_FLOOR = 10.0
 # Gradient correlation that marks the same structures on both sides of the cut.
 MIN_CORRELATION = 0.6
 MAX_CORRELATED_DIFF = 30.0
-# An edge line counts as inked when it varies or sits clearly off the page background.
+# An edge line is flat (no drawing structure) below this spread of grey levels.
+FLAT_STD = 3.0
+# A flat line this bright is white page background.
+WHITE = 235.0
+# Spreads need at least this much structure on an edge to be joined.
 INK_STD = 6.0
-INK_OFFSET = 20.0
 
 
 def gray(image: np.ndarray) -> np.ndarray:
@@ -37,9 +44,14 @@ def gray(image: np.ndarray) -> np.ndarray:
 
 
 def background_level(image: np.ndarray) -> float:
-    """Grey level of the page background: the flattest of the four border lines. (Art often runs to
-    the side edges of a strip, so a median over the whole border can land on the drawing.)"""
+    """Grey level of the page background: the most common level among flat rows (gutters and
+    margins), or failing those the flattest border line. Art often runs to the side edges of a
+    strip, so the border alone can land on the drawing."""
     g = gray(image)
+    flat = g.std(axis=1) <= FLAT_STD
+    if flat.sum() >= max(3, 0.005 * len(g)):
+        levels = np.bincount((g[flat].mean(axis=1) // 8).astype(int), minlength=32)
+        return float(levels.argmax() * 8 + 4)
     flattest = min((g[0], g[-1], g[:, 0], g[:, -1]), key=lambda line: float(line.std()))
     return float(np.median(flattest))
 
@@ -70,12 +82,13 @@ def _lines(a: np.ndarray, b: np.ndarray, vertical: bool) -> tuple[np.ndarray, ..
         ga, gb = ga.T, gb.T
     if ga.shape[1] != gb.shape[1]:
         gb = cv2.resize(gb, (ga.shape[1], gb.shape[0]), interpolation=cv2.INTER_AREA)
-    smooth = lambda line: np.convolve(line, np.ones(3) / 3, mode="same")  # noqa: E731 - tames JPEG noise
+    # Tames JPEG noise; "valid" so the line ends are not darkened by zero padding.
+    smooth = lambda line: np.convolve(line, np.ones(3) / 3, mode="valid")  # noqa: E731
     return smooth(ga[-1]), smooth(ga[-2]), smooth(gb[0]), smooth(gb[1])
 
 
-def _inked(line: np.ndarray, background: float) -> bool:
-    return float(line.std()) > INK_STD or abs(float(line.mean()) - background) > INK_OFFSET
+def _white_gutter(line: np.ndarray) -> bool:
+    return float(line.std()) <= FLAT_STD and float(line.mean()) >= WHITE
 
 
 def judge(a: np.ndarray, b: np.ndarray, vertical: bool) -> tuple[bool, str, float, float, float]:
@@ -84,11 +97,11 @@ def judge(a: np.ndarray, b: np.ndarray, vertical: bool) -> tuple[bool, str, floa
     if abs(size_a - size_b) > SIZE_TOLERANCE * max(size_a, size_b):
         return False, "edge sizes differ", 0.0, 0.0, 0.0
     ea, ea2, eb, eb2 = _lines(a, b, vertical)
-    ink_a, ink_b = _inked(ea, background_level(a)), _inked(eb, background_level(b))
-    if not ink_a and not ink_b:
-        return False, "blank gutter on both sides", 0.0, 0.0, 0.0
-    if ink_a != ink_b:
-        return False, "only one side is drawn to the edge", 0.0, 0.0, 0.0
+    gutter_a, gutter_b = _white_gutter(ea), _white_gutter(eb)
+    if gutter_a and gutter_b:
+        return False, "white gutter on both sides", 0.0, 0.0, 0.0
+    if gutter_a != gutter_b:
+        return False, "the drawing stops at the cut on one side", 0.0, 0.0, 0.0
     cross = float(np.abs(ea - eb).mean())
     inner = float((np.abs(ea - ea2).mean() + np.abs(eb - eb2).mean()) / 2)
     ga, gb = np.diff(ea), np.diff(eb)
@@ -112,7 +125,7 @@ def find_joins(pages: list[np.ndarray], rtl: bool = False, strip_aspect: float =
             joins.append(Join(i, "vertical", reason, cross, inner, corr))
             continue
         if any(p.shape[0] / p.shape[1] >= strip_aspect for p in (a, b)):
-            joins.append(Join(i, "none", f"vertical: {reason}; strip pages are never spreads", cross, inner, corr))
+            joins.append(Join(i, "none", reason, cross, inner, corr))
             continue
         # Spreads: the earlier page is on the left for left-to-right reading (manhwa), right for manga.
         left, right = (b, a) if rtl else (a, b)

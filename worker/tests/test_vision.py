@@ -31,6 +31,17 @@ def test_a_page_break_through_a_panel_is_joined_and_one_in_a_gutter_is_not():
     assert len(canvases) == 2 and canvases[0].kind in ("strip", "page")
 
 
+def test_a_break_through_flat_colour_is_joined_but_a_white_gutter_is_not():
+    sky = np.full((1200, 800, 3), (90, 140, 210), np.uint8)
+    framed = np.full((1400, 800, 3), 255, np.uint8)
+    framed[100:1300] = sky
+    top, bottom = framed[:700], framed[700:]
+    assert [j.kind for j in find_joins([top, bottom])] == ["vertical"]
+    white = np.full((300, 800, 3), 255, np.uint8)
+    [join] = find_joins([framed, white])
+    assert join.kind == "none" and join.reason.startswith("vertical: white gutter on both sides")
+
+
 def test_a_split_spread_is_joined_left_to_right_and_unrelated_pages_are_not():
     spread = art(1400, 2000, seed=3)
     left, right = spread[:, :1000], spread[:, 1000:]
@@ -80,6 +91,12 @@ def test_rasterize_keeps_the_drawn_pixels(tmp_path):
     pdf = write_pdf([grid_page()], tmp_path / "c.pdf")
     [page] = rasterize(pdf, target_width=1000)
     assert page.shape == (1400, 1000, 3)
+
+
+def test_full_page_scans_are_not_upscaled(tmp_path):
+    pdf = write_pdf([grid_page(w=600, h=840)], tmp_path / "small.pdf")
+    [page] = rasterize(pdf, target_width=1600)
+    assert page.shape[1] == 600
 
 
 async def run_vision(tmp_path, images, **params):
