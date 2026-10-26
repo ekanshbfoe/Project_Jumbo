@@ -29,7 +29,7 @@ async fn push_sends_the_sdk_request_with_basic_auth() {
                 .path("/v1/kernels.KernelsApiService/SaveKernel")
                 // base64("alice:s3cret")
                 .header("authorization", "Basic YWxpY2U6czNjcmV0")
-                .json_body_includes(r#"{"slug":"alice/jumbo-worker","machineShape":"TpuV5E8","enableInternet":true,"kernelType":"script","isPrivate":true}"#)
+                .json_body_includes(r#"{"slug":"alice/jumbo-worker","machineShape":"TpuV5E8","enableTpu":true,"enableGpu":false,"dockerImagePinningType":"latest","enableInternet":true,"kernelType":"script","isPrivate":true}"#)
                 .json_body_includes(r#"{"modelDataSources":["alice/qwen/transformers/72b-int8/1"]}"#);
             then.status(200).json_body(json!({"ref": "/code/alice/jumbo-worker", "url": "https://www.kaggle.com/code/alice/jumbo-worker", "versionNumber": 3}));
         })

@@ -155,6 +155,8 @@ impl KaggleClient {
 
     /// Creates or updates the kernel and queues a run of the new version.
     pub async fn push(&self, kernel: &KernelPush) -> Result<PushResult> {
+        // Kaggle's CLI sends the accelerator flag together with the machine shape.
+        let shape = kernel.machine_shape.as_deref().unwrap_or_default();
         let body = json!({
             "slug": kernel.slug,
             "newTitle": kernel.title,
@@ -162,7 +164,10 @@ impl KaggleClient {
             "language": "python",
             "kernelType": "script",
             "isPrivate": true,
-            "enableGpu": false,
+            "enableGpu": shape.starts_with("Nvidia"),
+            "enableTpu": shape.starts_with("Tpu"),
+            // A pinned CPU image overrides the TPU VM environment (Kaggle/kaggle-cli#1197).
+            "dockerImagePinningType": shape.starts_with("Tpu").then_some("latest"),
             "enableInternet": true,
             "datasetDataSources": kernel.dataset_sources,
             "kernelDataSources": [],
