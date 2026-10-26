@@ -20,6 +20,7 @@ from .cpu import CpuLease, CpuPool
 from .replica import Replica, ReplicaDied, ReplicaError, replica_env
 from .specs import ModelSpec, PoolConfig
 from .watchdog import Watchdog
+from .weights import WeightCache, compile_cache_env
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +32,8 @@ class Handle(Protocol):
     async def kill(self) -> None: ...
 
 
-Spawn = Callable[[ModelSpec, "ChipLease | None", CpuLease], Awaitable[Handle]]
+# (spec, chip lease or None for CPU, CPU lease, staged weights folder or None) -> running replica
+Spawn = Callable[[ModelSpec, "ChipLease | None", CpuLease, "Path | None"], Awaitable[Handle]]
 
 
 @dataclass
@@ -48,6 +50,7 @@ class Slot:
     busy: int = 0
     last_used: float = 0.0
     throttled: bool = False
+    pinned: bool = False
     task: asyncio.Task | None = field(default=None, repr=False)
 
     @property
@@ -68,6 +71,8 @@ class ResourceManager:
         sample_s: float = 1.0,
         log_dir: Path | None = None,
         extra_env: dict[str, str] | None = None,
+        weights: WeightCache | None = None,
+        compile_cache: Path | None = None,
     ) -> None:
         self.config = config
         self.ledger = ledger or ChipLedger(config.chips, config.chip_budget_gb)
@@ -77,7 +82,8 @@ class ResourceManager:
         self.clock = clock
         self.sample_s = sample_s
         self.log_dir = log_dir
-        self.extra_env = extra_env or {}
+        self.extra_env = {**(compile_cache_env(compile_cache) if compile_cache else {}), **(extra_env or {})}
+        self.weights = weights
         self.watchdog = Watchdog(config.chip_hbm_gb, config.soft_limit, config.hbm_ceiling)
         self.slots: dict[str, Slot] = {}
         self.queued: dict[str, int] = defaultdict(int)
@@ -224,7 +230,12 @@ class ResourceManager:
 
     async def _boot(self, slot: Slot) -> None:
         try:
-            slot.handle = await self._spawn(slot.spec, slot.chips, slot.cpu)
+            staged = None
+            if slot.spec.weights and self.weights:
+                staged = await self.weights.ensure(slot.spec.weights)
+                self.weights.pin(slot.spec.weights)
+                slot.pinned = True
+            slot.handle = await self._spawn(slot.spec, slot.chips, slot.cpu, staged)
         except Exception as e:  # noqa: BLE001 - recorded; waiters for this model fail fast
             log.error("%s failed to start: %s", slot.id, e)
             self.broken[slot.spec.name] = str(e)
@@ -245,6 +256,9 @@ class ResourceManager:
         if slot.chips:
             self.ledger.release(slot.chips)
         self.cpu.release(slot.cpu)
+        if slot.pinned and self.weights and slot.spec.weights:
+            self.weights.unpin(slot.spec.weights)
+            slot.pinned = False
         self.slots.pop(slot.id, None)
         async with self._cond:
             self._cond.notify_all()
@@ -303,7 +317,8 @@ class ResourceManager:
 
     # --- default spawner ---------------------------------------------------------------------
 
-    async def _spawn_process(self, spec: ModelSpec, chips: ChipLease | None, cpu: CpuLease) -> Handle:
-        replica = Replica(spec, chips, cpu, replica_env(spec, self.config, chips, cpu, self.extra_env), log_dir=self.log_dir)
+    async def _spawn_process(self, spec: ModelSpec, chips: ChipLease | None, cpu: CpuLease, weights: Path | None) -> Handle:
+        extra = {**self.extra_env, **({"JUMBO_WEIGHTS": str(weights)} if weights else {})}
+        replica = Replica(spec, chips, cpu, replica_env(spec, self.config, chips, cpu, extra), log_dir=self.log_dir)
         await replica.start(timeout=spec.wake_s * 3 + 60)
         return replica

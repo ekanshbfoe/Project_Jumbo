@@ -61,7 +61,7 @@ class FakeHandle:
 
 
 def fake_spawn(handles: list):
-    async def spawn(spec, chips, cpu):
+    async def spawn(spec, chips, cpu, weights=None):
         await asyncio.sleep(spec.wake_s)
         handle = FakeHandle(spec, chips)
         handles.append(handle)
@@ -128,7 +128,7 @@ async def test_hard_ceiling_kills_the_replica_and_retries_the_job():
     handles: list[FakeHandle] = []
     spawn = fake_spawn(handles)
 
-    async def spawn_leaky_first(spec, chips, cpu):
+    async def spawn_leaky_first(spec, chips, cpu, weights=None):
         handle = await spawn(spec, chips, cpu)
         if len(handles) == 1:
             # The first replica balloons to 13 GB (81%) while it works; replacements behave.
@@ -165,7 +165,7 @@ async def test_soft_limit_throttles_until_memory_drops():
 
 
 async def test_a_model_that_cannot_start_fails_its_jobs_fast():
-    async def broken(spec, chips, cpu):
+    async def broken(spec, chips, cpu, weights=None):
         raise ReplicaError("weights missing")
 
     manager = ResourceManager(config(0.80), cpu=CpuPool(cores=32, ram_gb=300), spawn=broken)
