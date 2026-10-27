@@ -6,7 +6,7 @@
 - Narration and character voices are Fish Audio Drama 3 (35B MoE, 3B active), run by speech.cpp 0.8.11
   built for CUDA sm_75, with our patch for a second GPU and a memory cap.
 - Weights: `sakasegawa/drama-3-GGUF`, a conversion checked stage by stage against Fish's implementation.
-  The quant and replica layout come from spike 5.
+  Layout (c), picked by the project lead after spike 5: one Q5_K replica split over both T4s.
 - Scripts for voicing are Devanagari or Mixed Hinglish only (`hinglish.ts`, `rules.script_problems`).
 
 ## Why
@@ -15,6 +15,16 @@
 - **Drama 3 (spike 4, one T4, Q6_K):** judged natural. That held for Devanagari and Mixed script, emotion cues
   (`[laughs]`, `[whispers]`, ...) and two-speaker scenes.
 - **Romanized Hindi** read noticeably worse, hence the writing rule.
+- **Layout (spike 5, 13 lines, cap 0.8):**
+
+  | Setup | Result |
+  |---|---|
+  | 1× Q6_K, one card | RTF 2.13, 23.9 GB RAM, 9 of 40 layers' experts on the card |
+  | 2× Q6_K, one per card | does not fit the 31 GB of RAM |
+  | 2× Q4_K, one per card | RTF 1.44, 26.7 GB RAM, one 7.9 s stall |
+  | **1× Q5_K over both cards** | **RTF 1.22, 8.3 GB RAM, 8 of 40 layers' experts on the CPU, 11.5 / 10.5 GiB per card** |
+
+  Q5_K also has the port's lowest measured error rate (0.9% CER).
 
 ## How it fits a T4
 - Fish's own int4 build needs sm_80 (GPTQ-Marlin), and Kaggle's containers have no Vulkan driver, so

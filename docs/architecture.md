@@ -234,7 +234,7 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
 | magi_v2 | torch-xla or cpu | 1 | ~3–5 GB | yes | 0 / 8 | yes |
 | qwen25vl_72b_int8 | vllm-tpu | 8 (TP=8) | ~12.5 GB at util=0.8 | no | 0 / 1 | continuous batching |
 | librarian (Memory-R1 / fallback) | vllm-tpu | 1–2 | ~9–10 GB | slow | 0 / 4 | yes |
-| drama3 | ggml (speech.cpp, CUDA) | 1 T4 (or 2, split) | ≤ ceiling (11.5 GB), experts overflow to CPU | experts only | 0 / 2 | one line at a time |
+| drama3 | ggml (speech.cpp, CUDA) | 2 T4s, one Q5_K replica split | ≤ ceiling (11.5 GiB per card), 8 of 40 layers' experts on CPU | experts only | 0 / 1 | one line at a time |
 | remotion | node/cpu | 0 | — | n/a | 0 / ⌊cores/concurrency⌋ | per-chapter |
 
 ### 4.3 How the HBM ceiling is guaranteed (three layers)

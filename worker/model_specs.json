@@ -1,5 +1,5 @@
 {
-  "$comment": "Resource registry for jumbo_worker.pool. HBM figures are estimates from docs/architecture.md \u00a74.2 until the S0 spikes profile them; hbm_ceiling is set by spike 6 (0.80 or 0.90).",
+  "$comment": "Resource registry for jumbo_worker.pool. HBM figures are estimates from docs/architecture.md §4.2 until the S0 spikes profile them; hbm_ceiling is set by spike 6 (0.80 or 0.90).",
   "hbm_ceiling": 0.8,
   "phase_hysteresis_s": 60,
   "phase_min_dwell_s": 30,
@@ -24,11 +24,12 @@
     "drama3": {
       "backend": "ggml",
       "chips": 1,
+      "gpus": 2,
       "hbm_gb_per_chip": 11.5,
       "cpu_cores": 3,
-      "host_ram_gb": 21,
+      "host_ram_gb": 10,
       "cpu_fallback": true,
-      "max_replicas": 2,
+      "max_replicas": 1,
       "target_queue_per_replica": 2,
       "concurrency": 1,
       "priority": 4,
@@ -36,9 +37,9 @@
       "job_s": 8,
       "phase": "vision",
       "options": {
-        "quant": "q6_k"
+        "quant": "q5_k"
       },
-      "notes": "Fish Audio Drama 3 (35B MoE, 3B active) through speech.cpp 0.8.11 built for CUDA sm_75 with the dual-GPU and memory-cap patch; weights sakasegawa/drama-3-GGUF. Spike 4 on a T4 (Q6_K, uncapped): 14 of 40 layers' experts on the card, the rest on 4 CPU threads; peak 14.7 GB GPU, 20.8 GB RAM, load 120 s, 1.6 s per second of audio. 44.1 kHz. Quant and replica layout are set by spike 5. On a TPU host it does not run yet (no ggml TPU backend; TorchTPU is the path to test)."
+      "notes": "Fish Audio Drama 3 (35B MoE, 3B active) through speech.cpp 0.8.11 built for CUDA sm_75 with the dual-GPU and memory-cap patch; weights sakasegawa/drama-3-GGUF. Setup (c), chosen by the project lead from spike 5: one Q5_K replica split over both T4s, later layers' experts on CUDA1, 8 of 40 layers' experts on the CPU. Spike 5 at a 0.8 cap: peak 11.5 / 10.5 GiB on the two cards, 8.3 GB RAM, load 104 s, 1.22 s per second of audio. 44.1 kHz. On a TPU host it does not run yet (no ggml TPU backend; TorchTPU is the path to test)."
     },
     "qwen25vl_72b_int8": {
       "backend": "vllm-tpu",

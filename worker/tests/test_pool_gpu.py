@@ -171,3 +171,14 @@ def test_gpu_memory_is_reported_in_the_gib_the_budget_uses(monkeypatch):
     monkeypatch.setitem(sys.modules, "pynvml", nvml)
     used = replica_main.gpu_memory_gb([0, 1])
     assert round(used[0], 2) == 11.5 and used[0] < load_specs(chips=0, gpus=2).gpu_budget_gb
+
+
+def test_drama3_takes_both_t4s_of_the_kaggle_gpu_host():
+    # Setup (c): one Q5_K replica split over both cards, with the RAM and cores the host has left.
+    cfg = load_specs(chips=0, gpus=2)
+    drama = cfg.spec("drama3")
+    assert drama.gpus == 2 and drama.options["quant"] == "q5_k"
+    cards = GpuLedger(2, cfg.gpu_budget_gb)
+    assert cards.lease("voice", drama.hbm_gb_per_chip, drama.gpus) == (0, 1)
+    cores = CpuPool(4 - 1, 31.3 - 4)
+    cores.lease("voice", cfg.replica_cores(drama, False), drama.host_ram_gb)
