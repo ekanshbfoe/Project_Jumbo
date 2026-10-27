@@ -61,9 +61,11 @@ Operational risks to note:
   - **pydantic v2** for models generated from the shared schema.
   - JSON lines over each replica subprocess's stdin/stdout for RPC to model workers (stdlib only; the child moves fd 1 to stderr so library output cannot corrupt the protocol).
 - **Inference:**
-  - **vLLM TPU backend** for Qwen2.5-VL-72B int8 and the Librarian LLM, with constrained JSON decoding (guided/structured output).
-  - Magi v2 runs under torch-xla or on CPU, as decided by the spike.
-  - Voice is Fish Audio Drama 3 through speech.cpp (ggml) built for CUDA, on the T4s (ADR 0003). On the TPU it is untested; TorchTPU with Fish's own code is the path to try.
+  - Three compute modes, CPU, GPU and TPU, run the same pipeline and contracts (ADR 0004).
+  - **Director:** Qwen3-VL-32B Instruct. On the T4s: llama.cpp, Q6_K across both cards (spike 7b). On the TPU: vLLM on the chips, bf16 at TP=8 (spike 9), with llama.cpp Q8_0 on the host CPUs as its fallback. Output is constrained to the ScriptDoc schema.
+  - **Librarian:** Qwen2.5-7B Instruct (chosen in spike 6), guided MemoryDelta output; vLLM at TP=2 on the TPU.
+  - **Magi v2:** on the T4s, or on the TPU through TorchTPU (which replaces torch-xla), or on CPU.
+  - **Voice:** Fish Audio Drama 3 through speech.cpp (ggml): Q5_K split over both T4s (ADR 0003), or Q8_0 on the TPU host's CPUs alongside the chips. Drama 3 on the chips through TorchTPU is a later spike.
 - **Vision support:**
   - PyMuPDF for rasterization.
   - OpenCV for strip slicing, gutters and contours, and polygon simplification.
@@ -232,8 +234,8 @@ FastAPI control plane ──▶ Pipeline Orchestrator (per-chapter DAG, asyncio)
 | model | backend | chips/replica | HBM/chip (profiled) | CPU fallback | min/max replicas | batchable |
 |---|---|---|---|---|---|---|
 | magi_v2 | torch-xla or cpu | 1 | ~3–5 GB | yes | 0 / 8 | yes |
-| qwen25vl_72b_int8 | vllm-tpu | 8 (TP=8) | ~12.5 GB at util=0.8 | no | 0 / 1 | continuous batching |
-| librarian (Memory-R1 / fallback) | vllm-tpu | 1–2 | ~9–10 GB | slow | 0 / 4 | yes |
+| qwen3vl_32b | vllm-tpu (bf16) / llama.cpp (Q6_K on 2 T4s, Q8_0 on CPU) | 8 (TP=8) | ~8.2 GB weights + KV | host CPU (Q8_0) | 0 / 1 | continuous batching |
+| librarian (Qwen2.5-7B) | vllm-tpu | 2 (TP=2) | ~7.6 GB | slow | 0 / 4 | yes |
 | drama3 | ggml (speech.cpp, CUDA) | 2 T4s, one Q5_K replica split | ≤ ceiling (11.5 GiB per card), 8 of 40 layers' experts on CPU | experts only | 0 / 1 | one line at a time |
 | remotion | node/cpu | 0 | — | n/a | 0 / ⌊cores/concurrency⌋ | per-chapter |
 
@@ -265,7 +267,7 @@ The ceiling is one config value, `hbm_ceiling` (default 0.80; spike 6 may raise 
 - `desired[stage] = clamp(ceil(queue_depth / target_per_replica), min, max)`.
 - **Placement:** best-fit bin-packing onto free chips. CPU-capable stages overflow to the CpuPool when chips are leased.
 - **Phase arbitration:** Qwen needs all 8 chips, so the scheduler runs in **TPU phases**:
-  - `Vision-TPU` (Magi ×N packed onto 1-chip leases; Drama 3 on the T4s) ⇄ `Director` (Qwen, 8 chips) ⇄ `Librarian`.
+  - `Vision-TPU` (Magi ×N packed onto 1-chip leases) ⇄ `Director` (Qwen3-VL, 8 chips) ⇄ `Librarian`. Drama 3 runs on the host CPUs during any phase (ADR 0004).
   - A phase switch happens only when the incoming phase's backlog × cost exceeds the swap cost plus the hysteresis margin, which prevents thrashing.
   - CPU work (Remotion, polygon refinement, inpainting, CPU-fallback models) keeps running alongside any TPU phase.
 - **Idle TTL** per spec (e.g. 120 s) puts replicas to sleep. Stage priority follows pipeline depth, so the stage closest to a finished deliverable goes first.
