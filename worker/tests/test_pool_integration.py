@@ -87,13 +87,13 @@ async def test_on_a_gpu_host_accelerator_models_share_the_cards_and_cpu_stages_g
     )
     placed = []
 
-    async def spawn(spec, chips, cpu, weights=None, gpu=None):
-        placed.append((spec.name, gpu, cpu.cores, replica_env(spec, cfg, chips, cpu, gpu=gpu)["CUDA_VISIBLE_DEVICES"]))
+    async def spawn(spec, chips, cpu, weights=None, gpus=()):
+        placed.append((spec.name, gpus, cpu.cores, replica_env(spec, cfg, chips, cpu, gpus=gpus)["CUDA_VISIBLE_DEVICES"]))
 
         class Handle:
             async def run(self, kind, payload):
                 await asyncio.sleep(0.05)
-                return gpu
+                return gpus
 
             async def memory(self):
                 return {}
@@ -112,6 +112,6 @@ async def test_on_a_gpu_host_accelerator_models_share_the_cards_and_cpu_stages_g
     await pool.close()
     dets = [p for p in placed if p[0] == "det"]
     # Spread over both cards, each replica pinned to one; with a GPU they lease their normal cpu_cores, not the CPU-fallback 3.
-    assert {g for _, g, _, _ in dets} == {0, 1} and all(env == str(g) and cores == 1 for _, g, cores, env in dets)
-    assert ("render", None, 1, "") in placed
-    assert set(gpus[:6]) <= {0, 1}
+    assert {g for _, g, _, _ in dets} == {(0,), (1,)} and all(env == str(g[0]) and cores == 1 for _, g, cores, env in dets)
+    assert ("render", (), 1, "") in placed
+    assert set(gpus[:6]) <= {(0,), (1,)}

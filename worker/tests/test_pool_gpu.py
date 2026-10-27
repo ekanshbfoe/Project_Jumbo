@@ -16,7 +16,7 @@ def gpu_config(**det) -> PoolConfig:
 
 def test_gpu_ledger_spreads_replicas_and_never_reserves_past_the_budget():
     cards = GpuLedger(2, 12.0)
-    assert [cards.lease(f"r{i}", 5) for i in range(4)] == [0, 1, 0, 1]
+    assert [cards.lease(f"r{i}", 5) for i in range(4)] == [(0,), (1,), (0,), (1,)]
     assert not cards.can_place(5) and cards.can_place(2)
     try:
         cards.lease("r4", 5)
@@ -24,7 +24,7 @@ def test_gpu_ledger_spreads_replicas_and_never_reserves_past_the_budget():
     except LeaseError:
         pass
     cards.release("r1")
-    assert cards.lease("r5", 5) == 1 and cards.reserved() == [10.0, 10.0]
+    assert cards.lease("r5", 5) == (1,) and cards.reserved() == [10.0, 10.0]
 
 
 def test_card_watchdog_kills_the_replica_furthest_past_its_footprint():
@@ -40,8 +40,8 @@ def test_card_watchdog_kills_the_replica_furthest_past_its_footprint():
 class FakeGpu:
     """A replica handle that reports memory on its card and records when it is busy."""
 
-    def __init__(self, gpu, log, grow=0.0):
-        self.gpu, self.log, self.grow, self.used = gpu, log, grow, 5.0
+    def __init__(self, gpus, log, grow=0.0):
+        self.gpu, self.log, self.grow, self.used = gpus[0], log, grow, 5.0
 
     async def run(self, kind, payload):
         self.log.append(("start", self.gpu))
@@ -67,9 +67,9 @@ async def test_parallel_requests_run_on_both_cards_at_once_within_the_budget():
     cfg = gpu_config()
     log, placed = [], []
 
-    async def spawn(spec, chips, cpu, weights=None, gpu=None):
-        placed.append(gpu)
-        return FakeGpu(gpu, log)
+    async def spawn(spec, chips, cpu, weights=None, gpus=()):
+        placed.append(gpus)
+        return FakeGpu(gpus, log)
 
     pool = ResourceManager(cfg, cpu=CpuPool(8, 64), spawn=spawn, sample_s=0.01)
     pool.start()
@@ -77,7 +77,7 @@ async def test_parallel_requests_run_on_both_cards_at_once_within_the_budget():
     peak_reserved = max(pool.gpus.reserved())
     await pool.close()
     # 12 GB budget per card (80% of 15) fits two 5 GB replicas: four in all, two per card.
-    assert sorted(placed) == [0, 0, 1, 1] and set(cards) == {0, 1} and peak_reserved <= cfg.gpu_budget_gb
+    assert sorted(placed) == [(0,), (0,), (1,), (1,)] and set(cards) == {0, 1} and peak_reserved <= cfg.gpu_budget_gb
     # Both cards were busy at the same moment.
     busy, both = set(), False
     for event, gpu in log:
@@ -90,10 +90,10 @@ async def test_a_replica_growing_past_the_card_ceiling_is_killed_and_its_request
     cfg = gpu_config(max_replicas=2)
     log, handles = [], []
 
-    async def spawn(spec, chips, cpu, weights=None, gpu=None):
+    async def spawn(spec, chips, cpu, weights=None, gpus=()):
         # The first replica leaks 6 GB while it works: 5 + 6 = 11 GB is 73% alone, but with the
         # other replica's 5 GB on the same card the sum (16 GB) is over 80% of 15 GB.
-        handles.append(FakeGpu(gpu, log, grow=6.0 if not handles else 0.0))
+        handles.append(FakeGpu(gpus, log, grow=6.0 if not handles else 0.0))
         return handles[-1]
 
     events = []
@@ -113,5 +113,46 @@ def test_magi_fits_one_replica_per_t4_on_the_kaggle_gpu_host():
     for _ in range(2):
         cores.lease(f"m{_}", cfg.replica_cores(magi, False), magi.host_ram_gb)
     cards = GpuLedger(2, cfg.gpu_budget_gb)
-    assert {cards.lease("a", magi.hbm_gb_per_chip), cards.lease("b", magi.hbm_gb_per_chip)} == {0, 1}
+    assert {cards.lease("a", magi.hbm_gb_per_chip), cards.lease("b", magi.hbm_gb_per_chip)} == {(0,), (1,)}
     assert magi.target_queue_per_replica <= 2
+
+
+def test_a_two_card_replica_reserves_both_cards_and_waits_for_both_to_be_free():
+    cards = GpuLedger(2, 12.0)
+    assert cards.lease("magi", 5) == (0,)
+    # 11.8 GB on each card does not fit beside Magi's 5 GB.
+    assert not cards.can_place(11.8, 2)
+    cards.release("magi")
+    assert cards.lease("drama3", 11.8, 2) == (0, 1) and cards.reserved() == [11.8, 11.8]
+    assert cards.cards_of("drama3") == (0, 1) and not cards.can_place(1, 1)
+    assert [c["replicas"] for c in cards.snapshot()] == [["drama3"], ["drama3"]]
+
+
+async def test_a_two_card_replica_sees_both_cards_and_is_judged_on_each():
+    cfg = gpu_config(gpus=2, hbm_gb_per_chip=11.0, max_replicas=1)
+    placed, events = [], []
+
+    class TwoCards(FakeGpu):
+        async def memory(self):
+            return {0: 11.0, 1: self.used}
+
+    async def spawn(spec, chips, cpu, weights=None, gpus=()):
+        placed.append(gpus)
+        handle = TwoCards(gpus, [])
+        handle.used = 13.0  # card 1 is past 80% of 15 GB
+        return handle
+
+    pool = ResourceManager(cfg, cpu=CpuPool(8, 64), spawn=spawn, sample_s=0.01, publish=events.append)
+    pool.start()
+    await pool.run("det", "x", {"sleep_s": 0.2})
+    await pool.close()
+    assert placed[0] == (0, 1)
+    assert any(e["type"] == "pool.hbm_kill" and e.get("gpu") == 1 for e in events)
+
+
+def test_a_model_needing_more_cards_than_the_host_has_is_refused():
+    try:
+        gpu_config(gpus=3)
+        raise AssertionError("accepted")
+    except ValueError as e:
+        assert "needs 3 GPUs" in str(e)

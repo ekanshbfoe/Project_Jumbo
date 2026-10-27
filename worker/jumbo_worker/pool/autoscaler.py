@@ -146,12 +146,12 @@ def plan(
             on_gpu = spec.on_tpu and config.gpus > 0
 
             def gpu_fits() -> bool:
-                return not on_gpu or (cards is not None and cards.can_place(spec.hbm_gb_per_chip))
+                return not on_gpu or (cards is not None and cards.can_place(spec.hbm_gb_per_chip, spec.gpus))
 
             while tpu_count[spec.name] + cpu_count[spec.name] < want and cores.can_lease(config.replica_cores(spec, False), spec.host_ram_gb) and gpu_fits():
                 cores.lease(f"plan:{spec.name}:c{cpu_count[spec.name]}", config.replica_cores(spec, False), spec.host_ram_gb)
                 if on_gpu and cards is not None:
-                    cards.lease(f"plan:{spec.name}:g{cpu_count[spec.name]}", spec.hbm_gb_per_chip)
+                    cards.lease(f"plan:{spec.name}:g{cpu_count[spec.name]}", spec.hbm_gb_per_chip, spec.gpus)
                 out.start.append(Start(spec.name, on_cpu=True))
                 cpu_count[spec.name] += 1
     return out

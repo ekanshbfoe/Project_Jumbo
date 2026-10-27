@@ -34,6 +34,8 @@ class ModelSpec(BaseModel):
     chips: int = Field(0, ge=0, le=TPU_CHIPS)
     # Profiled peak HBM per leased chip, in GB.
     hbm_gb_per_chip: float = Field(0.0, ge=0)
+    # CUDA cards one replica spans on a GPU host (hbm_gb_per_chip is then its peak on each card).
+    gpus: int = Field(1, ge=1)
     # Host resources a replica holds while it runs (on TPU too: tokenizers, preprocessing).
     cpu_cores: int = Field(1, ge=0)
     host_ram_gb: float = Field(1.0, ge=0)
@@ -88,7 +90,7 @@ class PoolConfig(BaseModel):
     hbm_ceiling: float = Field(0.80, gt=0.5, le=0.95)
     chips: int = Field(TPU_CHIPS, ge=0)
     # CUDA GPUs on the host (Kaggle's T4 x2). Accelerator models without chips run on them, shared,
-    # each replica reserving its profiled footprint (hbm_gb_per_chip) on one card.
+    # each replica reserving its profiled footprint (hbm_gb_per_chip) on each of its spec.gpus cards.
     gpus: int = Field(0, ge=0)
     gpu_hbm_gb: float = Field(GPU_HBM_GB, gt=0)
     chip_hbm_gb: float = Field(CHIP_HBM_GB, gt=0)
@@ -121,6 +123,8 @@ class PoolConfig(BaseModel):
             # run on their CPU fallback there, or report that they cannot start.
             if 0 < self.chips < spec.chips:
                 raise ValueError(f"{spec.name}: needs {spec.chips} chips, the host has {self.chips}")
+            if spec.on_tpu and 0 < self.gpus < spec.gpus:
+                raise ValueError(f"{spec.name}: needs {spec.gpus} GPUs, the host has {self.gpus}")
         return self
 
     @property

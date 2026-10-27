@@ -28,41 +28,46 @@ def leased_chips() -> list[int]:
     return [int(c) for c in raw.split(",") if c]
 
 
-def leased_gpu() -> int | None:
+def leased_gpus() -> list[int]:
     raw = os.environ.get("JUMBO_GPU", "")
-    return int(raw) if raw else None
+    return [int(c) for c in raw.split(",") if c]
 
 
 # CUDA context and kernels a process holds outside torch's allocator, when NVML cannot say.
 CUDA_CONTEXT_GB = 0.4
 
 
-def gpu_memory_gb(card: int) -> dict[int, float]:
-    """GB this process uses on its card: NVML's per-process figure (includes the CUDA context), or
-    torch's reserved memory plus a context estimate."""
+def gpu_memory_gb(cards: list[int]) -> dict[int, float]:
+    """GB this process uses on each of its cards: NVML's per-process figure (includes the CUDA
+    context), or torch's reserved memory plus a context estimate."""
     try:
         import pynvml
 
         pynvml.nvmlInit()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(card)
-        for proc in pynvml.nvmlDeviceGetComputeRunningProcesses(handle):
-            if proc.pid == os.getpid() and proc.usedGpuMemory:
-                return {card: proc.usedGpuMemory / 1e9}
+        out = {}
+        for card in cards:
+            handle = pynvml.nvmlDeviceGetHandleByIndex(card)
+            used = [p.usedGpuMemory for p in pynvml.nvmlDeviceGetComputeRunningProcesses(handle) if p.pid == os.getpid() and p.usedGpuMemory]
+            if used:
+                out[card] = used[0] / 1e9
+        if out:
+            return out
     except Exception:  # noqa: BLE001 - NVML missing or not permitted in this container
         pass
     if "torch" in sys.modules:
         import torch
 
         if torch.cuda.is_available() and torch.cuda.is_initialized():
-            return {card: torch.cuda.memory_reserved(0) / 1e9 + CUDA_CONTEXT_GB}
+            # Inside the replica its cards are cuda:0, cuda:1... in lease order.
+            return {card: torch.cuda.memory_reserved(i) / 1e9 + CUDA_CONTEXT_GB for i, card in enumerate(cards)}
     return {}
 
 
 def device_memory_gb() -> dict[int, float]:
     """GB in use per leased chip, or on the leased GPU card, from whichever framework this replica loaded."""
-    gpu = leased_gpu()
-    if gpu is not None:
-        return gpu_memory_gb(gpu)
+    gpus = leased_gpus()
+    if gpus:
+        return gpu_memory_gb(gpus)
     chips = leased_chips()
     if "jax" in sys.modules:
         import jax
@@ -105,8 +110,7 @@ class FakeRunner:
         return {"kind": kind, "echo": payload.get("echo"), "pid": os.getpid(), "chips": self.chips}
 
     def memory(self) -> dict[int, float]:
-        gpu = leased_gpu()
-        places = self.chips or ([gpu] if gpu is not None else [])
+        places = self.chips or leased_gpus()
         return {c: self.spec.hbm_gb_per_chip + self.extra for c in places}
 
 

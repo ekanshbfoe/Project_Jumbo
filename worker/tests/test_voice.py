@@ -171,7 +171,7 @@ async def test_voice_job_creates_voices_once_retries_bad_takes_and_trims(tmp_pat
     cfg = PoolConfig.model_validate({"chips": 0, "tick_s": 0.02, "models": {"drama3": {"backend": "fake", "max_replicas": 2, "wake_s": 0}}})
     log = []
 
-    async def spawn(spec, chips, cpu, weights=None, gpu=None):
+    async def spawn(spec, chips, cpu, weights=None, gpus=()):
         return FakeVoice(log, bad={7})
 
     pool = ResourceManager(cfg, cpu=CpuPool(4, 16), spawn=spawn)

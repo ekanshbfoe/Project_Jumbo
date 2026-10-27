@@ -33,7 +33,7 @@ class ReplicaDied(ReplicaError):
 
 
 def replica_env(
-    spec: ModelSpec, config: PoolConfig, chips: ChipLease | None, cpu: CpuLease, extra: dict[str, str] | None = None, gpu: int | None = None
+    spec: ModelSpec, config: PoolConfig, chips: ChipLease | None, cpu: CpuLease, extra: dict[str, str] | None = None, gpus: tuple[int, ...] = ()
 ) -> dict[str, str]:
     """Environment that binds a replica to its lease and caps its allocator at the HBM ceiling
     (layer 2 of the ceiling; admission is layer 1 and the watchdog layer 3)."""
@@ -46,12 +46,12 @@ def replica_env(
     if chips is None:
         # CPU replicas (and CPU fallbacks) must not open the TPU: libtpu would lock every chip.
         env.update({"JAX_PLATFORMS": "cpu", "PJRT_DEVICE": "CPU", "TPU_VISIBLE_CHIPS": ""})
-        # On a GPU host an accelerator model sees exactly its one card; everything else sees none.
-        env["CUDA_VISIBLE_DEVICES"] = "" if gpu is None else str(gpu)
-        if gpu is not None:
-            # JUMBO_GPU is the physical card (for per-process memory reports); inside the replica it
-            # is cuda:0. The allocator cap keeps one process alone under the ceiling.
-            env.update({"JUMBO_DEVICE": "cuda", "JUMBO_GPU": str(gpu), "JUMBO_GPU_MEMORY_FRACTION": f"{config.hbm_ceiling:.2f}"})
+        # On a GPU host an accelerator model sees exactly its leased cards; everything else sees none.
+        env["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpus))
+        if gpus:
+            # JUMBO_GPU lists the physical cards (for per-process memory reports); inside the replica
+            # they are cuda:0, cuda:1... The allocator cap keeps one process alone under the ceiling.
+            env.update({"JUMBO_DEVICE": "cuda", "JUMBO_GPU": ",".join(map(str, gpus)), "JUMBO_GPU_MEMORY_FRACTION": f"{config.hbm_ceiling:.2f}"})
     else:
         env.update(
             {

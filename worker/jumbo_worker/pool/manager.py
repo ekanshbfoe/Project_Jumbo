@@ -33,7 +33,7 @@ class Handle(Protocol):
     async def kill(self) -> None: ...
 
 
-# (spec, chip lease or None, CPU lease, staged weights folder or None, gpu=CUDA index or None) -> running replica
+# (spec, chip lease or None, CPU lease, staged weights folder or None, gpus=CUDA cards, empty off GPU) -> running replica
 Spawn = Callable[..., Awaitable[Handle]]
 
 
@@ -52,17 +52,17 @@ class Slot:
     last_used: float = 0.0
     throttled: bool = False
     pinned: bool = False
-    # CUDA device on a GPU host (accelerator models placed without TPU chips), and the GB this
-    # replica last reported using on it.
-    gpu: int | None = None
-    gpu_used_gb: float = 0.0
+    # CUDA cards on a GPU host (accelerator models placed without TPU chips), and the GB this
+    # replica last reported using on each.
+    gpus: tuple[int, ...] = ()
+    gpu_used_gb: dict[int, float] = field(default_factory=dict)
     task: asyncio.Task | None = field(default=None, repr=False)
 
     @property
     def where(self) -> str:
         if self.chips is not None:
             return "tpu:" + ",".join(map(str, self.chips.chips))
-        return "cpu" if self.gpu is None else f"gpu:{self.gpu}"
+        return "gpu:" + ",".join(map(str, self.gpus)) if self.gpus else "cpu"
 
 
 class ResourceManager:
@@ -233,10 +233,10 @@ class ResourceManager:
             chips = None if on_cpu else self.ledger.lease(slot_id, spec.chips, spec.hbm_gb_per_chip)
         except LeaseError:
             return
-        gpu = None
+        gpus: tuple[int, ...] = ()
         if chips is None and spec.on_tpu and self.config.gpus:
             try:
-                gpu = self.gpus.lease(slot_id, spec.hbm_gb_per_chip)
+                gpus = self.gpus.lease(slot_id, spec.hbm_gb_per_chip, spec.gpus)
             except LeaseError:
                 return
         try:
@@ -247,7 +247,7 @@ class ResourceManager:
             self.gpus.release(slot_id)
             return
         now = self.clock()
-        slot = Slot(slot_id, spec, chips, cpu, started=now, last_used=now, gpu=gpu)
+        slot = Slot(slot_id, spec, chips, cpu, started=now, last_used=now, gpus=gpus)
         self.slots[slot_id] = slot
         slot.task = asyncio.create_task(self._boot(slot))
 
@@ -258,7 +258,7 @@ class ResourceManager:
                 staged = await self.weights.ensure(slot.spec.weights)
                 self.weights.pin(slot.spec.weights)
                 slot.pinned = True
-            slot.handle = await self._spawn(slot.spec, slot.chips, slot.cpu, staged, gpu=slot.gpu)
+            slot.handle = await self._spawn(slot.spec, slot.chips, slot.cpu, staged, gpus=slot.gpus)
         except Exception as e:  # noqa: BLE001 - recorded; waiters for this model fail fast
             log.error("%s failed to start: %s", slot.id, e)
             self.broken[slot.spec.name] = str(e)
@@ -293,7 +293,7 @@ class ResourceManager:
     async def _watch_loop(self) -> None:
         while not self._closing:
             await asyncio.sleep(self.sample_s)
-            for slot in [s for s in self.slots.values() if s.state == "ready" and (s.chips or s.gpu is not None)]:
+            for slot in [s for s in self.slots.values() if s.state == "ready" and (s.chips or s.gpus)]:
                 try:
                     sample = await asyncio.wait_for(slot.handle.memory(), 5)
                 except Exception:  # noqa: BLE001 - a dead or hung replica is handled by the scaler
@@ -301,7 +301,8 @@ class ResourceManager:
                 if slot.chips:
                     await self.judge(slot, sample)
                 else:
-                    slot.gpu_used_gb = sum(sample.values())
+                    # Per card when the replica reports its cards; a single total belongs to its only card.
+                    slot.gpu_used_gb = {c: sample[c] for c in slot.gpus if c in sample} or ({slot.gpus[0]: sum(sample.values())} if len(slot.gpus) == 1 else {})
             for card in range(self.config.gpus):
                 await self.judge_card(card)
             if self.config.gpus:
@@ -309,12 +310,12 @@ class ResourceManager:
 
     async def judge_card(self, card: int) -> None:
         """Layer 3 on a shared GPU: the sum of what every replica on the card reports."""
-        on_card = {s.id: s for s in self.slots.values() if s.gpu == card and s.state == "ready"}
-        verdict = self.gpu_watchdog.judge_card(card, {i: s.gpu_used_gb for i, s in on_card.items()}, {i: s.spec.hbm_gb_per_chip for i, s in on_card.items()})
+        on_card = {s.id: s for s in self.slots.values() if card in s.gpus and s.state == "ready"}
+        verdict = self.gpu_watchdog.judge_card(card, {i: s.gpu_used_gb.get(card, 0.0) for i, s in on_card.items()}, {i: s.spec.hbm_gb_per_chip for i, s in on_card.items()})
         if verdict.kill:
             slot = on_card[verdict.kill]
             self.kills += 1
-            log.error("GPU %d at %.0f%%; killing %s (%.1f GB, profiled %.1f)", card, verdict.fraction * 100, slot.id, slot.gpu_used_gb, slot.spec.hbm_gb_per_chip)
+            log.error("GPU %d at %.0f%%; killing %s (%.1f GB, profiled %.1f)", card, verdict.fraction * 100, slot.id, slot.gpu_used_gb.get(card, 0.0), slot.spec.hbm_gb_per_chip)
             self._publish({"type": "pool.hbm_kill", "replica": slot.id, "gpu": card, "fraction": round(verdict.fraction, 4)})
             await self._retire(slot, kill=True)
             return
@@ -356,7 +357,7 @@ class ResourceManager:
                 for c in self.ledger.snapshot()
             ],
             "gpu_cards": [
-                {**c, "used_gb": round(sum(s.gpu_used_gb for s in self.slots.values() if s.gpu == c["gpu"]), 3), "peak": round(self.gpu_watchdog.peaks.get(c["gpu"], 0.0), 4)}
+                {**c, "used_gb": round(sum(s.gpu_used_gb.get(c["gpu"], 0.0) for s in self.slots.values()), 3), "peak": round(self.gpu_watchdog.peaks.get(c["gpu"], 0.0), 4)}
                 for c in self.gpus.snapshot()
             ],
             "cpu": self.cpu.snapshot(),
@@ -373,9 +374,9 @@ class ResourceManager:
 
     # --- default spawner ---------------------------------------------------------------------
 
-    async def _spawn_process(self, spec: ModelSpec, chips: ChipLease | None, cpu: CpuLease, weights: Path | None, gpu: int | None = None) -> Handle:
+    async def _spawn_process(self, spec: ModelSpec, chips: ChipLease | None, cpu: CpuLease, weights: Path | None, gpus: tuple[int, ...] = ()) -> Handle:
         extra = {**self.extra_env, **({"JUMBO_WEIGHTS": str(weights)} if weights else {})}
         python = await ensure_env(spec.name, spec.pip) if spec.pip else None
-        replica = Replica(spec, chips, cpu, replica_env(spec, self.config, chips, cpu, extra, gpu=gpu), log_dir=self.log_dir, python=python)
+        replica = Replica(spec, chips, cpu, replica_env(spec, self.config, chips, cpu, extra, gpus=gpus), log_dir=self.log_dir, python=python)
         await replica.start(timeout=spec.wake_s * 3 + 60)
         return replica

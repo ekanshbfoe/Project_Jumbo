@@ -57,7 +57,7 @@ async def test_replicas_get_their_weights_from_ram_and_unpin_on_sleep(tmp_path):
     )
     seen = []
 
-    async def spawn(spec, chips, cpu, staged, gpu=None):
+    async def spawn(spec, chips, cpu, staged, gpus=()):
         seen.append(staged)
 
         class Handle:
