@@ -21,8 +21,10 @@ CHIP_HBM_GB = 16.0
 LEASE_SIZES = (1, 2, 4, 8)
 # Soft watchdog threshold sits this far below the hard ceiling.
 SOFT_MARGIN = 0.04
-# Usable memory of one Kaggle T4 (16 GB nominal, about 15 GB after the driver's reserve).
+# Memory of one Kaggle T4 as nvidia-smi reports it: 15360 MiB. GPU figures in the pool are in GiB
+# (GIB bytes), the unit NVML and nvidia-smi show, so this budget and the measured peaks agree.
 GPU_HBM_GB = 15.0
+GIB = 2**30
 
 Backend = Literal["vllm-tpu", "jax", "torch-xla", "ggml", "cpu", "node", "fake"]
 

@@ -156,3 +156,18 @@ def test_a_model_needing_more_cards_than_the_host_has_is_refused():
         raise AssertionError("accepted")
     except ValueError as e:
         assert "needs 3 GPUs" in str(e)
+
+
+def test_gpu_memory_is_reported_in_the_gib_the_budget_uses(monkeypatch):
+    import os
+    import sys
+    import types
+
+    from jumbo_worker.pool import replica_main
+
+    # Spike 5's Drama 3 peak on CUDA0: 11771 MiB, under the 12 GiB hard line (80% of 15360 MiB).
+    proc = types.SimpleNamespace(pid=os.getpid(), usedGpuMemory=11771 * 2**20)
+    nvml = types.SimpleNamespace(nvmlInit=lambda: None, nvmlDeviceGetHandleByIndex=lambda i: i, nvmlDeviceGetComputeRunningProcesses=lambda h: [proc])
+    monkeypatch.setitem(sys.modules, "pynvml", nvml)
+    used = replica_main.gpu_memory_gb([0, 1])
+    assert round(used[0], 2) == 11.5 and used[0] < load_specs(chips=0, gpus=2).gpu_budget_gb

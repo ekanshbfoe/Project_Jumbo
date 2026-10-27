@@ -14,7 +14,7 @@ import sys
 import traceback
 from typing import Callable, Protocol
 
-from .specs import ModelSpec
+from .specs import GIB, ModelSpec
 
 
 class Runner(Protocol):
@@ -38,7 +38,7 @@ CUDA_CONTEXT_GB = 0.4
 
 
 def gpu_memory_gb(cards: list[int]) -> dict[int, float]:
-    """GB this process uses on each of its cards: NVML's per-process figure (includes the CUDA
+    """GiB this process uses on each of its cards: NVML's per-process figure (includes the CUDA
     context), or torch's reserved memory plus a context estimate."""
     try:
         import pynvml
@@ -49,7 +49,7 @@ def gpu_memory_gb(cards: list[int]) -> dict[int, float]:
             handle = pynvml.nvmlDeviceGetHandleByIndex(card)
             used = [p.usedGpuMemory for p in pynvml.nvmlDeviceGetComputeRunningProcesses(handle) if p.pid == os.getpid() and p.usedGpuMemory]
             if used:
-                out[card] = used[0] / 1e9
+                out[card] = used[0] / GIB
         if out:
             return out
     except Exception:  # noqa: BLE001 - NVML missing or not permitted in this container
@@ -59,7 +59,7 @@ def gpu_memory_gb(cards: list[int]) -> dict[int, float]:
 
         if torch.cuda.is_available() and torch.cuda.is_initialized():
             # Inside the replica its cards are cuda:0, cuda:1... in lease order.
-            return {card: torch.cuda.memory_reserved(i) / 1e9 + CUDA_CONTEXT_GB for i, card in enumerate(cards)}
+            return {card: torch.cuda.memory_reserved(i) / GIB + CUDA_CONTEXT_GB for i, card in enumerate(cards)}
     return {}
 
 

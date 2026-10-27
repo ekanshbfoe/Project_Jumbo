@@ -29,7 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..pool.specs import ModelSpec
+from ..pool.specs import GIB, ModelSpec
 from .wav import write_pcm
 
 REPO = "sakasegawa/drama-3-GGUF"
@@ -195,7 +195,7 @@ class Drama3Runner:
             return await handlers[kind](payload)
 
     def memory(self) -> dict[int, float]:
-        """GB the speech.cpp process holds on each leased card (NVML), so the watchdog sees the engine."""
+        """GiB the speech.cpp process holds on each leased card (NVML), so the watchdog sees the engine."""
         if self.proc is None or not getattr(self.proc, "pid", None):
             return {}
         cards = [int(c) for c in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if c]
@@ -207,7 +207,7 @@ class Drama3Runner:
             for card in cards:
                 handle = pynvml.nvmlDeviceGetHandleByIndex(card)
                 used = sum(p.usedGpuMemory or 0 for p in pynvml.nvmlDeviceGetComputeRunningProcesses(handle) if p.pid == self.proc.pid)
-                out[card] = used / 1e9
+                out[card] = used / GIB
             return out
         except Exception:  # noqa: BLE001 - NVML missing or not permitted in this container
             return {}
