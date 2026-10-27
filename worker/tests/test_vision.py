@@ -220,6 +220,7 @@ async def test_images_are_detected_in_parallel_and_kept_in_chapter_order(tmp_pat
     from jumbo_worker.pipeline.vision import stage
 
     running = peak = 0
+    full = asyncio.Event()
 
     class SlowDetector:
         name = "slow"
@@ -228,6 +229,10 @@ async def test_images_are_detected_in_parallel_and_kept_in_chapter_order(tmp_pat
             nonlocal running, peak
             running += 1
             peak = max(peak, running)
+            if running == stage.PARALLEL_IMAGES:
+                full.set()
+            # Hold until the stage has a full batch in flight, however slow encoding the pages is.
+            await asyncio.wait_for(full.wait(), 10)
             # Later pages finish first, so order can only come from the stage, not from timing.
             await asyncio.sleep(0.05 * (1 + (image.shape[0] % 7 == 0)))
             running -= 1
@@ -246,3 +251,4 @@ async def test_images_are_detected_in_parallel_and_kept_in_chapter_order(tmp_pat
 async def test_magi_is_the_default_and_needs_the_pool(tmp_path):
     store, job = await run_vision(tmp_path, [grid_page()])
     assert job.status == "failed" and "no model pool" in job.error
+
