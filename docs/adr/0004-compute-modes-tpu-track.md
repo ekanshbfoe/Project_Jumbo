@@ -18,6 +18,9 @@
 - **Keep-alive with a 60-minute dead-man's switch.** After its work, a session listens on the private gist for
   commands (python, shell, ping, release). If no command arrives for 60 minutes it ends itself, well before the
   2-hour idle rule. This window is for pushing follow-up jobs, fine-tuning or debugging.
+- **Blank-slate runner.** The queued notebook holds no job, prompt, schema or model. When the TPU starts, it downloads
+  the newest runner logic and job card (`tpu-job.json`: entry script, files, budget, packages) from the private
+  gist and runs them, so the job can change any number of times while the request waits in the queue.
 - **Session chaining for long jobs.** Fine-tuning saves a checkpoint every 20–30 minutes to a private dataset; the
   next session loads the latest one and continues, so a run spans several 9-hour sessions. The app re-queues the
   next session when one ends.
@@ -81,7 +84,7 @@ with its memory tiers, and the TPU window holds several scenes or a much larger 
 
 ## Spikes
 - **Spike 8** (cancelled 2026-10-27): host CPUs only, which left the chips at 0%.
-- **Spike 9** (queued 2026-10-27, replaces spike 8): Qwen3-VL-32B bf16 TP=8 on the chips with tpu-inference, then
+- **Spike 9** (cancelled 2026-10-27 before it ran: its prompt was fixed at queue time; it will run as a job card on the blank-slate runner): Qwen3-VL-32B bf16 TP=8 on the chips with tpu-inference, then
   vllm-torchtpu if the first fails, while Drama 3 Q8_0 runs on 96 host cores at the same time. The Director uses
   spike 7d's six scenes, prompt and strict per-scene schema; it measures load time, tokens/s, context ceiling and
   compile time. Then the 60-minute keep-alive.
