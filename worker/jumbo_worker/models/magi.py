@@ -1,5 +1,9 @@
-"""Magi v2 (ragavsachdeva/magiv2) as a replica runner: panels, text boxes with OCR, speakers and
-character clusters for one image, returned in the contract `pipeline/vision/detect.py` documents.
+"""Magi v2 (ragavsachdeva/magiv2) as a replica runner: panels, text boxes with OCR, speakers,
+character clusters and character fingerprints for one image, returned in the contract
+`pipeline/vision/detect.py` documents.
+
+Fingerprints are the crop-encoder embeddings Magi already computes to group the characters on a
+page; they are kept instead of recomputed, so returning them costs no extra model work.
 
 Weights: personal, research and non-commercial use (see the model card). They come from the staged
 copy in `JUMBO_WEIGHTS` when the pool provides one, else from the Hugging Face Hub at a pinned
@@ -10,6 +14,7 @@ GPU host, otherwise on CPU.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import os
 
@@ -20,6 +25,13 @@ from ..pool.specs import ModelSpec
 MODEL_ID = "ragavsachdeva/magiv2"
 # Pinned so the remote code the model ships with cannot change under us.
 REVISION = "fbc890fec52977142e8ee00bfe26e9458b65517c"
+# Names the encoder behind the fingerprints: those of another encoder or revision are not comparable.
+FINGERPRINT_MODEL = f"{MODEL_ID}@{REVISION[:12]}/crop_embedding_model"
+
+
+def encode_fingerprint(vector) -> str:
+    """One embedding as base64 of little-endian float16 (768 values -> 1536 bytes)."""
+    return base64.b64encode(np.asarray(vector, dtype="<f2").tobytes()).decode()
 
 
 def read_image(path: str) -> np.ndarray:
@@ -32,8 +44,9 @@ def read_image(path: str) -> np.ndarray:
     return cv2.cvtColor(grey, cv2.COLOR_GRAY2RGB)
 
 
-def to_contract(result: dict, ocr: list[str]) -> dict:
-    """Magi's per-image result -> {"panels", "texts", "characters"} in pixel coordinates."""
+def to_contract(result: dict, ocr: list[str], fingerprints=None) -> dict:
+    """Magi's per-image result -> {"panels", "texts", "characters"} in pixel coordinates.
+    `fingerprints` holds one embedding per character, in the order of result["characters"]."""
 
     def rect(b) -> list[list[float]]:
         x0, y0, x1, y1 = (float(v) for v in b)
@@ -54,11 +67,13 @@ def to_contract(result: dict, ocr: list[str]) -> dict:
                 "speaker": clusters[c] if c is not None and c < len(clusters) else None,
             }
         )
-    return {
-        "panels": [{"polygon": rect(b)} for b in result.get("panels", [])],
-        "texts": texts,
-        "characters": [{"bbox": [float(v) for v in b], "cluster": clusters[i] if i < len(clusters) else f"c_{i}"} for i, b in enumerate(result.get("characters", []))],
-    }
+    characters = []
+    for i, b in enumerate(result.get("characters", [])):
+        character = {"bbox": [float(v) for v in b], "cluster": clusters[i] if i < len(clusters) else f"c_{i}"}
+        if fingerprints is not None and i < len(fingerprints):
+            character["fingerprint"] = encode_fingerprint(fingerprints[i])
+        characters.append(character)
+    return {"panels": [{"polygon": rect(b)} for b in result.get("panels", [])], "texts": texts, "characters": characters}
 
 
 class MagiRunner:
@@ -67,6 +82,22 @@ class MagiRunner:
         self.model = model if model is not None else self._load()
         # One forward pass at a time: the model is not safe to call from several threads.
         self.lock = asyncio.Lock()
+        self._crops: list = []
+        self._keep_crop_embeddings()
+
+    def _keep_crop_embeddings(self) -> None:
+        """Wraps the model's crop encoder so the embeddings it makes while grouping characters are
+        kept for the result (it is called once per detection, with one entry per image)."""
+        encode = getattr(self.model, "predict_crop_embeddings", None)
+        if encode is None:
+            return
+
+        def keep(*args, **kwargs):
+            out = encode(*args, **kwargs)
+            self._crops.append(out)
+            return out
+
+        self.model.predict_crop_embeddings = keep
 
     @staticmethod
     def _load():
@@ -94,10 +125,17 @@ class MagiRunner:
             no_grad = torch.no_grad
         except ImportError:  # only stand-in models in tests run without torch
             no_grad = contextlib.nullcontext
+        self._crops.clear()
         with no_grad():
             [result] = self.model.predict_detections_and_associations([image])
             ocr = self.model.predict_ocr([image], [result["texts"]])[0] if result.get("texts") else []
-        return to_contract(result, ocr)
+        fingerprints = None
+        if self._crops and self._crops[0] is not None and len(self._crops[0]) == 1:
+            embeddings = self._crops[0][0]
+            fingerprints = embeddings.float().cpu().numpy() if hasattr(embeddings, "cpu") else np.asarray(embeddings)
+            if len(fingerprints) != len(result.get("characters", [])):
+                fingerprints = None
+        return to_contract(result, ocr, fingerprints)
 
     async def run(self, kind: str, payload: dict) -> object:
         if kind != "detect":

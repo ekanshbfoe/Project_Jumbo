@@ -11,7 +11,10 @@ worker host>}`), all coordinates in pixels of that image (jumbo_worker/models/ma
 
     {"panels":     [{"polygon": [[x, y], ...]}],
      "texts":      [{"polygon": [[x, y], ...], "kind": "speech|thought|narration|sfx", "text": "...", "speaker": "c_1" | null}],
-     "characters": [{"bbox": [x0, y0, x1, y1], "cluster": "c_1"}]}
+     "characters": [{"bbox": [x0, y0, x1, y1], "cluster": "c_1", "fingerprint"?: "<base64 float16>"}]}
+
+Clusters only group the characters of one image; a tall image detected in tiles gets its clusters
+prefixed per tile ("t1.c_0"), since c_0 of one tile is not c_0 of the next.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from typing import Awaitable, Callable, Protocol
 import cv2
 import numpy as np
 
+from ...models.magi import FINGERPRINT_MODEL
 from .slicer import INK_TOLERANCE
 from .stitch import background_level, gray
 from .textonly import is_text_only
@@ -42,7 +46,7 @@ MIN_SIDE = 0.04
 class Detection:
     polygon: list[Point]
     bubbles: list[dict] = field(default_factory=list)  # {"kind", "polygon" (px), "text"?, "speaker"?}
-    characters: list[dict] = field(default_factory=list)  # {"cluster", "bbox" (x0, y0, x1, y1 px)}
+    characters: list[dict] = field(default_factory=list)  # {"cluster", "bbox" (x0, y0, x1, y1 px), "fingerprint"?}
 
     @property
     def box(self) -> tuple[float, float, float, float]:
@@ -142,6 +146,18 @@ def _shift(points, dy: float) -> list[list[float]]:
     return [[float(x), float(y) + dy] for x, y in points]
 
 
+def _tile_clusters(result: dict, tile: int) -> dict:
+    """Prefixes a tile's cluster ids (and the speakers that point at them) with the tile number."""
+    def name(c):
+        return None if c is None else f"t{tile}.{c}"
+
+    return {
+        **result,
+        "texts": [{**t, "speaker": name(t.get("speaker"))} for t in result.get("texts", [])],
+        "characters": [{**c, "cluster": name(c["cluster"])} for c in result.get("characters", [])],
+    }
+
+
 class MagiDetector:
     """Magi v2 through the model pool. `call` is `JobContext.call`.
 
@@ -151,6 +167,7 @@ class MagiDetector:
     """
 
     name = "magi"
+    fingerprint_model = FINGERPRINT_MODEL
 
     def __init__(self, call: Callable[[str, str, dict], Awaitable[object]], model: str = "magi_v2") -> None:
         self.call = call
@@ -177,7 +194,7 @@ class MagiDetector:
                     cv2.imwrite(str(tile), cv2.cvtColor(image[top:bottom], cv2.COLOR_RGB2BGR))
                     tiles.append(tile)
                 found = await asyncio.gather(*(self._detect_file(tile) for tile in tiles))
-                results = [(top, r) for (top, _), r in zip(spans, found)]
+                results = [(top, _tile_clusters(r, n)) for n, ((top, _), r) in enumerate(zip(spans, found))]
             finally:
                 shutil.rmtree(folder, ignore_errors=True)
 
@@ -202,7 +219,7 @@ class MagiDetector:
             x0, y0, x1, y1 = char["bbox"]
             owner = next((d for d in panels if _inside(((x0 + x1) / 2, (y0 + y1) / 2), d.polygon)), None)
             if owner:
-                owner.characters.append({"cluster": str(char["cluster"]), "bbox": (x0, y0, x1, y1)})
+                owner.characters.append({"cluster": str(char["cluster"]), "bbox": (x0, y0, x1, y1), **({"fingerprint": char["fingerprint"]} if char.get("fingerprint") else {})})
         return self._fold_text_only(image, panels)
 
     def _fold_text_only(self, image: np.ndarray, panels: list[Detection]) -> list[Detection]:

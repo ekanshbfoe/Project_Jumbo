@@ -65,6 +65,7 @@ def panels_doc(doc: PanelsDoc) -> list[str]:
     out: list[str] = []
     ids: set[str] = set()
     orders: set[int] = set()
+    boxes: set[str] = set()
     for i, panel in enumerate(doc.panels):
         if panel.id in ids:
             out.append(f"panels.{i}.id: duplicate panel id {panel.id}")
@@ -74,7 +75,16 @@ def panels_doc(doc: PanelsDoc) -> list[str]:
         orders.add(panel.order)
         out += _bbox(f"panels.{i}", panel.bbox)
         for j, character in enumerate(panel.characters or []):
-            out += _bbox(f"panels.{i}.characters.{j}", character.bbox)
+            where = f"panels.{i}.characters.{j}"
+            out += _bbox(where, character.bbox)
+            if character.id and character.id in boxes:
+                out.append(f"{where}.id: duplicate character box id {character.id}")
+            if character.id:
+                boxes.add(character.id)
+            if doc.fingerprints and not character.id:
+                out.append(f"{where}.id: a chapter with fingerprints needs an id on every character box")
+            if doc.fingerprints and character.id and int(character.id[2:]) > doc.fingerprints.count:
+                out.append(f"{where}.id: {character.id} has no fingerprint (the file has {doc.fingerprints.count} rows)")
     return out
 
 

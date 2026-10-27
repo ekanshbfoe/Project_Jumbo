@@ -26,8 +26,17 @@ class PointItem(RootModel[float]):
 
 
 class CharacterBox(BaseModel):
+    id: Annotated[str | None, Field(pattern="^k_\\d{4,}$")] = None
     cluster: Annotated[str, Field(min_length=1)]
     bbox: BBox
+
+
+class Fingerprints(BaseModel):
+    path: Annotated[str, Field(min_length=1)]
+    dtype: Literal["float16"]
+    dim: Annotated[int, Field(gt=0, le=9007199254740991)]
+    count: Annotated[int, Field(ge=0, le=9007199254740991)]
+    model: Annotated[str, Field(min_length=1)]
 
 
 class Bubble(BaseModel):
@@ -56,3 +65,4 @@ class PanelsDoc(BaseModel):
     chapter_id: Annotated[str, Field(pattern="^ch_\\d{4}$")]
     layout: Literal["strip", "page"]
     panels: Annotated[list[Panel], Field(min_length=1)]
+    fingerprints: Fingerprints | None = None

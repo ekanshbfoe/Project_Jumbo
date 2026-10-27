@@ -103,3 +103,30 @@ async def test_runner_reads_the_image_and_calls_the_model(tmp_path):
     runner = MagiRunner(ModelSpec(name="magi_v2", backend="torch-xla", chips=1, hbm_gb_per_chip=5, phase="vision"), model=Model())
     out = await runner.run("detect", {"image": str(path)})
     assert out["panels"][0]["polygon"][2] == [40.0, 50.0]
+
+
+async def test_runner_returns_the_crop_embeddings_magi_made_while_grouping(tmp_path):
+    import base64
+
+    import cv2
+
+    path = tmp_path / "p.png"
+    cv2.imwrite(str(path), np.full((50, 40, 3), 200, np.uint8))
+    calls = []
+
+    class Model:
+        def predict_crop_embeddings(self, images, crop_bboxes, move_to_device_fn=None):
+            calls.append(len(crop_bboxes[0]))
+            return [np.array([[0.5] * 768, [-2.0] * 768])]
+
+        def predict_detections_and_associations(self, images):
+            # As in Magi: the crop encoder runs inside detection, to group the characters.
+            self.predict_crop_embeddings(images, [[[0, 0, 10, 10], [5, 5, 20, 20]]])
+            return [{"panels": [], "texts": [], "characters": [[0, 0, 10, 10], [5, 5, 20, 20]], "character_cluster_labels": [0, 1], "text_character_associations": [], "is_essential_text": []}]
+
+    runner = MagiRunner(ModelSpec(name="magi_v2", backend="torch-xla", chips=1, hbm_gb_per_chip=5, phase="vision"), model=Model())
+    out = await runner.run("detect", {"image": str(path)})
+    # Encoded once, by Magi itself: no second pass for the fingerprints.
+    assert calls == [2]
+    rows = [np.frombuffer(base64.b64decode(c["fingerprint"]), "<f2") for c in out["characters"]]
+    assert [r.shape for r in rows] == [(768,), (768,)] and rows[0][0] == 0.5 and rows[1][-1] == -2.0

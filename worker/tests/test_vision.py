@@ -252,3 +252,55 @@ async def test_magi_is_the_default_and_needs_the_pool(tmp_path):
     store, job = await run_vision(tmp_path, [grid_page()])
     assert job.status == "failed" and "no model pool" in job.error
 
+
+async def test_character_boxes_get_chapter_ids_clusters_per_image_and_one_fingerprint_row_each(tmp_path, monkeypatch):
+    from jumbo_worker.models.magi import encode_fingerprint
+    from jumbo_worker.pipeline.vision import stage
+
+    class TwoPerPage:
+        name = "magi"
+        fingerprint_model = "magi-test"
+
+        async def detect(self, image, path):
+            h, w = image.shape[:2]
+            seed = float(image.shape[0])
+            panel = Detection([(0, 0), (w, 0), (w, h), (0, h)])
+            panel.bubbles = [{"kind": "speech", "polygon": [(10, 10), (60, 10), (60, 40), (10, 40)], "text": "Hey", "speaker": "c_0"}]
+            panel.characters = [
+                {"cluster": "c_0", "bbox": (10, 50, 200, 400), "fingerprint": encode_fingerprint(np.full(768, seed))},
+                {"cluster": "c_1", "bbox": (300, 50, 500, 400), "fingerprint": encode_fingerprint(np.full(768, -seed))},
+            ]
+            return [panel]
+
+    monkeypatch.setattr(stage, "make_detector", lambda name, ctx: TwoPerPage())
+    store, job = await run_vision(tmp_path, [grid_page(h=1400), grid_page(h=1407)])
+    assert job.status == "done", job.error
+    manifest = json.loads(store.path(job.output).read_bytes())
+    doc = parse(PanelsDoc, manifest["panels"])
+    chars = [c for p in doc.panels for c in p.characters]
+    assert [c.id for c in chars] == ["k_0001", "k_0002", "k_0003", "k_0004"]
+    # c_0 of page 1 and c_0 of page 2 are different clusters; the bubble points at its own page's.
+    assert [c.cluster for c in chars] == ["i001.c_0", "i001.c_1", "i002.c_0", "i002.c_1"]
+    assert [p.bubbles[0].speaker for p in doc.panels] == ["i001.c_0", "i002.c_0"]
+    fp = doc.fingerprints
+    assert (fp.dtype, fp.dim, fp.count, fp.model) == ("float16", 768, 4, "magi-test")
+    rows = np.frombuffer(store.path(manifest["files"]["panels/fingerprints.f16"]).read_bytes(), "<f2").reshape(fp.count, fp.dim)
+    assert rows[:, 0].tolist() == [1400, -1400, 1407, -1407] and fp.path == "chapters/ch_0003/panels/fingerprints.f16"
+    assert manifest["report"]["fingerprints"] == 4
+
+
+async def test_tiles_of_a_tall_image_keep_their_clusters_apart(tmp_path):
+    from jumbo_worker.pipeline.vision.tiling import tile_spans
+
+    async def call(model, kind, payload):
+        return {"panels": [], "texts": [{"polygon": [[10, 10], [50, 10], [50, 30], [10, 30]], "kind": "speech", "text": "hi", "speaker": "c_0"}],
+                "characters": [{"bbox": [10, 40, 60, 90], "cluster": "c_0", "fingerprint": "AAAA"}]}
+
+    image = art(6000, 800, seed=3)
+    assert len(tile_spans(6000, 800)) > 1
+    panels = await MagiDetector(call).detect(image, tmp_path / "x.webp")
+    chars = [c for p in panels for c in p.characters]
+    clusters = {c["cluster"] for c in chars}
+    assert len(clusters) == len(chars) and all(c.startswith("t") and c.endswith(".c_0") for c in clusters)
+    assert all(c["fingerprint"] == "AAAA" for c in chars)
+    assert {b["speaker"] for p in panels for b in p.bubbles} <= clusters

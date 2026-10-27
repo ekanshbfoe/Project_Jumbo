@@ -50,6 +50,19 @@ def test_panels_doc_rules():
     ]
     assert problems(PanelsDoc.model_validate(broken("panels-doc.sample.json", overflow))) == ["panels.0: bbox extends past the image"]
 
+    def fingerprinted(d):
+        d["fingerprints"] = {"path": "chapters/ch_0001/panels/fingerprints.f16", "dtype": "float16", "dim": 768, "count": 2, "model": "magi"}
+        box = {"cluster": "i001.c_0", "bbox": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}}
+        d["panels"][0]["characters"] = [{**box, "id": "k_0001"}, {**box, "id": "k_0001"}, box, {**box, "id": "k_0003"}]
+        for p in d["panels"][1:]:
+            p["characters"] = []
+
+    assert problems(PanelsDoc.model_validate(broken("panels-doc.sample.json", fingerprinted))) == [
+        "panels.0.characters.1.id: duplicate character box id k_0001",
+        "panels.0.characters.2.id: a chapter with fingerprints needs an id on every character box",
+        "panels.0.characters.3.id: k_0003 has no fingerprint (the file has 2 rows)",
+    ]
+
 
 def test_script_doc_rules():
     def wrong_counts(d):

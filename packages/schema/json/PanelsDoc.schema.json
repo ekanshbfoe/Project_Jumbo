@@ -25,6 +25,9 @@
       "items": {
         "$ref": "#/$defs/Panel"
       }
+    },
+    "fingerprints": {
+      "$ref": "#/$defs/Fingerprints"
     }
   },
   "required": [
@@ -204,6 +207,10 @@
     "CharacterBox": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^k_\\d{4,}$"
+        },
         "cluster": {
           "type": "string",
           "minLength": 1
@@ -215,6 +222,40 @@
       "required": [
         "cluster",
         "bbox"
+      ]
+    },
+    "Fingerprints": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dtype": {
+          "type": "string",
+          "const": "float16"
+        },
+        "dim": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path",
+        "dtype",
+        "dim",
+        "count",
+        "model"
       ]
     }
   }

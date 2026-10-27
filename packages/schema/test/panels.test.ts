@@ -47,4 +47,17 @@ describe("PanelsDoc", () => {
     expect(PanelsDoc.safeParse(doc([{ ...panel("p_0001", 0), page: "C:\pages\a.webp" }])).success).toBe(false);
     expect(PanelsDoc.safeParse(doc([{ ...panel("p_0001", 0), page: "/abs/a.webp" }])).success).toBe(false);
   });
+
+  it("ties every character box of a fingerprinted chapter to a row", () => {
+    const fingerprints = { path: "chapters/ch_0001/panels/fingerprints.f16", dtype: "float16", dim: 768, count: 2, model: "magi" };
+    const box = (id?: string) => ({ ...(id ? { id } : {}), cluster: "i001.c_0", bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } });
+    const withBoxes = (...boxes: unknown[]) => ({ ...doc([{ ...panel("p_0001", 0), characters: boxes }]), fingerprints });
+    expect(PanelsDoc.safeParse(withBoxes(box("k_0001"), box("k_0002"))).success).toBe(true);
+    const bad = PanelsDoc.safeParse(withBoxes(box("k_0001"), box("k_0001"), box(), box("k_0003")));
+    expect(bad.error?.issues.map((i) => i.message)).toEqual([
+      "duplicate character box id k_0001",
+      "a chapter with fingerprints needs an id on every character box",
+      "k_0003 has no fingerprint (the file has 2 rows)",
+    ]);
+  });
 });

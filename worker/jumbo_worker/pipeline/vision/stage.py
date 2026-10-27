@@ -20,6 +20,7 @@ The output manifest is JSON:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from dataclasses import asdict
 
@@ -126,16 +127,21 @@ async def run(ctx: JobContext) -> str:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
     # Back in chapter order, whatever order the replicas finished in.
-    found: list[tuple[str, np.ndarray, Detection]] = []
+    found: list[tuple[int, str, np.ndarray, Detection]] = []
     for n, ((image, _), detections) in enumerate(zip(images, per_image)):
         for i in reading_order([d.box for d in detections], rtl):
-            found.append((f"pages/page_{n + 1:03d}.webp", image, detections[i]))
+            found.append((n, f"pages/page_{n + 1:03d}.webp", image, detections[i]))
     if not found:
         raise JobError(f"{detector.name} found no panels in this chapter")
 
     panels = []
     bubble_n = 0
-    for order, (rel, image, det) in enumerate(found):
+    # Character boxes get chapter-wide ids (k_0001, ...) and their fingerprints rows in that order.
+    # Clusters are per image, so they are prefixed with it: i003.c_1 is not i004.c_1.
+    rows: list[bytes] = []
+    box_n = 0
+    for order, (n, rel, image, det) in enumerate(found):
+        prefix = f"i{n + 1:03d}."
         h, w = image.shape[:2]
         pid = f"p_{order + 1:04d}"
         x0, y0, x1, y1 = det.box
@@ -147,7 +153,13 @@ async def run(ctx: JobContext) -> str:
         boxes = [Detection(b["polygon"]).box for b in det.bubbles]
         for b in (det.bubbles[i] for i in reading_order(boxes, rtl)):
             bubble_n += 1
-            bubbles.append({"id": f"b_{bubble_n:04d}", "kind": b["kind"], "polygon": _norm_polygon(b["polygon"], w, h), "text": b.get("text"), "speaker": b.get("speaker")})
+            bubbles.append({"id": f"b_{bubble_n:04d}", "kind": b["kind"], "polygon": _norm_polygon(b["polygon"], w, h), "text": b.get("text"), "speaker": prefix + b["speaker"] if b.get("speaker") else None})
+        characters = []
+        for c in det.characters:
+            box_n += 1
+            characters.append({"id": f"k_{box_n:04d}", "cluster": prefix + c["cluster"], "bbox": _norm_box(*c["bbox"], w, h)})
+            if c.get("fingerprint"):
+                rows.append(base64.b64decode(c["fingerprint"]))
         panels.append(
             {
                 "id": pid,
@@ -158,10 +170,16 @@ async def run(ctx: JobContext) -> str:
                 "polygon": _norm_polygon(det.polygon, w, h),
                 "crop": f"chapters/{chapter}/{crop_rel}",
                 "bubbles": bubbles,
-                "characters": [{"cluster": c["cluster"], "bbox": _norm_box(*c["bbox"], w, h)} for c in det.characters],
+                "characters": characters,
             }
         )
-    doc = parse(PanelsDoc, {"schema_version": 1, "chapter_id": chapter, "layout": layout, "panels": panels})
+    fingerprints = None
+    # Only a complete set is kept: a row missing would shift every box after it.
+    if box_n and len(rows) == box_n and len({len(r) for r in rows}) == 1:
+        files["panels/fingerprints.f16"] = await asyncio.to_thread(store.put, b"".join(rows))
+        fingerprints = {"path": f"chapters/{chapter}/panels/fingerprints.f16", "dtype": "float16", "dim": len(rows[0]) // 2, "count": box_n,
+                        "model": getattr(detector, "fingerprint_model", detector.name)}
+    doc = parse(PanelsDoc, {"schema_version": 1, "chapter_id": chapter, "layout": layout, "panels": panels, **({"fingerprints": fingerprints} if fingerprints else {})})
 
     report = {
         "pages": sum(len(c.pages) for c in canvases),
@@ -173,6 +191,7 @@ async def run(ctx: JobContext) -> str:
         "images": len(images),
         "panels": len(panels),
         "text_only_folded": getattr(detector, "folded", 0),
+        "fingerprints": len(rows) if fingerprints else 0,
     }
     manifest = {"schema_version": 1, "chapter_id": chapter, "panels": doc.model_dump(mode="json", exclude_none=True), "files": files, "report": report}
     ctx.progress(1.0, f"{len(panels)} panels from {report['pages']} pages")
