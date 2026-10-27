@@ -12,6 +12,15 @@
   system grows. It uses the chips *and* the host at once.
 - **Queued TPU sessions are never cancelled** except on the project lead's command, or after more than an hour
   without any reply from them. A cancelled request goes to the back of a 24 h+ queue.
+- **A session keeps the chips busy, never idle.** Kaggle limits: 9 h per session, 20 TPU hours a week, one TPU batch
+  session per user, and a session whose chips sit unused for ~2 h is ended. A host-CPU-only job on a TPU machine
+  is not allowed, so every TPU job uses the chips.
+- **Keep-alive with a 60-minute dead-man's switch.** After its work, a session listens on the private gist for
+  commands (python, shell, ping, release). If no command arrives for 60 minutes it ends itself, well before the
+  2-hour idle rule. This window is for pushing follow-up jobs, fine-tuning or debugging.
+- **Session chaining for long jobs.** Fine-tuning saves a checkpoint every 20–30 minutes to a private dataset; the
+  next session loads the latest one and continues, so a run spans several 9-hour sessions. The app re-queues the
+  next session when one ends.
 
 ## The TPU host (measured, probe 2026-10-27)
 v5litepod-8: 8 chips (16 GB HBM each, 128 GB in all; bf16 and int8 in hardware), **224 vCPUs, 378 GB RAM,
@@ -71,7 +80,8 @@ with its memory tiers, and the TPU window holds several scenes or a much larger 
 - TorchTPU is new (Oct 2026). Magi's remote code may need small changes for it.
 
 ## Spikes
-- **Spike 8** (queued): Drama 3 Q8_0 and Qwen3-VL-32B Q8_0 on the host CPUs.
-- **Spike 9** (queued after this ADR): Qwen3-VL-32B bf16 TP=8 on the chips with tpu-inference, then
-  vllm-torchtpu if the first fails; the same three scenes and schema as spike 7b; load time, tokens/s,
-  context ceiling and compile time.
+- **Spike 8** (cancelled 2026-10-27): host CPUs only, which left the chips at 0%.
+- **Spike 9** (queued 2026-10-27, replaces spike 8): Qwen3-VL-32B bf16 TP=8 on the chips with tpu-inference, then
+  vllm-torchtpu if the first fails, while Drama 3 Q8_0 runs on 96 host cores at the same time. The Director uses
+  spike 7d's six scenes, prompt and strict per-scene schema; it measures load time, tokens/s, context ceiling and
+  compile time. Then the 60-minute keep-alive.
