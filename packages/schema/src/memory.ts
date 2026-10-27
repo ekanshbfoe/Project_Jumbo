@@ -48,12 +48,27 @@ export const DeleteOp = z.object({
   confidence: Confidence,
 }).meta({ id: "DeleteOp" });
 
+/**
+ * Two entries turned out to be one entity (a speaker cluster later named, an alias, a duplicate):
+ * `from_id` is folded into `entity_id` and retired. The kept entry wins conflicting fields and gains
+ * the missing ones; the retired name becomes an alias, receipts are combined and references to
+ * `from_id` in other entries point at `entity_id` from then on.
+ */
+export const MergeOp = z.object({
+  op: z.literal("MERGE"),
+  ...entityRef,
+  from_id: EntityId,
+  reason: z.string().min(1).max(300),
+  receipts: Receipts,
+  confidence: Confidence,
+}).meta({ id: "MergeOp" });
+
 export const NoopOp = z.object({
   op: z.literal("NOOP"),
   reason: z.string().max(300).optional(),
 }).meta({ id: "NoopOp" });
 
-export const MemoryOp = z.discriminatedUnion("op", [AddOp, UpdateOp, DeleteOp, NoopOp]);
+export const MemoryOp = z.discriminatedUnion("op", [AddOp, UpdateOp, DeleteOp, MergeOp, NoopOp]);
 
 /** Ops the Librarian proposes for one chapter. The desktop app validates them against the ledger before committing. */
 export const MemoryDelta = z
@@ -74,6 +89,12 @@ export const MemoryDelta = z
       }
       if (!op.entity_id.startsWith(`${op.entity_type}_`)) {
         ctx.addIssue({ code: "custom", path: ["ops", i, "entity_id"], message: `${op.entity_id} does not match type ${op.entity_type}` });
+      }
+      if (op.op === "MERGE" && !op.from_id.startsWith(`${op.entity_type}_`)) {
+        ctx.addIssue({ code: "custom", path: ["ops", i, "from_id"], message: `${op.from_id} does not match type ${op.entity_type}` });
+      }
+      if (op.op === "MERGE" && op.from_id === op.entity_id) {
+        ctx.addIssue({ code: "custom", path: ["ops", i, "from_id"], message: `${op.entity_id} cannot merge into itself` });
       }
       op.receipts.forEach((r, j) => {
         if (r.chapter_id > delta.chapter_id) {

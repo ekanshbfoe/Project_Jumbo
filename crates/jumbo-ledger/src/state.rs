@@ -21,6 +21,9 @@ pub struct Entity {
     pub provenance: BTreeMap<String, ChapterId>,
     pub created_seq: u64,
     pub updated_seq: u64,
+    /// Ids folded into this one by MERGE ops; they can never be used again while it stands.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub merged_from: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -43,6 +46,10 @@ pub enum ApplyError {
     NoReceipts(&'static str),
     #[error("confidence {0} is outside 0..=1")]
     BadConfidence(f64),
+    #[error("{id} was merged into {into}")]
+    MergedInto { id: String, into: String },
+    #[error("{0} cannot merge into itself")]
+    SelfMerge(String),
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -75,6 +82,11 @@ impl BookState {
         self.entities.is_empty()
     }
 
+    /// The entity a retired id was merged into, if it was.
+    pub fn merged_into(&self, id: &str) -> Option<&str> {
+        self.entities.values().find(|e| e.merged_from.iter().any(|m| m == id)).map(|e| e.id.as_str())
+    }
+
     /// Hash of the full state, stable across platforms and map-ordering features.
     pub fn hash(&self) -> String {
         crate::canonical::hash_of(&self.entities).unwrap_or_default()
@@ -85,6 +97,10 @@ impl BookState {
         let Some((entity_type, id)) = op.target() else { return Ok(()) };
         if !entity_type.owns_id(id) {
             return Err(ApplyError::BadId(id.to_owned(), entity_type));
+        }
+        // A retired id stays retired: new facts go to the entity it was merged into.
+        if let Some(into) = self.merged_into(id) {
+            return Err(ApplyError::MergedInto { id: id.to_owned(), into: into.to_owned() });
         }
         let Some(cited) = newest(op.receipts()) else { return Err(ApplyError::NoReceipts(op.kind())) };
         if let Some(c) = op.confidence().filter(|c| !(0.0..=1.0).contains(c)) {
@@ -112,6 +128,7 @@ impl BookState {
                         provenance: BTreeMap::from([(String::new(), cited)]),
                         created_seq: seq,
                         updated_seq: seq,
+                        merged_from: Vec::new(),
                     },
                 );
             }
@@ -141,10 +158,103 @@ impl BookState {
                 }
                 self.entities.remove(id);
             }
+            MemoryOp::Merge { from_id, receipts, .. } => {
+                let kept = existing.ok_or_else(|| ApplyError::Unknown(id.to_owned()))?;
+                if !entity_type.owns_id(from_id) {
+                    return Err(ApplyError::BadId(from_id.clone(), entity_type));
+                }
+                if from_id == id {
+                    return Err(ApplyError::SelfMerge(id.to_owned()));
+                }
+                if let Some(into) = self.merged_into(from_id) {
+                    return Err(ApplyError::MergedInto { id: from_id.clone(), into: into.to_owned() });
+                }
+                let gone = self.entities.get(from_id).ok_or_else(|| ApplyError::Unknown(from_id.clone()))?;
+                if gone.entity_type != entity_type {
+                    return Err(ApplyError::TypeMismatch {
+                        id: from_id.clone(),
+                        actual: gone.entity_type,
+                        claimed: entity_type,
+                    });
+                }
+                let merged = merge(kept, gone, receipts, cited, seq);
+                self.entities.remove(from_id);
+                self.entities.insert(id.to_owned(), merged);
+                // Relationships and other entries that named the retired id now name the kept one.
+                for other in self.entities.values_mut().filter(|e| e.id != id) {
+                    if repoint(&mut other.data, from_id, id) {
+                        other.updated_seq = seq;
+                    }
+                }
+            }
             MemoryOp::Noop { .. } => {}
         }
         Ok(())
     }
+}
+
+/// `gone` folded into `kept`: kept values win, missing fields come from `gone`, the retired names
+/// become aliases, and every receipt and provenance entry is kept.
+fn merge(kept: &Entity, gone: &Entity, receipts: &[Receipt], cited: ChapterId, seq: u64) -> Entity {
+    let mut next = kept.clone();
+    // Aliases first, from the kept entry's own: the retired name, then the names it already carried.
+    let mut aliases: Vec<Value> = kept.data.get("aliases").and_then(Value::as_array).cloned().unwrap_or_default();
+    let before = aliases.clone();
+    let names = gone
+        .data
+        .get("name")
+        .into_iter()
+        .chain(gone.data.get("aliases").and_then(Value::as_array).into_iter().flatten());
+    for name in names.filter(|n| n.is_string()) {
+        if Some(name) != kept.data.get("name") && !aliases.contains(name) {
+            aliases.push(name.clone());
+        }
+    }
+    fill_missing(&mut next.data, &gone.data);
+    if aliases != before {
+        next.data.insert("aliases".into(), Value::Array(aliases));
+        next.provenance.insert("aliases".into(), cited);
+    }
+    for (field, chapter) in &gone.provenance {
+        let slot = next.provenance.entry(field.clone()).or_insert(*chapter);
+        *slot = (*slot).max(*chapter);
+    }
+    next.receipts.extend(gone.receipts.iter().cloned());
+    next.receipts.extend(receipts.iter().cloned());
+    next.merged_from.push(gone.id.clone());
+    next.merged_from.extend(gone.merged_from.iter().cloned());
+    next.created_seq = next.created_seq.min(gone.created_seq);
+    next.updated_seq = seq;
+    next
+}
+
+/// Copies the fields of `from` that `into` lacks, recursing into objects both have.
+fn fill_missing(into: &mut Map<String, Value>, from: &Map<String, Value>) {
+    for (key, value) in from {
+        match (into.get_mut(key), value) {
+            (None, _) => {
+                into.insert(key.clone(), value.clone());
+            }
+            (Some(Value::Object(a)), Value::Object(b)) => fill_missing(a, b),
+            _ => {}
+        }
+    }
+}
+
+/// Replaces every string equal to `from` with `to`; true if anything changed.
+fn repoint(data: &mut Map<String, Value>, from: &str, to: &str) -> bool {
+    fn walk(value: &mut Value, from: &str, to: &str) -> bool {
+        match value {
+            Value::String(s) if s == from => {
+                *s = to.to_owned();
+                true
+            }
+            Value::Array(items) => items.iter_mut().fold(false, |changed, v| walk(v, from, to) | changed),
+            Value::Object(map) => map.values_mut().fold(false, |changed, v| walk(v, from, to) | changed),
+            _ => false,
+        }
+    }
+    data.values_mut().fold(false, |changed, v| walk(v, from, to) | changed)
 }
 
 /// The newest evidence covering `field`: its own entry, any ancestor path, or the entity's ADD.
@@ -285,5 +395,105 @@ mod tests {
         c.apply(0, &add("character_a", 1)).expect("add");
         c.apply(1, &add("character_b", 1)).expect("add");
         assert_eq!(a.hash(), c.hash());
+    }
+
+    fn merge_op(into: &str, from: &str, ch: u32) -> MemoryOp {
+        MemoryOp::Merge {
+            entity_type: EntityType::Character,
+            entity_id: into.into(),
+            from_id: from.into(),
+            reason: "same person".into(),
+            receipts: receipt(ch),
+            confidence: 0.9,
+        }
+    }
+
+    fn character(id: &str, data: Value, ch: u32) -> MemoryOp {
+        MemoryOp::Add {
+            entity_type: EntityType::Character,
+            entity_id: id.into(),
+            data: data.as_object().cloned().expect("obj"),
+            receipts: receipt(ch),
+            confidence: 0.9,
+        }
+    }
+
+    #[test]
+    fn merge_folds_one_entity_into_another_without_losing_anything() {
+        let mut s = BookState::default();
+        s.apply(0, &character("character_saori_ohtori", json!({"name": "Saori Ohtori", "role": "accounting"}), 1))
+            .expect("add");
+        s.apply(
+            1,
+            &character("character_ohtori", json!({"name": "Ohtori", "role": "office", "traits": {"kind": true}}), 1),
+        )
+        .expect("add");
+        let rel = MemoryOp::Add {
+            entity_type: EntityType::Relationship,
+            entity_id: "relationship_tendo_ohtori".into(),
+            data: json!({"from": "character_tendo", "to": "character_ohtori", "kind": "crush"})
+                .as_object()
+                .cloned()
+                .expect("obj"),
+            receipts: receipt(1),
+            confidence: 0.8,
+        };
+        s.apply(2, &rel).expect("add rel");
+        s.apply(3, &merge_op("character_saori_ohtori", "character_ohtori", 2)).expect("merge");
+
+        let kept = s.get("character_saori_ohtori").expect("kept");
+        // Kept values win; missing ones arrive; the retired name is an alias.
+        assert_eq!(kept.data["role"], "accounting");
+        assert_eq!(kept.data["traits"], json!({"kind": true}));
+        assert_eq!(kept.data["aliases"], json!(["Ohtori"]));
+        assert_eq!(kept.merged_from, vec!["character_ohtori".to_string()]);
+        assert_eq!(kept.receipts.len(), 3);
+        assert_eq!((kept.created_seq, kept.updated_seq), (0, 3));
+        assert!(s.get("character_ohtori").is_none());
+        // References follow the merge.
+        let rel = s.get("relationship_tendo_ohtori").expect("rel");
+        assert_eq!(rel.data["to"], "character_saori_ohtori");
+        assert_eq!(rel.updated_seq, 3);
+    }
+
+    #[test]
+    fn a_merged_id_is_retired_and_bad_merges_change_nothing() {
+        let mut s = BookState::default();
+        s.apply(0, &character("character_a", json!({"name": "A"}), 1)).expect("add");
+        s.apply(1, &character("character_b", json!({"name": "B"}), 1)).expect("add");
+        s.apply(2, &add("character_x", 1)).expect("add");
+        let before = s.clone();
+        assert_eq!(
+            s.apply(3, &merge_op("character_a", "character_a", 2)),
+            Err(ApplyError::SelfMerge("character_a".into()))
+        );
+        assert_eq!(
+            s.apply(3, &merge_op("character_a", "character_zz", 2)),
+            Err(ApplyError::Unknown("character_zz".into()))
+        );
+        assert_eq!(
+            s.apply(3, &merge_op("character_zz", "character_a", 2)),
+            Err(ApplyError::Unknown("character_zz".into()))
+        );
+        assert_eq!(s, before);
+
+        s.apply(3, &merge_op("character_a", "character_b", 2)).expect("merge");
+        let retired = Err(ApplyError::MergedInto { id: "character_b".into(), into: "character_a".into() });
+        assert_eq!(s.apply(4, &character("character_b", json!({"name": "B again"}), 2)), retired);
+        assert_eq!(s.apply(4, &update("character_b", "name", json!("B"), 2)), retired);
+        assert_eq!(s.apply(4, &merge_op("character_x", "character_b", 2)), retired);
+        // A chain keeps every retired id: merging a into x retires b too.
+        s.apply(4, &merge_op("character_x", "character_a", 2)).expect("merge chain");
+        assert_eq!(s.merged_into("character_b"), Some("character_x"));
+        assert_eq!(s.get("character_x").expect("x").data["aliases"], json!(["A", "B"]));
+    }
+
+    #[test]
+    fn states_without_merges_hash_as_before() {
+        // merged_from is left out when empty, so ledgers written before MERGE replay to the same hash.
+        let mut s = BookState::default();
+        s.apply(0, &add("character_a", 1)).expect("add");
+        let json = serde_json::to_string(s.get("character_a").expect("a")).expect("ser");
+        assert!(!json.contains("merged_from"));
     }
 }

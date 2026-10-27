@@ -37,4 +37,16 @@ describe("MemoryDelta", () => {
     const op = { op: "ADD", entity_type: "item", entity_id: "item_dagger", data: {}, receipts: [receipt], confidence: 1 };
     expect(MemoryDelta.safeParse(delta([op, op])).success).toBe(false);
   });
+
+  it("accepts a MERGE and rejects one across types or into itself", () => {
+    const merge = (from_id: string, entity_id = "character_saori_ohtori") => ({
+      op: "MERGE", entity_type: "character", entity_id, from_id, reason: "same person, given and family name", receipts: [receipt], confidence: 0.9,
+    });
+    expect(MemoryDelta.parse(delta([merge("character_ohtori")])).ops[0]?.op).toBe("MERGE");
+    const bad = MemoryDelta.safeParse(delta([merge("faction_ohtori"), merge("character_saori_ohtori")]));
+    expect(bad.error?.issues.map((i) => i.message)).toEqual([
+      "faction_ohtori does not match type character",
+      "character_saori_ohtori cannot merge into itself",
+    ]);
+  });
 });

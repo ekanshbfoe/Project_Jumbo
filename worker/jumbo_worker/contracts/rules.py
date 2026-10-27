@@ -174,6 +174,10 @@ def memory_delta(delta: MemoryDelta) -> list[str]:
             added.add(op.entity_id)
         if not op.entity_id.startswith(f"{op.entity_type}_"):
             out.append(f"ops.{i}.entity_id: {op.entity_id} does not match type {op.entity_type}")
+        if op.op == "MERGE" and not op.from_id.startswith(f"{op.entity_type}_"):
+            out.append(f"ops.{i}.from_id: {op.from_id} does not match type {op.entity_type}")
+        if op.op == "MERGE" and op.from_id == op.entity_id:
+            out.append(f"ops.{i}.from_id: {op.entity_id} cannot merge into itself")
         for j, receipt in enumerate(op.receipts):
             # ch_NNNN ids compare correctly as strings.
             if receipt.chapter_id > delta.chapter_id:

@@ -89,6 +89,16 @@ pub enum MemoryOp {
     },
     #[serde(rename = "DELETE")]
     Delete { entity_type: EntityType, entity_id: String, reason: String, receipts: Vec<Receipt>, confidence: f64 },
+    /// `from_id` is the same entity as `entity_id`: it is folded into it and retired.
+    #[serde(rename = "MERGE")]
+    Merge {
+        entity_type: EntityType,
+        entity_id: String,
+        from_id: String,
+        reason: String,
+        receipts: Vec<Receipt>,
+        confidence: f64,
+    },
     #[serde(rename = "NOOP")]
     Noop {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -102,23 +112,28 @@ impl MemoryOp {
         match self {
             Self::Add { entity_type, entity_id, .. }
             | Self::Update { entity_type, entity_id, .. }
-            | Self::Delete { entity_type, entity_id, .. } => Some((*entity_type, entity_id)),
+            | Self::Delete { entity_type, entity_id, .. }
+            | Self::Merge { entity_type, entity_id, .. } => Some((*entity_type, entity_id)),
             Self::Noop { .. } => None,
         }
     }
 
     pub fn receipts(&self) -> &[Receipt] {
         match self {
-            Self::Add { receipts, .. } | Self::Update { receipts, .. } | Self::Delete { receipts, .. } => receipts,
+            Self::Add { receipts, .. }
+            | Self::Update { receipts, .. }
+            | Self::Delete { receipts, .. }
+            | Self::Merge { receipts, .. } => receipts,
             Self::Noop { .. } => &[],
         }
     }
 
     pub fn confidence(&self) -> Option<f64> {
         match self {
-            Self::Add { confidence, .. } | Self::Update { confidence, .. } | Self::Delete { confidence, .. } => {
-                Some(*confidence)
-            }
+            Self::Add { confidence, .. }
+            | Self::Update { confidence, .. }
+            | Self::Delete { confidence, .. }
+            | Self::Merge { confidence, .. } => Some(*confidence),
             Self::Noop { .. } => None,
         }
     }
@@ -128,6 +143,7 @@ impl MemoryOp {
             Self::Add { .. } => "ADD",
             Self::Update { .. } => "UPDATE",
             Self::Delete { .. } => "DELETE",
+            Self::Merge { .. } => "MERGE",
             Self::Noop { .. } => "NOOP",
         }
     }

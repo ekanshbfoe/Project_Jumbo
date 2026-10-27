@@ -34,6 +34,16 @@ class DeleteOp(BaseModel):
     confidence: Annotated[float, Field(ge=0.0, le=1.0)]
 
 
+class MergeOp(BaseModel):
+    op: Literal["MERGE"]
+    entity_type: Literal["character", "faction", "location", "item", "relationship", "plot_thread"]
+    entity_id: Annotated[str, Field(pattern="^[a-z]+(?:_[a-z0-9]+)+$")]
+    from_id: Annotated[str, Field(pattern="^[a-z]+(?:_[a-z0-9]+)+$")]
+    reason: Annotated[str, Field(max_length=300, min_length=1)]
+    receipts: Annotated[list[Receipt], Field(min_length=1)]
+    confidence: Annotated[float, Field(ge=0.0, le=1.0)]
+
+
 class NoopOp(BaseModel):
     op: Literal["NOOP"]
     reason: Annotated[str | None, Field(max_length=300)] = None
@@ -52,4 +62,4 @@ class MemoryDelta(BaseModel):
     schema_version: Literal[1]
     chapter_id: Annotated[str, Field(pattern="^ch_\\d{4}$")]
     base_ledger_offset: Annotated[int, Field(ge=0, le=9007199254740991)]
-    ops: list[AddOp | UpdateOp | DeleteOp | NoopOp]
+    ops: list[AddOp | UpdateOp | DeleteOp | MergeOp | NoopOp]

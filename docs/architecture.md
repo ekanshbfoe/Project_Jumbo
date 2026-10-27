@@ -294,7 +294,7 @@ The ceiling is one config value, `hbm_ceiling` (default 0.80; spike 6 may raise 
   - When T1 exceeds its budget, the oldest T1 chapter is promoted to a T2 factual summary.
   - When T2 exceeds its budget, contiguous chapters within an arc boundary (user-defined or Qwen-proposed) are condensed into a T3 recap.
   - Full receipts are **never deleted**. They remain in the ledger, so a summary is only a view and can always be regenerated.
-- **Librarian ops schema:** `{op: ADD|UPDATE|DELETE|NOOP, entity_type, entity_id, field, value, receipts:[{chapter, panel_id, quote}], confidence}`. Decoding is grammar-constrained and then validated by `jumbo-ledger` rules (§3 invariants). Low-confidence ops are highlighted at the Gate.
+- **Librarian ops schema:** `{op: ADD|UPDATE|DELETE|MERGE|NOOP, entity_type, entity_id, field, value, receipts:[{chapter, panel_id, quote}], confidence}`. MERGE folds `from_id` into `entity_id` (duplicates, a speaker cluster later named): kept values win, missing fields and aliases come over, receipts are combined, references are re-pointed and the retired id can never be used again. Decoding is grammar-constrained and then validated by `jumbo-ledger` rules (§3 invariants). Low-confidence ops are highlighted at the Gate.
 - **Stop / End Session workflow:**
   1. The app sends `session.stop`. The worker immediately sets `draining`, aborts in-flight Qwen/Librarian generation, and stops dequeuing generation jobs. Voice and render jobs for *already-approved* chapters may finish (user toggle).
   2. **Consolidation pass:** for every chapter newly approved this session, the worker writes T2 summaries, updates T3 if an arc closed, and runs a Librarian reconciliation pass. This produces a `consolidation.delta`.

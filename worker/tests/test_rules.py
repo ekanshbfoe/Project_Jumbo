@@ -115,6 +115,18 @@ def test_memory_delta_rules():
         "ops.2.receipts.0: receipt cites future chapter ch_0004",
     ]
 
+    def merges(d):
+        receipt = d["ops"][0]["receipts"]
+        base = {"op": "MERGE", "entity_type": "character", "reason": "same person", "receipts": receipt, "confidence": 0.9}
+        d["ops"] = [{**base, "entity_id": "character_jinwoo", "from_id": "character_sung"},
+                    {**base, "entity_id": "character_jinwoo", "from_id": "faction_hunters"},
+                    {**base, "entity_id": "character_jinwoo", "from_id": "character_jinwoo"}]
+
+    assert problems(MemoryDelta.model_validate(broken("memory-delta.sample.json", merges))) == [
+        "ops.1.from_id: faction_hunters does not match type character",
+        "ops.2.from_id: character_jinwoo cannot merge into itself",
+    ]
+
 
 def test_ledger_event_part_must_fit_its_commit():
     line = json.loads((FIXTURES / "ledger.sample.jsonl").read_text(encoding="utf-8").splitlines()[0])

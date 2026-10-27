@@ -34,6 +34,16 @@ class DeleteOp(BaseModel):
     confidence: Annotated[float, Field(ge=0.0, le=1.0)]
 
 
+class MergeOp(BaseModel):
+    op: Literal["MERGE"]
+    entity_type: Literal["character", "faction", "location", "item", "relationship", "plot_thread"]
+    entity_id: Annotated[str, Field(pattern="^[a-z]+(?:_[a-z0-9]+)+$")]
+    from_id: Annotated[str, Field(pattern="^[a-z]+(?:_[a-z0-9]+)+$")]
+    reason: Annotated[str, Field(max_length=300, min_length=1)]
+    receipts: Annotated[list[Receipt], Field(min_length=1)]
+    confidence: Annotated[float, Field(ge=0.0, le=1.0)]
+
+
 class NoopOp(BaseModel):
     op: Literal["NOOP"]
     reason: Annotated[str | None, Field(max_length=300)] = None
@@ -61,6 +71,6 @@ class LedgerEvent(BaseModel):
     ]
     chapter_id: Annotated[str, Field(pattern="^ch_\\d{4}$")]
     session: Annotated[str | None, Field(min_length=1)] = None
-    op: AddOp | UpdateOp | DeleteOp | NoopOp
+    op: AddOp | UpdateOp | DeleteOp | MergeOp | NoopOp
     prev: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
     hash: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]

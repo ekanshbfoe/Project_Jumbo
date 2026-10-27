@@ -49,6 +49,9 @@
           "$ref": "#/$defs/DeleteOp"
         },
         {
+          "$ref": "#/$defs/MergeOp"
+        },
+        {
           "$ref": "#/$defs/NoopOp"
         }
       ]
@@ -240,6 +243,60 @@
         "op",
         "entity_type",
         "entity_id",
+        "reason",
+        "receipts",
+        "confidence"
+      ]
+    },
+    "MergeOp": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "const": "MERGE"
+        },
+        "entity_type": {
+          "type": "string",
+          "enum": [
+            "character",
+            "faction",
+            "location",
+            "item",
+            "relationship",
+            "plot_thread"
+          ]
+        },
+        "entity_id": {
+          "type": "string",
+          "pattern": "^[a-z]+(?:_[a-z0-9]+)+$"
+        },
+        "from_id": {
+          "type": "string",
+          "pattern": "^[a-z]+(?:_[a-z0-9]+)+$"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "receipts": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Receipt"
+          }
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "op",
+        "entity_type",
+        "entity_id",
+        "from_id",
         "reason",
         "receipts",
         "confidence"
