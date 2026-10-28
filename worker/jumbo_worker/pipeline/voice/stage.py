@@ -5,7 +5,8 @@ Input blob (JSON):
     {"script": ScriptDoc,
      "voices": {"narrator": {"design": "deep, calm Indian male narrator voice",  # used once, to create it
                              "prompts": {"neutral": "<blob>", "sad": "<blob>"}}},  # voice files
-     "seed": 7}                                                                  # optional
+     "seed": 7,                                                                  # optional
+     "pacing": true, "tempo": 1.1}                                               # optional (defaults shown)
 
 A voice with no prompts yet is created on first use: the model speaks the voice's first line in a voice
 it invents from the description, and that take becomes the voice's neutral reference. The new prompt comes back in
@@ -15,14 +16,16 @@ until then lines fall back to neutral.
 
 Each take is checked (pipeline/voice/takes.py) and spoken again with the next seed when it stopped early, is
 silent, or is far off the length its text should take; the best of ATTEMPTS is kept and the report says so.
-Silence is cut off both ends; nothing else touches the audio. The lines' lengths then set the panels'
-(buildEpisodeSpec), so nothing is fitted to a duration.
+Silence is cut off both ends. Then, unless `pacing` is false, the pauses inside the line are shortened (takes.tighten:
+only the middle of a silence is cut) and the line plays `tempo` times faster at the same pitch (takes.tempo), the
+pace of the recap channels the project follows. The lines' lengths then set the panels' (buildEpisodeSpec), so
+nothing is fitted to a duration.
 
 Output manifest:
 
     {"chapter_id", "audio": AudioManifest, "files": {"audio/l_0001.wav": "<blob>"},
      "voices": {"narrator": {"neutral": "<blob>"}},  # voice files created by this run
-     "report": {"lines": [{"line_id", "voice", "emotion_clip", "duration", "attempts", "seed", "problem"?}]}}
+     "report": {"lines": [{"line_id", "voice", "emotion_clip", "duration", "attempts", "seed", "tightened_s", "problem"?}]}}
 """
 
 from __future__ import annotations
@@ -60,6 +63,8 @@ async def run(ctx: JobContext) -> str:
     chapter = script.chapter_id
     voices: dict[str, dict] = request.get("voices") or {}
     seed = int(request.get("seed", DEFAULT_SEED))
+    pacing = bool(request.get("pacing", True))
+    speed = float(request.get("tempo", takes.TEMPO))
     store = ctx.store
     work = Path(tempfile.mkdtemp(prefix="voice-", dir=store.root))
     try:
@@ -94,13 +99,17 @@ async def run(ctx: JobContext) -> str:
                        "tone": direction.tone if direction else None, "pace": direction.pace if direction else None}
             async with gate:
                 take = await _best_take(ctx, work, line_id, payload, seed)
+            tightened = 0.0
+            if pacing:
+                take["pcm"], tightened = await asyncio.to_thread(_pace, take["pcm"], take["rate"], speed)
+                await asyncio.to_thread(write_pcm, take["path"], take["pcm"], take["rate"])
             rates.add(take["rate"])
             rel = f"audio/{line_id}.wav"
             files[rel] = await asyncio.to_thread(store.put, Path(take["path"]).read_bytes())
             duration = round(len(take["pcm"]) / take["rate"], 4)
             clips[line_id] = {"line_id": line_id, "src": f"chapters/{chapter}/{rel}", "duration": duration}
             report[line_id] = {"line_id": line_id, "voice": voice, "emotion_clip": used, "duration": duration,
-                               "attempts": take["attempts"], "seed": take["seed"], "trimmed_s": take["trimmed_s"]}
+                               "attempts": take["attempts"], "seed": take["seed"], "trimmed_s": take["trimmed_s"], "tightened_s": tightened}
             if take["problem"]:
                 report[line_id]["problem"] = take["problem"]
             done += 1
@@ -129,6 +138,12 @@ async def run(ctx: JobContext) -> str:
         return store.put(json.dumps(manifest).encode())
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _pace(pcm, rate: int, speed: float):
+    """A checked take at recap pace: pauses shortened, then sped up at the same pitch."""
+    tight, removed = takes.tighten(pcm, rate)
+    return takes.tempo(tight, rate, speed), removed
 
 
 def _speaker(line) -> str:

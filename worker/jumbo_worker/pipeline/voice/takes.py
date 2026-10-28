@@ -99,3 +99,79 @@ def problem(text: str, pcm: np.ndarray, rate: int, stop: str | None) -> str | No
 def distance(text: str, pcm: np.ndarray, rate: int) -> float:
     """How far a take's length is from the text's, to pick the best of several failed takes."""
     return abs(np.log(max(len(pcm) / rate, 0.05) / max(expected_seconds(text), 0.05)))
+
+
+# Pacing. Recap narrators breathe quickly: a pause between phrases keeps at most PHRASE_PAUSE_S and one long enough
+# to be a sentence break (SENTENCE_BREAK_S or more) at most SENTENCE_PAUSE_S. Only the middle of a pause is cut, so
+# no sample of speech is touched; then the take plays TEMPO times faster at the same pitch. Video test 1 (2026-10-28):
+# 29% of the narration was pauses over 0.25 s, at 134 words a minute against the reference channels' ~250.
+PHRASE_PAUSE_S = 0.18
+SENTENCE_PAUSE_S = 0.35
+SENTENCE_BREAK_S = 0.6
+TIGHT_DBFS = -40.0
+TEMPO = 1.1
+_TIGHT_WINDOW_S = 0.01
+_FADE_S = 0.005
+
+
+def tighten(pcm: np.ndarray, rate: int) -> tuple[np.ndarray, float]:
+    """The take with every pause between its first and last sound shortened to its cap: (pcm, seconds removed)."""
+    win = max(1, int(_TIGHT_WINDOW_S * rate))
+    n = len(pcm) // win
+    if n < 3:
+        return pcm, 0.0
+    frames = pcm[: n * win].reshape(n, win).astype(np.float64) / 32768
+    quiet = np.sqrt(np.mean(frames**2, axis=1)) < 10 ** (TIGHT_DBFS / 20)
+    loud = np.flatnonzero(~quiet)
+    if len(loud) < 2:
+        return pcm, 0.0
+    cuts = []  # (first sample removed, first sample kept after)
+    i, last = loud[0], loud[-1]
+    while i <= last:
+        if not quiet[i]:
+            i += 1
+            continue
+        j = i
+        while j <= last and quiet[j]:
+            j += 1
+        length = (j - i) * win / rate
+        cap = SENTENCE_PAUSE_S if length >= SENTENCE_BREAK_S else PHRASE_PAUSE_S
+        if length > cap:
+            keep = int(cap * rate / 2)
+            cuts.append((i * win + keep, j * win - keep))
+        i = j
+    if not cuts:
+        return pcm, 0.0
+    fade = max(1, int(_FADE_S * rate))
+    parts, start = [], 0
+    for a, b in cuts:
+        parts.append(pcm[start:a].astype(np.float64))
+        start = b
+    parts.append(pcm[start:].astype(np.float64))
+    out = parts[0]
+    ramp = np.linspace(0.0, 1.0, fade)
+    for part in parts[1:]:
+        # A 5 ms crossfade inside the silence, so the join cannot click.
+        f = min(fade, len(out), len(part))
+        joined = out[-f:] * ramp[::-1][-f:] + part[:f] * ramp[:f] if f else np.empty(0)
+        out = np.concatenate([out[: len(out) - f], joined, part[f:]])
+    removed = (len(pcm) - len(out)) / rate
+    return np.clip(np.round(out), -32768, 32767).astype("<i2"), round(removed, 3)
+
+
+def tempo(pcm: np.ndarray, rate: int, factor: float = TEMPO) -> np.ndarray:
+    """The take `factor` times faster at the same pitch (ffmpeg's atempo, WSOLA). 1.0 returns it unchanged."""
+    if abs(factor - 1.0) < 1e-6:
+        return pcm
+    import shutil
+    import subprocess
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg is needed to speed up a take")
+    raw = subprocess.run(
+        [ffmpeg, "-v", "error", "-f", "s16le", "-ar", str(rate), "-ac", "1", "-i", "pipe:0", "-filter:a", f"atempo={factor}",
+         "-f", "s16le", "-ar", str(rate), "-ac", "1", "pipe:1"],
+        input=np.asarray(pcm, "<i2").tobytes(), capture_output=True, check=True,
+    ).stdout
+    return np.frombuffer(raw, "<i2").copy()

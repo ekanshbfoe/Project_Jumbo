@@ -72,6 +72,36 @@ def test_take_checks():
     assert takes.expected_seconds("[sighs] <|speaker:0|> " + text) == takes.expected_seconds(text)
 
 
+
+def test_tighten_shortens_pauses_and_keeps_every_sound():
+    phrase, sentence = np.zeros(int(0.5 * RATE), "<i2"), np.zeros(int(1.2 * RATE), "<i2")
+    a, b, c = speech(1.0), speech(0.8), speech(0.6)
+    out, removed = takes.tighten(np.concatenate([a, phrase, b, sentence, c]), RATE)
+    # A 0.5 s phrase pause keeps 0.18 s and a 1.2 s sentence pause 0.35 s (to the 10 ms analysis window).
+    assert abs(removed - ((0.5 - takes.PHRASE_PAUSE_S) + (1.2 - takes.SENTENCE_PAUSE_S))) < 0.03
+    # The sound itself is untouched: each tone's samples are all there, in order.
+    fade = int(takes._FADE_S * RATE)
+    for tone in (a[fade:-fade], b[fade:-fade], c[fade:-fade]):
+        hits = np.flatnonzero(np.all(np.lib.stride_tricks.sliding_window_view(out, 32) == tone[:32], axis=1))
+        assert len(hits) and np.array_equal(out[hits[0] : hits[0] + len(tone)], tone)
+    # A take with only short pauses is left as it is.
+    short = np.concatenate([a, np.zeros(int(0.1 * RATE), "<i2"), b])
+    same, removed = takes.tighten(short, RATE)
+    assert same is short and removed == 0.0
+
+
+def test_tempo_speeds_up_without_changing_rate():
+    import shutil
+
+    import pytest
+
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed")
+    pcm = speech(3.0)
+    out = takes.tempo(pcm, RATE, 1.1)
+    assert abs(len(out) / RATE - 3.0 / 1.1) < 0.05
+    assert takes.tempo(pcm, RATE, 1.0) is pcm
+
 class FakeWorker:
     """speech.cpp's `worker` on the other end of the pipes: answers JSON lines with base64 PCM chunks."""
 
@@ -167,7 +197,9 @@ class FakeVoice:
         pass
 
 
-async def test_voice_job_creates_voices_once_retries_bad_takes_and_trims(tmp_path):
+async def test_voice_job_creates_voices_once_retries_bad_takes_and_trims(tmp_path, monkeypatch):
+    # The speed-up is ffmpeg's; here a stand-in keeps 10 samples in 11, which is the same length change.
+    monkeypatch.setattr(takes, "tempo", lambda pcm, rate, factor=takes.TEMPO: pcm[np.arange(len(pcm)) % 11 != 10])
     cfg = PoolConfig.model_validate({"chips": 0, "tick_s": 0.02, "models": {"drama3": {"backend": "fake", "max_replicas": 2, "wake_s": 0}}})
     log = []
 
@@ -213,7 +245,9 @@ async def test_voice_job_creates_voices_once_retries_bad_takes_and_trims(tmp_pat
     assert [c["line_id"] for c in audio["clips"]] == [line["id"] for line in lines]
     first = audio["clips"][0]
     assert first["src"] == f"chapters/{script['chapter_id']}/audio/{lines[0]['id']}.wav"
-    assert abs(first["duration"] - (takes.expected_seconds(lines[0]["narration"]) + 2 * takes.KEEP_S)) < 0.01
+    # Then each line was paced: no pause to shorten in a steady tone, and 1.1 times faster.
+    assert all(r["tightened_s"] == 0.0 for r in report.values())
+    assert abs(first["duration"] - (takes.expected_seconds(lines[0]["narration"]) + 2 * takes.KEEP_S) / 1.1) < 0.01
     assert set(manifest["files"]) == {f"audio/{line['id']}.wav" for line in lines}
     assert all(store.has(h) for h in manifest["files"].values())
 
