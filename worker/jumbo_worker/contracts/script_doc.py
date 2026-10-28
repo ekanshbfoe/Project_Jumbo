@@ -188,7 +188,7 @@ class ZoomPreset(BaseModel):
 class ScriptLine(BaseModel):
     id: Annotated[str, Field(pattern="^l_\\d{4}$")]
     panel_ids: Annotated[list[PanelId], Field(max_length=3, min_length=1)]
-    narration: Annotated[str, Field(max_length=600, min_length=1)]
+    narration: Annotated[str, Field(max_length=2000, min_length=1)]
     emotion: Literal["calm", "tense", "action", "shock", "sad", "comedic", "romantic", "mysterious", "triumphant"]
     voice: Annotated[VoiceDirection | None, Field(validate_default=True)] = {}
     preset: HoldPreset | ZoomPreset | PanPreset | ShakePreset | ActionTiltPreset | KineticJitterPreset | PanoramicFadePreset | SplitScreenPreset | FloatingPanelsPreset | HorizontalSlicesPreset | HudPopupPreset

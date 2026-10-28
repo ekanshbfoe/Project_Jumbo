@@ -49,7 +49,7 @@
         "narration": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 600
+          "maxLength": 2000
         },
         "emotion": {
           "type": "string",
