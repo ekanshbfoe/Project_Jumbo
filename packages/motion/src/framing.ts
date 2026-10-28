@@ -1,4 +1,4 @@
-import type { CameraTransform } from "./components/Camera";
+import { IDENTITY_CAMERA, type CameraTransform } from "./components/Camera";
 import type { Rect, Size } from "./geometry";
 
 /** How far a panel may reach past the frame's edge, as a fraction of the frame: the panel itself is never cropped. */
@@ -52,4 +52,34 @@ export function keepInFrame(t: CameraTransform, rect: Rect, frame: Size, source:
     return mid + soft(v - mid, (hi - lo) / 2);
   };
   return { ...t, scale, x: limit(cx, halfW, frame.width, mx, t.x), y: limit(cy, halfH, frame.height, my, t.y) };
+}
+
+/** Widest a scrolled tall panel is shown, as a share of the frame width. */
+export const SCROLL_WIDTH = 0.56;
+/** Margin kept above the panel's top at the start of a scroll and below its bottom at the end, as a share of the frame height. */
+const SCROLL_MARGIN = 0.04;
+/** Share of the beat held still at each end of a scroll, so the first and last shots can be read. */
+const SCROLL_HOLD = 0.08;
+
+/**
+ * A tall panel shown wide enough to read and scrolled from its top to its bottom over the beat ("down"), or the
+ * other way ("up"), as a webtoon is read. Null when the panel is not tall enough to need it.
+ */
+export function scrollShot(
+  source: Size,
+  frame: Size,
+  progress: number,
+  direction: "up" | "down",
+): { rect: Rect; transform: CameraTransform } | null {
+  const width = Math.min(frame.width * SCROLL_WIDTH, source.width * MAX_UPSCALE);
+  const height = (width * source.height) / source.width;
+  const m = frame.height * SCROLL_MARGIN;
+  if (height <= frame.height - 2 * m) return null;
+  const t = Math.min(1, Math.max(0, (progress - SCROLL_HOLD) / (1 - 2 * SCROLL_HOLD)));
+  const eased = 0.5 - Math.cos(Math.PI * (direction === "down" ? t : 1 - t)) / 2;
+  const y = m + eased * (frame.height - height - 2 * m);
+  return {
+    rect: { left: (frame.width - width) / 2, top: 0, width, height },
+    transform: { ...IDENTITY_CAMERA, y },
+  };
 }

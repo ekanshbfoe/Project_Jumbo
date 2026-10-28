@@ -3,7 +3,7 @@ import { AbsoluteFill, Html5Audio, Img, useCurrentFrame, useVideoConfig } from "
 import { AmbientLayer } from "../ambient/AmbientLayer";
 import { useAssetResolver } from "../assets";
 import { fitContain, panelSize, splitFrame } from "../geometry";
-import { capUpscale, keepInFrame } from "../framing";
+import { capUpscale, keepInFrame, scrollShot } from "../framing";
 import { PRESETS } from "../presets/registry";
 import type { PanelSlot, PresetContext, PresetImpl } from "../presets/types";
 import { Camera } from "./Camera";
@@ -55,6 +55,13 @@ export function BeatView({
   const impl = PRESETS[beat.preset.name] as PresetImpl<PresetName>;
   const rects = layout(beat, panels, width, height, impl);
   const shadow = impl.panelShadow?.(height / 1080) ?? true;
+  // A single tall panel panned up or down is scrolled through at a readable width instead of shown whole and small.
+  const pan = beat.preset.name === "pan" ? beat.preset.params.direction : undefined;
+  const scroll =
+    panels.length === 1 && (pan === "down" || pan === "up")
+      ? scrollShot(panelSize(panels[0]!), { width, height }, durationInFrames <= 1 ? 1 : frame / (durationInFrames - 1), pan)
+      : null;
+  if (scroll) rects[0] = scroll.rect;
   const ctx = (index: number): PresetContext => ({
     frame,
     durationInFrames,
@@ -89,7 +96,9 @@ export function BeatView({
           key={panel.id}
           // A single panel's move is kept inside the frame: the panel is never cropped (multi-panel presets slide in by design).
           transform={
-            panels.length === 1
+            scroll
+              ? scroll.transform
+              : panels.length === 1
               ? keepInFrame(impl.camera(ctx(i), beat.preset.params as never), rects[i]!, { width, height }, panelSize(panel))
               : impl.camera(ctx(i), beat.preset.params as never)
           }

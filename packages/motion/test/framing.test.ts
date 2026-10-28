@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { IDENTITY_CAMERA } from "../src/components/Camera";
-import { capUpscale, keepInFrame, MAX_UPSCALE, OVERSCAN } from "../src/framing";
+import { capUpscale, keepInFrame, MAX_UPSCALE, OVERSCAN, scrollShot, SCROLL_WIDTH } from "../src/framing";
 import { fitContain } from "../src/geometry";
 
 const frame = { width: 1920, height: 1080 };
@@ -53,5 +53,27 @@ describe("keepInFrame", () => {
     const tall = fitContain({ width: 800, height: 2400 }, frame, 0.06);
     const b = box(keepInFrame({ ...IDENTITY_CAMERA, y: 400, scale: 1.04 }, tall, frame, { width: 800, height: 2400 }), tall);
     expect(b.bottom).toBeLessThanOrEqual(frame.height * (1 + OVERSCAN) + 0.5);
+  });
+});
+
+describe("scrollShot", () => {
+  const frame = { width: 1920, height: 1080 };
+
+  it("scrolls a tall panel from its top to its bottom at a readable width", () => {
+    const tall = { width: 1080, height: 2700 };
+    const start = scrollShot(tall, frame, 0, "down")!;
+    const end = scrollShot(tall, frame, 1, "down")!;
+    expect(start.rect.width).toBeCloseTo(1920 * SCROLL_WIDTH, 6);
+    // Top edge just inside the frame at the start, bottom edge just inside it at the end.
+    expect(start.transform.y).toBeGreaterThan(0);
+    expect(end.transform.y + end.rect.height).toBeLessThan(1080);
+    expect(end.transform.y + end.rect.height).toBeGreaterThan(1000);
+    expect(scrollShot(tall, frame, 0, "up")!.transform.y).toBeCloseTo(end.transform.y, 6);
+  });
+
+  it("leaves a panel that fits the frame alone, and never magnifies past the cap", () => {
+    expect(scrollShot({ width: 1080, height: 900 }, frame, 0.5, "down")).toBeNull();
+    const small = scrollShot({ width: 300, height: 1500 }, frame, 0, "down")!;
+    expect(small.rect.width).toBe(300 * MAX_UPSCALE);
   });
 });
