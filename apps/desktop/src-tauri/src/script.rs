@@ -244,6 +244,10 @@ fn approve(project: &Project, id: ChapterId, script: &Value) -> CmdResult<Chapte
     if memory::approve(project, id, last_lines)? {
         memory::mark_later_stale(project, id)?;
     }
+    // Approving is the person's check of the script against the story as it now is.
+    if manifest.stale {
+        manifest = chapter::set_stale(project, id, false).map_err(msg)?;
+    }
     while manifest.state < ChapterState::Approved {
         let next = manifest.state.next().ok_or("no next stage")?;
         manifest = chapter::advance(project, id, next).map_err(msg)?;

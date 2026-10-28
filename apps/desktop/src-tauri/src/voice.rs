@@ -156,6 +156,11 @@ pub async fn record_voice(
         if !matches!(manifest.state, ChapterState::Approved | ChapterState::Voiced) {
             return Err(format!("{chapter} is {}; approve its script first", manifest.state.as_str()));
         }
+        if manifest.stale {
+            return Err(format!(
+                "{chapter} is stale: the story before it changed after its script was written. Send it back to Directed, check the script against the new story and approve it again"
+            ));
+        }
         let dir = chapter::chapter_dir(p, id);
         let text = std::fs::read_to_string(dir.join("script").join("approved.json"))
             .map_err(|e| format!("approved.json: {e}"))?;
