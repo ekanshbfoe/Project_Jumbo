@@ -7,6 +7,7 @@ mod credentials;
 mod recent;
 mod script;
 mod vision;
+mod voice;
 
 use tauri::Manager;
 
@@ -52,6 +53,10 @@ fn main() {
             script::write_script,
             script::chapter_script,
             script::approve_script,
+            voice::voice_library,
+            voice::import_voice,
+            voice::record_voice,
+            voice::chapter_audio,
             bridge::stop_session,
         ])
         .run(tauri::generate_context!())

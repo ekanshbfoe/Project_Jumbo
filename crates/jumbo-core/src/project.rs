@@ -63,6 +63,10 @@ impl ProjectPaths {
     pub fn receipt_book(&self) -> PathBuf {
         self.root.join("receipt_book")
     }
+    /// The project's voice library: `voices/<speaker>/<emotion>.voice.gguf`, shared by every chapter.
+    pub fn voices(&self) -> PathBuf {
+        self.root.join("voices")
+    }
     pub fn exports(&self) -> PathBuf {
         self.root.join("exports")
     }
