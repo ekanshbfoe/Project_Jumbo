@@ -406,7 +406,10 @@ const WORKER_RETRY: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Whether the session has ended for good, so retrying cannot help.
 fn session_over(state: &BridgeState) -> bool {
-    state.view.lock().map_or(true, |v| matches!(*v, SessionView::Failed { .. } | SessionView::Stopped | SessionView::Idle))
+    state
+        .view
+        .lock()
+        .map_or(true, |v| matches!(*v, SessionView::Failed { .. } | SessionView::Stopped | SessionView::Idle))
 }
 
 /// Runs `call` on the connected worker, retrying through dropped requests and reconnects. Every try takes the
