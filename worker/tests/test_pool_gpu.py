@@ -231,3 +231,15 @@ async def test_an_exclusive_replica_is_placed_alone_and_survives_past_the_ceilin
     await pool.close()
     assert placed == [(0, 1)] and pool.kills == 0
     assert not any(e["type"] in ("pool.hbm_kill", "pool.hbm_soft") for e in events)
+
+
+def test_the_director_runs_alone_on_both_t4s():
+    cfg = load_specs(chips=0, gpus=2)
+    director = cfg.spec("qwen3vl_32b")
+    assert director.exclusive and director.gpus == 2 and director.hbm_gb_per_chip > cfg.gpu_budget_gb
+    cards = GpuLedger(2, cfg.gpu_budget_gb, cfg.gpu_hbm_gb)
+    assert cards.lease("director", director.hbm_gb_per_chip, director.gpus, alone=True) == (0, 1)
+    magi = cfg.spec("magi_v2")
+    assert not cards.can_place(magi.hbm_gb_per_chip)
+    cores = CpuPool(4 - 1, 31.3 - 4)
+    cores.lease("director", cfg.replica_cores(director, False), director.host_ram_gb)

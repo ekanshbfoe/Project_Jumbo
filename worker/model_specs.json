@@ -41,6 +41,24 @@
       },
       "notes": "Fish Audio Drama 3 (35B MoE, 3B active) through speech.cpp 0.8.11 built for CUDA sm_75 with the dual-GPU and memory-cap patch; weights sakasegawa/drama-3-GGUF. Setup (c), chosen by the project lead from spike 5: one Q5_K replica split over both T4s, later layers' experts on CUDA1, 8 of 40 layers' experts on the CPU. Spike 5 at a 0.8 cap: peak 11.5 / 10.5 GiB on the two cards, 8.3 GB RAM, load 104 s, 1.22 s per second of audio. 44.1 kHz. On a TPU host it does not run yet (no ggml TPU backend; TorchTPU is the path to test)."
     },
+    "qwen3vl_32b": {
+      "backend": "ggml",
+      "chips": 1,
+      "gpus": 2,
+      "hbm_gb_per_chip": 14.4,
+      "exclusive": true,
+      "cpu_cores": 3,
+      "host_ram_gb": 6,
+      "cpu_fallback": true,
+      "max_replicas": 1,
+      "target_queue_per_replica": 4,
+      "concurrency": 1,
+      "priority": 2,
+      "wake_s": 260,
+      "job_s": 480,
+      "phase": "director",
+      "notes": "The Director on Kaggle's T4 x2 (Method 1, spike 7e): Qwen3-VL-32B Instruct Q6_K + F16 vision projector through llama.cpp b11925 (jumbo-llamacpp-cuda75), split by layer over both cards, 16K context, q8_0 KV cache. Spike 7e: 14.4 GiB on each card (96%), so it runs alone, past the ceiling, by the project lead's exception. First wake downloads 28 GB in ~140 s, then loads in ~130 s; ~6 tokens/s, 8-10 min per scene."
+    },
     "qwen3vl_32b_tpu": {
       "backend": "vllm-tpu",
       "chips": 8,
