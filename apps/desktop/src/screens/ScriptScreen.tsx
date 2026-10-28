@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { api, bridgeApi, CHAPTER_STATES, errorText, type DirectorReport, type ScriptProgress } from "../api";
+import { clearDraft, loadDraft, saveDraft } from "../drafts";
 import type { ScreenProps } from "../hub/modules";
 import { useAsync } from "../useAsync";
 
@@ -62,10 +63,13 @@ export function ScriptScreen({ project }: ScreenProps) {
     return result.success ? { doc: result.data, error: undefined } : { doc: undefined, error: z.prettifyError(result.error) };
   }, [data.data]);
 
+  // Unsaved narration edits are kept per script file until it is approved, so leaving the screen keeps them.
+  const draftKey = `script:${data.data?.script_file ?? ""}`;
   useEffect(() => {
-    setDraft(loaded?.doc);
+    const kept = chapter && loaded?.doc ? loadDraft<ScriptDoc>(project.root, chapter, draftKey) : undefined;
+    setDraft(kept && ScriptDoc.safeParse(kept).success ? kept : loaded?.doc);
     setSaved(false);
-  }, [loaded]);
+  }, [loaded, chapter, draftKey, project.root]);
 
   const crops = useMemo(() => {
     const parsed = data.data?.panels ? PanelsDoc.safeParse(data.data.panels) : undefined;
@@ -98,6 +102,7 @@ export function ScriptScreen({ project }: ScreenProps) {
     setError(undefined);
     try {
       await api.approveScript(chapter, draft);
+      clearDraft(project.root, chapter, draftKey);
       setSaved(true);
       chapters.reload();
       data.reload();
@@ -108,7 +113,11 @@ export function ScriptScreen({ project }: ScreenProps) {
 
   const edit = (i: number, narration: string) => {
     setSaved(false);
-    setDraft((d) => d && { ...d, lines: d.lines.map((l, j) => (j === i ? { ...l, narration } : l)) });
+    setDraft((d) => {
+      const next = d && { ...d, lines: d.lines.map((l, j) => (j === i ? { ...l, narration } : l)) };
+      if (next && chapter) saveDraft(project.root, chapter, draftKey, next);
+      return next;
+    });
   };
 
   const stage = current ? CHAPTER_STATES.indexOf(current.state) : -1;

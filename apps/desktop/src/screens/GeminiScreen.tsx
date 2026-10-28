@@ -2,6 +2,7 @@ import { readGeminiAnswer } from "@jumbo/schema";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useState } from "react";
 import { api, errorText, type GeminiView } from "../api";
+import { clearDraft, loadDraft, saveDraft } from "../drafts";
 import type { ScreenProps } from "../hub/modules";
 import instruction from "../method2/system_instruction.md?raw";
 import { useAsync } from "../useAsync";
@@ -49,13 +50,23 @@ async function copy(text: string): Promise<void> {
  * Method 2's script step (ADR 0006): give Gemini the numbered PDF with the System Instruction and the prompt, paste
  * its answer back, check the story memory it wrote, and save the script for review on the Script screen.
  */
-export function GeminiScreen(_: ScreenProps) {
+/** What the Gemini screen keeps for a chapter until its script is saved. */
+interface GeminiDraft {
+  answer: string;
+  story: string;
+  characters: string;
+  /** The parsed memory the boxes were last filled from, so hand edits survive changes elsewhere in the answer. */
+  memoryFrom: string;
+}
+
+export function GeminiScreen({ project }: ScreenProps) {
   const chapters = useAsync(api.listChapters);
   const [chapter, setChapter] = useState<string>();
   const view = useAsync(() => (chapter ? api.geminiPack(chapter) : Promise.resolve(null)), [chapter]);
   const [answer, setAnswer] = useState("");
   const [story, setStory] = useState("");
   const [characters, setCharacters] = useState("");
+  const [memoryFrom, setMemoryFrom] = useState("");
   const [copied, setCopied] = useState<string>();
   const [error, setError] = useState<string>();
   const [saved, setSaved] = useState<string>();
@@ -66,20 +77,42 @@ export function GeminiScreen(_: ScreenProps) {
     if (!chapter && chapters.data?.length) setChapter((waiting ?? chapters.data[0]!).id);
   }, [chapters.data, chapter]);
 
+  // The chapter's unsaved answer and memory edits come back when the screen or the chapter is opened again.
+  const [restored, setRestored] = useState<string>();
   useEffect(() => {
-    setAnswer("");
+    const draft = chapter ? loadDraft<GeminiDraft>(project.root, chapter, "gemini") : undefined;
+    setAnswer(draft?.answer ?? "");
+    setStory(draft?.story ?? "");
+    setCharacters(draft?.characters ?? "");
+    setMemoryFrom(draft?.memoryFrom ?? "");
     setSaved(undefined);
     setError(undefined);
-  }, [chapter]);
+    setRestored(chapter);
+  }, [chapter, project.root]);
+
+  useEffect(() => {
+    if (chapter && restored === chapter) saveDraft(project.root, chapter, "gemini", { answer, story, characters, memoryFrom } satisfies GeminiDraft);
+  }, [chapter, restored, project.root, answer, story, characters, memoryFrom]);
 
   const pack = view.data?.pack ?? null;
-  const read = useMemo(() => (pack && answer.trim() ? readGeminiAnswer(answer, pack) : null), [answer, pack]);
+  const read = useMemo(() => {
+    if (!pack || !answer.trim()) return null;
+    try {
+      return readGeminiAnswer(answer, pack);
+    } catch (e) {
+      return { doc: null, memory: { story: "", characters: [] }, beats: "", errors: [`The answer could not be read: ${errorText(e)}`], notes: [] };
+    }
+  }, [answer, pack]);
 
-  // A new answer brings its own memory; the person can still edit it before saving.
+  // A new answer brings its own memory. The boxes are refilled only when the parsed memory itself changes, so
+  // hand edits survive fixing a narration line in the answer.
+  const parsedMemory = JSON.stringify(read?.memory ?? null);
   useEffect(() => {
+    if (restored !== chapter || parsedMemory === memoryFrom) return;
     setStory(read?.memory.story ?? "");
     setCharacters(read?.memory.characters.join("\n") ?? "");
-  }, [read]);
+    setMemoryFrom(parsedMemory);
+  }, [parsedMemory, restored, chapter]);
 
   const flash = async (what: string, text: string) => {
     await copy(text);
@@ -106,6 +139,7 @@ export function GeminiScreen(_: ScreenProps) {
     try {
       await api.saveGeminiScript(chapter, pack.pack, read.doc, { story, characters: characters.split("\n").map((c) => c.trim()).filter(Boolean) });
       setSaved(`Saved ${read.doc.lines.length} lines. Review and approve the script on the Script screen.`);
+      clearDraft(project.root, chapter, "gemini");
       chapters.reload();
     } catch (e) {
       setError(errorText(e));
