@@ -9,4 +9,4 @@ pub mod project;
 
 pub use chapter::{ChapterId, ChapterManifest, ChapterState, Layout};
 pub use error::{CoreError, Result};
-pub use project::{Project, ProjectManifest, ProjectPaths};
+pub use project::{Method, Project, ProjectManifest, ProjectPaths};

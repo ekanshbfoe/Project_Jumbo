@@ -14,6 +14,17 @@ use crate::fsx;
 pub const PROJECT_FILE: &str = "jumbo.project.toml";
 pub const PROJECT_SCHEMA_VERSION: u32 = 1;
 
+/// How a project's scripts are written (ADR 0005, ADR 0006). Chosen when the project is created.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Method {
+    /// The Director on Kaggle (Qwen3-VL) writes every script.
+    #[default]
+    Method1,
+    /// The person gets each script from Gemini in Google AI Studio and pastes it in.
+    Method2,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectManifest {
     pub schema_version: u32,
@@ -23,6 +34,9 @@ pub struct ProjectManifest {
     pub language: String,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
+    /// Projects made before Method 2 existed have no field and are Method 1.
+    #[serde(default)]
+    pub method: Method,
 }
 
 /// Every well-known location inside a project root. Paths only; nothing here touches the disk.
@@ -118,6 +132,7 @@ impl Project {
             title: title.to_owned(),
             language: "hinglish".to_owned(),
             created_at: OffsetDateTime::now_utc(),
+            method: Method::default(),
         };
         fsx::atomic_write_toml(&paths.manifest(), &manifest).at(&paths.manifest())?;
         Self::open(paths.root().to_path_buf())
@@ -149,6 +164,15 @@ impl Project {
 
     pub fn manifest(&self) -> &ProjectManifest {
         &self.manifest
+    }
+
+    /// Switches the project's method. Callers check first that no chapter has a script yet.
+    pub fn set_method(&mut self, method: Method) -> Result<()> {
+        let mut next = self.manifest.clone();
+        next.method = method;
+        fsx::atomic_write_toml(&self.paths.manifest(), &next).at(&self.paths.manifest())?;
+        self.manifest = next;
+        Ok(())
     }
 
     pub fn rename(&mut self, title: &str) -> Result<()> {
@@ -228,5 +252,20 @@ mod tests {
         project.rename("B").expect("rename");
         drop(project);
         assert_eq!(Project::open(dir.path()).expect("open").manifest().title, "B");
+    }
+
+    #[test]
+    fn a_project_is_method1_until_switched_and_old_manifests_read_as_method1() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut project = Project::create(dir.path(), "A").expect("create");
+        assert_eq!(project.manifest().method, Method::Method1);
+        project.set_method(Method::Method2).expect("switch");
+        drop(project);
+        assert_eq!(Project::open(dir.path()).expect("open").manifest().method, Method::Method2);
+        let text = std::fs::read_to_string(dir.path().join(PROJECT_FILE)).expect("manifest");
+        assert!(text.contains("method = \"method2\""));
+        let old = text.lines().filter(|l| !l.starts_with("method")).collect::<Vec<_>>().join("\n");
+        let manifest: ProjectManifest = toml::from_str(&old).expect("old manifest");
+        assert_eq!(manifest.method, Method::Method1);
     }
 }
