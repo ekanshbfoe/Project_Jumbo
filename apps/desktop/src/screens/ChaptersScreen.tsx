@@ -30,7 +30,7 @@ const DETECTORS: { id: Detector; label: string }[] = [
   { id: "opencv", label: "OpenCV (local plumbing test only)" },
 ];
 
-export function ChaptersScreen(_: ScreenProps) {
+export function ChaptersScreen({ project }: ScreenProps) {
   const chapters = useAsync(api.listChapters);
   const session = useAsync(bridgeApi.view);
   const [busy, setBusy] = useState(false);
@@ -72,7 +72,7 @@ export function ChaptersScreen(_: ScreenProps) {
     setNotice(undefined);
     setAnalyzing((a) => ({ ...a, [chapter]: { chapter, progress: 0, message: "" } }));
     try {
-      await makeVideo(chapter, (stage) => {
+      await makeVideo(chapter, project.method, (stage) => {
         setMaking((m) => ({ ...m, [chapter]: stage }));
         setAnalyzing((a) => ({ ...a, [chapter]: { chapter, progress: 0, message: "" } }));
         chapters.reload();

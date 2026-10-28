@@ -2,12 +2,16 @@ import { invoke } from "@tauri-apps/api/core";
 
 // Mirrors the DTOs in src-tauri/src/commands.rs and the serde types in jumbo-core / jumbo-ledger.
 
+/** How a project's scripts are written: the Director on Kaggle, or Gemini in Google AI Studio (ADR 0006). */
+export type Method = "method1" | "method2";
+
 export interface ProjectInfo {
   root: string;
   id: string;
   title: string;
   language: string;
   created_at: string;
+  method: Method;
 }
 
 export interface RecentProject {
@@ -175,8 +179,34 @@ export interface RenderProgress {
   machines: string[];
 }
 
+/** panels/numbered.json: the export a pasted Gemini answer must match. */
+export interface NumberedPack {
+  chapter: string;
+  pack: string;
+  order: string[];
+  pages: number;
+  bytes: number;
+}
+
+/** The story a chapter continues (memory.rs StoryContext). */
+export interface StoryContext {
+  story: string;
+  characters: string[];
+  last_lines: string[];
+  from: string | null;
+}
+
+/** What the Gemini step needs for one chapter (`gemini_pack`). */
+export interface GeminiView {
+  pack: NumberedPack | null;
+  pdf: string | null;
+  context: StoryContext | null;
+  context_error: string | null;
+}
+
 export const api = {
-  createProject: (path: string, title: string) => invoke<ProjectInfo>("create_project", { path, title }),
+  createProject: (path: string, title: string, method?: Method) => invoke<ProjectInfo>("create_project", { path, title, method: method ?? null }),
+  setProjectMethod: (method: Method) => invoke<ProjectInfo>("set_project_method", { method }),
   openProject: (path: string) => invoke<ProjectInfo>("open_project", { path }),
   closeProject: () => invoke<void>("close_project"),
   currentProject: () => invoke<ProjectInfo | null>("current_project"),
@@ -192,6 +222,9 @@ export const api = {
   writeScript: (chapter: string) => invoke<ChapterManifest>("write_script", { chapter }),
   chapterScript: (chapter: string) => invoke<ScriptView>("chapter_script", { chapter }),
   approveScript: (chapter: string, script: unknown) => invoke<ChapterManifest>("approve_script", { chapter, script }),
+  geminiPack: (chapter: string) => invoke<GeminiView>("gemini_pack", { chapter }),
+  saveGeminiScript: (chapter: string, pack: string, script: unknown, memory: { story: string; characters: string[] }) =>
+    invoke<ChapterManifest>("save_gemini_script", { chapter, pack, script, memory }),
   voiceLibrary: () => invoke<Record<string, string[]>>("voice_library"),
   importVoice: (speaker: string, emotion: string, path: string) => invoke<void>("import_voice", { speaker, emotion, path }),
   recordVoice: (chapter: string) => invoke<ChapterManifest>("record_voice", { chapter }),
