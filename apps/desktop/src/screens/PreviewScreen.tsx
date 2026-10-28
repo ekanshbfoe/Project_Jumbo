@@ -8,7 +8,7 @@ import { api, type PreviewSources } from "../api";
 import type { ScreenProps } from "../hub/modules";
 import { useAsync } from "../useAsync";
 
-type Built = { spec: EpisodeSpec; from: string } | { error: string };
+type Built = { spec: EpisodeSpec; from: string; silent: boolean } | { error: string };
 
 /** Validates one source file, naming it in the error so a broken file is easy to find. */
 function parseFile<T>(schema: z.ZodType<T>, file: string, data: unknown): T {
@@ -22,7 +22,7 @@ function buildSpec(chapter: string, src: PreviewSources): Built {
   const dir = `chapters/${chapter}`;
   try {
     if (src.episode != null) {
-      return { spec: parseFile(EpisodeSpec, `${dir}/render/episode.json`, src.episode), from: "render/episode.json" };
+      return { spec: parseFile(EpisodeSpec, `${dir}/render/episode.json`, src.episode), from: "render/episode.json", silent: false };
     }
     if (src.script == null || src.panels == null) {
       return { error: "Nothing to preview yet: this chapter needs a script and panels.json, or a built render/episode.json." };
@@ -31,7 +31,7 @@ function buildSpec(chapter: string, src: PreviewSources): Built {
     const panels = parseFile(PanelsDoc, `${dir}/panels/panels.json`, src.panels);
     const audio = src.audio == null ? undefined : parseFile(AudioManifest, `${dir}/audio/audio.manifest.json`, src.audio);
     const from = [`script/${src.script_file}`, "panels.json", audio ? "audio manifest" : "no audio (estimated timing)"].join(" + ");
-    return { spec: buildEpisodeSpec(script, panels, audio), from };
+    return { spec: buildEpisodeSpec(script, panels, audio), from, silent: !audio };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   }
@@ -74,6 +74,12 @@ export function PreviewScreen({ project }: ScreenProps) {
       {built && "error" in built ? <pre className="card error preview-error">{built.error}</pre> : null}
       {built && "spec" in built ? (
         <div className="stack">
+          {built.silent ? (
+            <div className="card warn">
+              <strong>Draft preview: no voice yet.</strong> Timings are estimated from the word count, so its length is not the final video's. Press Make video on the
+              Chapters screen to record the voice and render; the finished MP4 is on the Render screen.
+            </div>
+          ) : null}
           <AssetResolverProvider value={resolver}>
             <Player
               className="preview-player"

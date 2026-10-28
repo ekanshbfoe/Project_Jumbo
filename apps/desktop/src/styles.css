@@ -209,6 +209,14 @@ code,
   border-color: rgba(245, 184, 74, 0.4);
 }
 
+.card.warn {
+  border-color: rgba(245, 184, 74, 0.5);
+}
+
+.card.warn strong {
+  color: var(--warn);
+}
+
 .badge.danger {
   color: var(--danger);
   border-color: rgba(255, 93, 115, 0.4);
