@@ -86,6 +86,7 @@ pub fn save_episode(state: State<AppState>, chapter: String, episode: Value) -> 
 
 /// Pushes `kernel` and waits until it finishes. A run handed the previous job is pushed again after a minute.
 async fn run_machine(client: &KaggleClient, kernel: &KernelPush, mut on_status: impl FnMut(&str)) -> CmdResult<()> {
+    let mut blind_retry = false;
     for _ in 0..=STALE_RETRIES {
         kaggle(|| client.push(kernel)).await?;
         tokio::time::sleep(POLL).await;
@@ -100,7 +101,17 @@ async fn run_machine(client: &KaggleClient, kernel: &KernelPush, mut on_status: 
         if status.status == "COMPLETE" {
             return Ok(());
         }
-        let log = kaggle(|| client.output_log(&kernel.slug)).await.unwrap_or_default();
+        let log = match kaggle(|| client.output_log(&kernel.slug)).await {
+            Ok(log) => log,
+            // Without its log a stale job cannot be told from a real failure: run the machine once more.
+            Err(_) if !blind_retry => {
+                blind_retry = true;
+                on_status("LOG_UNAVAILABLE");
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                continue;
+            }
+            Err(e) => return Err(format!("{} ended {} and its log could not be read: {e}", kernel.slug, status.status)),
+        };
         if !log.contains("stale render job") {
             let tail = jumbo_bridge::kaggle::log_tail(&log, 15);
             return Err(format!(
