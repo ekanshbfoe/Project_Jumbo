@@ -238,7 +238,13 @@ export const api = {
 
 /** Tauri rejects with the Rust error string; normalise anything else. */
 export function errorText(e: unknown): string {
-  return typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);
+  const text = typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);
+  // An HTML error page that got through anyway (a proxy, a Cloudflare page) is never shown raw.
+  if (/<html|<!doctype/i.test(text)) {
+    const title = /<title>([^<]*)<\/title>/i.exec(text)?.[1]?.trim();
+    return `Lost the connection (the server sent an error page${title ? `: ${title}` : ""}). Try again in a minute.`;
+  }
+  return text;
 }
 
 // Bridge (src-tauri/src/bridge.rs).
