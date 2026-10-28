@@ -151,7 +151,13 @@ export function ScriptScreen({ project }: ScreenProps) {
         </div>
       </div>
       {error || data.error ? <p className="error">{error ?? data.error}</p> : null}
-      {data.data && !data.data.script ? <div className="card empty">No script yet. Analyze the chapter, then press Write script.</div> : null}
+      {data.data && !data.data.script ? (
+        <div className="card empty">
+          {project.method === "method2"
+            ? "No script yet. Paste Gemini's answer on the Gemini script screen and save it; it shows up here to review and approve."
+            : "No script yet. Analyze the chapter, then press Write script."}
+        </div>
+      ) : null}
       {loaded?.error ? <pre className="card error preview-error">{loaded.error}</pre> : null}
       <div className="stack">
         {data.data?.report ? <Report report={data.data.report} /> : null}
