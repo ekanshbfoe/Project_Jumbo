@@ -164,7 +164,7 @@ function stepThrough(beat: z.input<typeof Beat>, panels: ReadonlyMap<string, Epi
   const shown = beat.panel_ids.map((id) => panels.get(id)).filter((p): p is EpisodePanel => p !== undefined);
   const n = shown.length;
   const together = n === 2 && shown.every((p) => aspect(p) >= TALL);
-  const sideways = beat.preset.name === "pan" && (beat.preset.params.direction === "left" || beat.preset.params.direction === "right");
+  const sideways = beat.preset.name === "pan" && (beat.preset.params?.direction ?? "right") !== "up" && beat.preset.params?.direction !== "down";
   if (n === 1 && aspect(shown[0]!) >= 1.5 && (beat.preset.name === "hold" || beat.preset.name === "zoom" || sideways)) {
     // A still, a push or a sideways pan on a tall panel shows it whole and small: read it top to bottom instead.
     // ({pan} with no direction is a pan to the right.)
