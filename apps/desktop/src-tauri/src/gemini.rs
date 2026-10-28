@@ -70,6 +70,19 @@ pub fn gemini_pack(state: State<AppState>, chapter: String) -> CmdResult<GeminiV
     })
 }
 
+/// Copies the chapter's numbered PDF to `dest`, a path the person picked, to drop into AI Studio.
+#[tauri::command]
+pub fn export_numbered_pdf(state: State<AppState>, chapter: String, dest: String) -> CmdResult<()> {
+    with_project(&state, |p| {
+        let id: ChapterId = chapter.parse().map_err(msg)?;
+        let pdf = chapter::chapter_dir(p, id).join("panels").join("numbered.pdf");
+        if !pdf.is_file() {
+            return Err("this chapter has no numbered PDF yet; analyze it again".into());
+        }
+        std::fs::copy(&pdf, &dest).map(|_| ()).map_err(|e| format!("{dest}: {e}"))
+    })
+}
+
 /// The story part of Gemini's MEMORY block, as the person confirmed it.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PastedMemory {

@@ -59,6 +59,7 @@ fn main() {
             script::approve_script,
             gemini::gemini_pack,
             gemini::save_gemini_script,
+            gemini::export_numbered_pdf,
             voice::voice_library,
             voice::import_voice,
             voice::record_voice,

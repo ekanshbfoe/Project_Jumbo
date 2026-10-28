@@ -77,7 +77,7 @@ fn install(app: &AppHandle, state: &State<AppState>, project: Project) -> CmdRes
     // scope only ever holds folders the user opened, and lasts until the app quits.
     app.asset_protocol_scope().allow_directory(project.paths().root(), true).map_err(msg)?;
     // Recent-list failures must not block opening the project.
-    let _ = config_dir(app).map(|dir| recent::touch(&dir, &info.root, &info.title));
+    let _ = config_dir(app).map(|dir| recent::touch(&dir, &info.root, &info.title, info.method));
     // Replacing the old project drops it, which releases its lock.
     *state.project.lock().map_err(msg)? = Some(project);
     Ok(info)
@@ -107,11 +107,13 @@ fn switch_method(project: &mut Project, method: Method) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub fn set_project_method(state: State<AppState>, method: Method) -> CmdResult<ProjectInfo> {
+pub fn set_project_method(app: AppHandle, state: State<AppState>, method: Method) -> CmdResult<ProjectInfo> {
     let mut guard = state.project.lock().map_err(msg)?;
     let project = guard.as_mut().ok_or("no project is open")?;
     switch_method(project, method)?;
-    Ok(ProjectInfo::of(project))
+    let info = ProjectInfo::of(project);
+    let _ = config_dir(&app).map(|dir| recent::touch(&dir, &info.root, &info.title, info.method));
+    Ok(info)
 }
 
 #[tauri::command]
