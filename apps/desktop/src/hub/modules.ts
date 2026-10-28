@@ -4,6 +4,7 @@ import { ChaptersScreen } from "../screens/ChaptersScreen";
 import { PanelsScreen } from "../screens/PanelsScreen";
 import { PreviewScreen } from "../screens/PreviewScreen";
 import { ReceiptBookScreen } from "../screens/ReceiptBookScreen";
+import { ScriptScreen } from "../screens/ScriptScreen";
 import { SessionScreen } from "../screens/SessionScreen";
 
 export interface ScreenProps {
@@ -33,6 +34,7 @@ export const MODULES: HubModule[] = [
     screens: [
       { id: "chapters", label: "Chapters", Component: ChaptersScreen },
       { id: "panels", label: "Panels", Component: PanelsScreen },
+      { id: "script", label: "Script", Component: ScriptScreen },
       { id: "preview", label: "Preview", Component: PreviewScreen },
       { id: "receipt-book", label: "Receipt Book", Component: ReceiptBookScreen },
       { id: "session", label: "Session", Component: SessionScreen },

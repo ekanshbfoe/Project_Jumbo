@@ -126,6 +126,37 @@ export interface VisionReport {
   panels: number;
 }
 
+/** `script://progress` events while the Director writes a chapter. */
+export interface ScriptProgress {
+  chapter: string;
+  progress: number;
+  message: string;
+}
+
+/** script/director.report.json: one entry per scene the Director wrote. */
+export interface DirectorReport {
+  scenes: {
+    scene: string;
+    panels: string[];
+    summary?: { lines: number; panels: number; covered: number; words: number; words_per_panel: number; quote_marks: number };
+    pass2_mode?: string;
+    panel_repairs?: string[];
+    cleanup_notes?: string[];
+    wall_s?: number;
+    error?: string;
+  }[];
+  failed: string[];
+  problems: string[];
+}
+
+/** The newest script of a chapter (`chapter_script`), with what the screen needs to review it. */
+export interface ScriptView {
+  script: unknown | null;
+  script_file: string | null;
+  report: DirectorReport | null;
+  panels: unknown | null;
+}
+
 export const api = {
   createProject: (path: string, title: string) => invoke<ProjectInfo>("create_project", { path, title }),
   openProject: (path: string) => invoke<ProjectInfo>("open_project", { path }),
@@ -140,6 +171,9 @@ export const api = {
   chapterPreview: (chapter: string) => invoke<PreviewSources>("chapter_preview", { chapter }),
   analyzeChapter: (chapter: string, detector: Detector) => invoke<ChapterManifest>("analyze_chapter", { chapter, detector }),
   chapterPanels: (chapter: string) => invoke<{ panels: unknown; report: VisionReport | null }>("chapter_panels", { chapter }),
+  writeScript: (chapter: string) => invoke<ChapterManifest>("write_script", { chapter }),
+  chapterScript: (chapter: string) => invoke<ScriptView>("chapter_script", { chapter }),
+  approveScript: (chapter: string, script: unknown) => invoke<ChapterManifest>("approve_script", { chapter, script }),
 };
 
 /** Tauri rejects with the Rust error string; normalise anything else. */
