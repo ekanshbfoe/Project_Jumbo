@@ -19,6 +19,8 @@ export interface TaggedLine {
   n: number;
   panel_ids: string[];
   emotion: Emotion | null;
+  /** What Gemini wrote in the parentheses, kept to say so when it is not a known emotion. */
+  emotion_text: string | null;
   move: string | null;
   narration: string;
 }
@@ -124,6 +126,7 @@ export function parseTagged(text: string): TaggedScript {
         n: Number(m[1]),
         panel_ids: panelIds(m[2]!),
         emotion: emotion.success ? emotion.data : null,
+        emotion_text: m[3]?.trim() || null,
         move: m[4] ? m[4].trim().toLowerCase() : null,
         narration: m[5]!.trim(),
       });
@@ -353,8 +356,11 @@ export function readGeminiAnswer(text: string, pack: GeminiPack): GeminiResult {
     return result(null);
   }
   for (const l of parsed.lines) {
+    // Pass 3 first, so the length checked is the one that is spoken (numbers grow when written as words).
+    l.narration = loanwordsToLatin(numbersToWords(l.narration));
     if (!/[ऀ-ॿA-Za-z]/.test(l.narration)) errors.push(`L${l.n} has no narration.`);
     else if (l.narration.length > MAX_NARRATION) errors.push(`L${l.n} is ${l.narration.length} characters, over ${MAX_NARRATION}. Ask Gemini to split it.`);
+    if (!l.emotion && l.emotion_text) notes.push(`L${l.n}: (${l.emotion_text}) is not one of the emotions, read as calm`);
   }
   const { lines, repairs, missing } = fixPanels(parsed.lines, pack.order);
   notes.push(...repairs);
@@ -375,19 +381,24 @@ export function readGeminiAnswer(text: string, pack: GeminiPack): GeminiResult {
   }
   if (errors.length || lines.length === 0) return result(null);
 
-  const doc = ScriptDoc.parse({
+  const built = ScriptDoc.safeParse({
     schema_version: 1,
     chapter_id: pack.chapter,
     lines: lines.map((l, i) => ({
       id: `l_${String(i + 1).padStart(4, "0")}`,
       panel_ids: l.panel_ids,
-      narration: loanwordsToLatin(numbersToWords(l.narration)),
+      narration: l.narration,
       emotion: l.emotion ?? "calm",
       voice: { speaker: "narrator", tone: "neutral", pace: "normal", intensity: 0.5 },
       preset: presetFor(l.move, l.panel_ids.length, (msg) => notes.push(`L${l.n}: ${msg}`)),
       transition_in: { name: "cut", duration: 0.3 },
     })),
   });
+  if (!built.success) {
+    errors.push(`The script does not fit the format: ${built.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+    return result(null);
+  }
+  const doc = built.data;
   for (const p of scriptProblems(doc)) errors.push(`L${lines[Number(p.path[1])]!.n}: ${p.message}`);
   return result(doc);
 }

@@ -118,6 +118,13 @@ coat Luke Chase | CEO's assistant | he | unseen caller Stephan Yard
     expect(r.notes).toContain("L3 narrates p_0003 after p_0004: check the reading direction.");
   });
 
+  it("notes an emotion that is not on the list and reads it as calm", () => {
+    const r = readGeminiAnswer(ANSWER.replace("(tense)", "(angry)"), PACK);
+    expect(r.errors).toEqual([]);
+    expect(r.doc!.lines[1]!.emotion).toBe("calm");
+    expect(r.notes).toContain("L2: (angry) is not one of the emotions, read as calm");
+  });
+
   it("says what a usable answer looks like when nothing is tagged", () => {
     expect(readGeminiAnswer("Here is your script!", PACK).errors).toContain("No narration lines found. Each line must look like: L1 [p_0001] (calm) {hold} …");
   });
@@ -135,7 +142,7 @@ describe("tagged answer pieces", () => {
   });
 
   it("joins only a single skipped panel to its neighbour's line", () => {
-    const line = (n: number, ids: string[]) => ({ n, panel_ids: ids, emotion: null, move: null, narration: "x" });
+    const line = (n: number, ids: string[]) => ({ n, panel_ids: ids, emotion: null, emotion_text: null, move: null, narration: "x" });
     const fixed = fixPanels([line(1, ["p_0001"]), line(2, ["p_0001", "p_0042"]), line(3, ["p_0003"])], ["p_0001", "p_0002", "p_0003", "p_0004", "p_0005"]);
     expect(fixed.lines.map((l) => l.panel_ids)).toEqual([["p_0001", "p_0002"], ["p_0003"]]);
     expect(fixed.missing).toEqual(["p_0004", "p_0005"]);
