@@ -36,6 +36,27 @@ def unpack_job():
         sys.exit(3)
 
 
+def read_clip(path):
+    """(rate, mono 16-bit samples as int32) of a WAV clip, whatever its sample width and channel count."""
+    with wave.open(str(path)) as w:
+        rate, width, channels = w.getframerate(), w.getsampwidth(), w.getnchannels()
+        raw = w.readframes(w.getnframes())
+    if width == 1:
+        pcm = (np.frombuffer(raw, np.uint8).astype(np.int32) - 128) << 8
+    elif width == 2:
+        pcm = np.frombuffer(raw, "<i2").astype(np.int32)
+    elif width == 3:
+        b = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(np.int32)
+        pcm = ((b[:, 0] | (b[:, 1] << 8) | (b[:, 2] << 16)) << 8 >> 8) >> 8
+    elif width == 4:
+        pcm = np.frombuffer(raw, "<i4").astype(np.int64) >> 16
+    else:
+        raise SystemExit(f"{path}: unsupported {width * 8}-bit audio")
+    if channels > 1:
+        pcm = pcm[: len(pcm) // channels * channels].reshape(-1, channels).mean(axis=1)
+    return rate, np.asarray(pcm, np.int32)
+
+
 def soundtrack(spec, public, out):
     fps = spec["video"]["fps"]
     cursor, starts, prev = 0, [], None
@@ -51,10 +72,12 @@ def soundtrack(spec, public, out):
     for b, s in zip(spec["beats"], starts):
         if not b.get("audio"):
             continue
-        with wave.open(str(public / b["audio"]["src"])) as w:
-            r, pcm = w.getframerate(), np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(np.int32)
+        r, pcm = read_clip(public / b["audio"]["src"])
         if mix is None:
             rate, mix = r, np.zeros(int(np.ceil(total / fps * r)) + r, np.int32)
+        if r != rate:
+            # Every clip is mixed at the first clip's rate.
+            pcm = np.interp(np.arange(round(len(pcm) * rate / r)) * r / rate, np.arange(len(pcm)), pcm).astype(np.int32)
         at = round(s / fps * rate)
         mix[at:at + len(pcm)] += pcm[: max(0, len(mix) - at)]
     n = int(round(total / fps * rate))
