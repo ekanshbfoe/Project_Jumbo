@@ -40,7 +40,7 @@ def test_a_break_through_flat_colour_is_joined_but_a_white_gutter_is_not():
     assert [j.kind for j in find_joins([top, bottom], layout="strip")] == ["vertical"]
     white = np.full((300, 800, 3), 255, np.uint8)
     [join] = find_joins([framed, white], layout="strip")
-    assert join.kind == "none" and join.reason.startswith("vertical: white gutter on both sides")
+    assert join.kind == "none" and join.reason == "white gutter on both sides"
 
 
 def test_a_split_spread_is_joined_left_to_right_and_unrelated_pages_are_not():
@@ -70,6 +70,20 @@ def test_printed_pages_are_never_joined_vertically_and_busy_edges_are_no_spread(
     noisy = [rng.integers(0, 256, (1400, 1000, 3), dtype=np.uint8) for _ in range(2)]
     [join] = find_joins(noisy, layout="page")
     assert join.kind == "none", join
+
+
+def test_a_webtoon_cut_into_short_pages_is_routed_as_a_strip_and_never_as_spreads():
+    # A borderless scroll exported as page-shaped 1080 x 900 slices: every break runs through the drawing.
+    scroll = art(4500, 1080, seed=11)
+    pages = cut(scroll, [900, 1800, 2700, 3600])
+    assert chapter_layout(pages) == "strip"
+    joins = find_joins(pages, layout=chapter_layout(pages))
+    assert [j.kind for j in joins] == ["vertical"] * 4
+    [canvas] = stitch(pages, joins)
+    assert canvas.kind == "strip" and np.array_equal(canvas.image, scroll)
+    # Printed pages with white margins never vote for a strip, and a single break is not enough.
+    assert chapter_layout([grid_page(seed=s) for s in range(4)]) == "page"
+    assert chapter_layout(cut(scroll[:1800], [900])) == "page"
 
 
 def test_strips_are_sliced_at_their_gutters():

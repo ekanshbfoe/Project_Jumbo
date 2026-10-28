@@ -44,6 +44,8 @@ WEBP_QUALITY = 92
 # Images detected at once. The pool scales replicas from its backlog, so a chapter only spreads over
 # several replicas (and GPUs) when this many requests are in flight together.
 PARALLEL_IMAGES = 8
+# Pages thinner than this many pixels are dropped before anything else.
+MIN_PAGE_SIDE = 16
 
 
 def encode_webp(image: np.ndarray) -> bytes:
@@ -85,6 +87,8 @@ async def run(ctx: JobContext) -> str:
 
     ctx.progress(0.02, "rasterizing")
     pages = await asyncio.to_thread(rasterize, store.path(ctx.input), int(ctx.params.get("target_width", 1600)))
+    # A sliver page (a 1080 x 2 leftover at the end of an export) holds nothing to detect or join.
+    pages = [p for p in pages if min(p.shape[:2]) >= MIN_PAGE_SIDE]
     if not pages:
         raise JobError("the PDF has no pages")
     ctx.progress(0.15, f"checking {len(pages) - 1} page breaks for split drawings")

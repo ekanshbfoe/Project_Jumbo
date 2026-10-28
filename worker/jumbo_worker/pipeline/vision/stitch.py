@@ -12,10 +12,15 @@ when both edges are flat white (a gutter) or the drawing stops exactly at the cu
 Otherwise they are joined when the edge lines continue: they differ about as little as neighbouring
 lines inside each page do, or their gradient profiles line up. That includes flat colour or black
 running across the cut (a night sky split by the page break). Spreads join only on real structure.
-Vertical breaks are only looked for in strip-layout chapters (webtoons). A chapter of printed pages
-(manga) never continues from the bottom of one page into the top of the next, and a page ending in a
-black bleed would otherwise be glued to the next one; there only spreads are looked for. The layout
-router decides this from the chapter's typical page shape.
+Vertical breaks are only joined in strip-layout chapters (webtoons). A chapter of printed pages (manga)
+never continues from the bottom of one page into the top of the next, and a page ending in a black bleed
+would otherwise be glued to the next one; there only spreads are looked for. Webtoons have no spreads, so
+strips never look for them (two slices of one scroll can have look-alike side edges).
+
+The layout router decides from the pages themselves: tall pages are a strip, and so are page-shaped
+pages when most of their breaks run through drawing (a webtoon exported as short pages: every page
+continues the last). Only breaks with drawing structure on the cut vote; flat colour or black running
+across proves nothing (a manga page's black bleed).
 
 Every decision, with its numbers, goes into the stage report so the thresholds can be checked
 against real chapters.
@@ -45,8 +50,11 @@ INK_STD = 6.0
 # Spreads also need the edges to be close in absolute terms: busy edges (speed lines, screentone)
 # change a lot from line to line, which would otherwise excuse any difference across the cut.
 MAX_SPREAD_DIFF = 30.0
-# A chapter whose typical page is shorter than this many widths is printed pages, not a strip.
+# A chapter whose typical page is shorter than this many widths is printed pages, not a strip...
 PAGE_ASPECT = 1.6
+# ...unless at least this share of its voting page breaks continue the drawing, and at least STRIP_VOTES do.
+STRIP_SHARE = 0.6
+STRIP_VOTES = 2
 
 
 def gray(image: np.ndarray) -> np.ndarray:
@@ -128,11 +136,26 @@ def judge(a: np.ndarray, b: np.ndarray, vertical: bool) -> tuple[bool, str, floa
     return False, "edges do not match", cross, inner, correlation
 
 
+def break_votes(pages: list[np.ndarray]) -> tuple[int, int]:
+    """(continuing, stopping) page breaks among those that can tell: equal widths and drawing on the cut."""
+    yes = no = 0
+    for a, b in zip(pages, pages[1:]):
+        ea, _, eb, _ = _lines(a, b, vertical=True)
+        if max(float(ea.std()), float(eb.std())) <= INK_STD:
+            continue  # flat on both sides: a gutter, a bleed or a sky; no vote either way
+        ok, *_ = judge(a, b, vertical=True)
+        yes, no = yes + ok, no + (not ok)
+    return yes, no
+
+
 def chapter_layout(pages: list[np.ndarray]) -> str:
-    """The layout router: "page" for printed pages (manga), "strip" for webtoons, from the median page shape."""
+    """The layout router: "page" for printed pages (manga), "strip" for webtoons (see the module docs)."""
     if not pages:
         return "page"
-    return "page" if float(np.median([p.shape[0] / p.shape[1] for p in pages])) < PAGE_ASPECT else "strip"
+    if float(np.median([p.shape[0] / p.shape[1] for p in pages])) >= PAGE_ASPECT:
+        return "strip"
+    yes, no = break_votes(pages)
+    return "strip" if yes >= STRIP_VOTES and yes >= STRIP_SHARE * (yes + no) else "page"
 
 
 def find_joins(pages: list[np.ndarray], rtl: bool = False, strip_aspect: float = 2.0, layout: str | None = None) -> list[Join]:
@@ -147,7 +170,7 @@ def find_joins(pages: list[np.ndarray], rtl: bool = False, strip_aspect: float =
         if ok:
             joins.append(Join(i, "vertical", reason, cross, inner, corr))
             continue
-        if any(p.shape[0] / p.shape[1] >= strip_aspect for p in (a, b)):
+        if layout == "strip" or any(p.shape[0] / p.shape[1] >= strip_aspect for p in (a, b)):
             joins.append(Join(i, "none", reason, cross, inner, corr))
             continue
         # Spreads: the earlier page is on the left for left-to-right reading (manhwa), right for manga.
