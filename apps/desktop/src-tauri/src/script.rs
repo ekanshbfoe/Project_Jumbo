@@ -240,7 +240,8 @@ fn approve(project: &Project, id: ChapterId, script: &Value) -> CmdResult<Chapte
     }
     let dir = chapter::chapter_dir(project, id).join("script");
     fsx::atomic_write_json(&dir.join("approved.json"), script).map_err(msg)?;
-    if memory::approve(project, id)? {
+    let last_lines = doc.lines.iter().rev().take(2).rev().map(|l| l.narration.to_string()).collect();
+    if memory::approve(project, id, last_lines)? {
         memory::mark_later_stale(project, id)?;
     }
     while manifest.state < ChapterState::Approved {
@@ -343,10 +344,12 @@ mod tests {
         assert!(memory::context_before(&project, second).is_err(), "not approved yet");
         approve(&project, first, &sample_script(first)).expect("approve");
         let ctx = memory::context_before(&project, second).expect("memory");
-        assert_eq!(
-            (ctx.story.as_str(), ctx.last_lines.as_slice()),
-            ("Akira quits.", ["आख़िरी लाइन।".to_owned()].as_slice())
-        );
+        // The last lines are the approved script's own, not the ones the Director reported.
+        let script = sample_script(first);
+        let lines = script["lines"].as_array().expect("lines");
+        let last: Vec<String> =
+            lines[lines.len() - 2..].iter().map(|l| l["narration"].as_str().expect("text").to_owned()).collect();
+        assert_eq!((ctx.story.as_str(), ctx.last_lines), ("Akira quits.", last));
     }
 
     #[test]

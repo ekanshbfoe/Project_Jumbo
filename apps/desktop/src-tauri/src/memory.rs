@@ -104,10 +104,12 @@ pub fn context_before(project: &Project, id: ChapterId) -> CmdResult<StoryContex
     })
 }
 
-/// Makes the draft memory the approved one. Returns true when the approved story changed.
-pub fn approve(project: &Project, id: ChapterId) -> CmdResult<bool> {
-    let Some(draft) = read(project, id, DRAFT)? else { return Ok(false) };
+/// Makes the draft memory the approved one, with `last_lines` taken from the script as approved (it may have been
+/// edited since the draft was written). Returns true when the approved memory changed.
+pub fn approve(project: &Project, id: ChapterId, last_lines: Vec<String>) -> CmdResult<bool> {
     let before = read(project, id, APPROVED)?;
+    let Some(mut draft) = read(project, id, DRAFT)?.or_else(|| before.clone()) else { return Ok(false) };
+    draft.last_lines = last_lines;
     fsx::atomic_write_json(&path(project, id, APPROVED), &draft).map_err(msg)?;
     let _ = std::fs::remove_file(path(project, id, DRAFT));
     Ok(before.is_some_and(|b| b != draft))
@@ -172,7 +174,7 @@ pub(crate) mod tests {
         write_draft(&project, ids[0], &memory("A happens.", &["Ana | hero | she | red coat"])).expect("draft");
         // A draft does not count until it is approved.
         assert!(context_before(&project, ids[1]).expect_err("unapproved").contains("Approve ch_0001's script first"));
-        approve(&project, ids[0]).expect("approve");
+        approve(&project, ids[0], vec![]).expect("approve");
         let ctx = context_before(&project, ids[1]).expect("ctx");
         assert_eq!((ctx.story.as_str(), ctx.from.as_deref()), ("A happens.", Some("ch_0001")));
         // Chapter 3 may not skip chapter 2.
@@ -184,10 +186,10 @@ pub(crate) mod tests {
         let (_tmp, project, ids) = project_with_chapters(3);
         write_draft(&project, ids[0], &memory("A.", &["Ana | hero | she | red coat", "Bo | rival | he | scar"]))
             .expect("1");
-        approve(&project, ids[0]).expect("approve 1");
+        approve(&project, ids[0], vec![]).expect("approve 1");
         write_draft(&project, ids[1], &memory("B.", &["  ana  | heroine | she | red coat", "Cy | mentor | he | cane"]))
             .expect("2");
-        approve(&project, ids[1]).expect("approve 2");
+        approve(&project, ids[1], vec![]).expect("approve 2");
         let ctx = context_before(&project, ids[2]).expect("ctx");
         assert_eq!(ctx.story, "B.");
         assert_eq!(
@@ -211,12 +213,24 @@ pub(crate) mod tests {
     fn changing_an_approved_memory_marks_later_scripted_chapters_stale() {
         let (_tmp, project, ids) = project_with_chapters(3);
         write_draft(&project, ids[0], &memory("A.", &[])).expect("draft");
-        assert!(!approve(&project, ids[0]).expect("first approval is not a change"));
+        assert!(!approve(&project, ids[0], vec![]).expect("first approval is not a change"));
         chapter::advance(&project, ids[1], ChapterState::Directed).expect("directed");
         write_draft(&project, ids[0], &memory("A, rewritten.", &[])).expect("redo");
-        assert!(approve(&project, ids[0]).expect("changed"));
+        assert!(approve(&project, ids[0], vec![]).expect("changed"));
         assert_eq!(mark_later_stale(&project, ids[0]).expect("stale"), [ids[1]]);
         assert!(chapter::load_chapter(&project, ids[1]).expect("ch2").stale);
         assert!(!chapter::load_chapter(&project, ids[2]).expect("ch3").stale, "no script yet, nothing to redo");
+    }
+
+    #[test]
+    fn the_last_lines_come_from_the_script_as_approved() {
+        let (_tmp, project, ids) = project_with_chapters(2);
+        write_draft(&project, ids[0], &StoryMemory { last_lines: vec!["पुरानी लाइन।".into()], ..memory("A.", &[]) })
+            .expect("draft");
+        approve(&project, ids[0], vec!["नई लाइन।".into()]).expect("approve");
+        assert_eq!(context_before(&project, ids[1]).expect("ctx").last_lines, ["नई लाइन।"]);
+        // Approving an edit again, with no new draft, still updates them.
+        approve(&project, ids[0], vec!["फिर बदली लाइन।".into()]).expect("re-approve");
+        assert_eq!(context_before(&project, ids[1]).expect("ctx").last_lines, ["फिर बदली लाइन।"]);
     }
 }
