@@ -271,6 +271,27 @@ async def test_a_line_that_never_passes_keeps_its_closest_take(tmp_path):
     assert read_pcm(take["path"])[0].size == len(take["pcm"])
 
 
+
+async def test_a_line_that_fails_every_directed_take_is_spoken_plainly(tmp_path):
+    from jumbo_worker.pipeline.voice.stage import _best_take
+
+    sent = []
+
+    class Ctx:
+        async def call(self, model, kind, payload):
+            sent.append(payload)
+            # Every directed take stops after 1 s; the plain one is spoken in full.
+            seconds = 1.0 if len(sent) <= takes.ATTEMPTS else 6.0
+            return {"duration": write_pcm(payload["out"], speech(seconds), RATE), "sample_rate": RATE, "stop": "complete", "seed": payload["seed"]}
+
+    text = "तभी, एक नया दृश्य: “तीन साल पहले...” एक बड़ा office भवन — और एक आवाज़ आती है।"
+    payload = {"text": text, "voice": "narrator.voice.gguf", "emotion": "mysterious", "tone": "energetic", "pace": "fast"}
+    take = await _best_take(Ctx(), tmp_path, "l_0007", payload, 7)
+    assert len(sent) == takes.ATTEMPTS + 1 and take["attempts"] == 4 and take["plain"] and take["problem"] is None
+    plain = sent[-1]
+    assert plain["text"] == "तभी, एक नया दृश्य: तीन साल पहले, एक बड़ा office भवन, और एक आवाज़ आती है।"
+    assert plain["voice"] == "narrator.voice.gguf" and plain["emotion"] is plain["tone"] is plain["pace"] is None
+
 async def test_voice_job_refuses_hindi_in_latin_letters(tmp_path):
     store = BlobStore(tmp_path / "store")
     script = json.loads(json.dumps(SCRIPT))

@@ -110,6 +110,8 @@ async def run(ctx: JobContext) -> str:
             clips[line_id] = {"line_id": line_id, "src": f"chapters/{chapter}/{rel}", "duration": duration}
             report[line_id] = {"line_id": line_id, "voice": voice, "emotion_clip": used, "duration": duration,
                                "attempts": take["attempts"], "seed": take["seed"], "trimmed_s": take["trimmed_s"], "tightened_s": tightened}
+            if take["plain"]:
+                report[line_id]["plain"] = True  # spoken without its cue and punctuation after every directed take failed
             if take["problem"]:
                 report[line_id]["problem"] = take["problem"]
             done += 1
@@ -151,22 +153,28 @@ def _speaker(line) -> str:
 
 
 async def _best_take(ctx: JobContext, work: Path, name: str, payload: dict, seed: int) -> dict:
-    """Speaks a line until a take passes the checks (at most takes.ATTEMPTS), trimmed of its silent ends.
-    When none passes, the take closest to the text's expected length is kept and its problem reported."""
-    best = None
-    for attempt in range(1, takes.ATTEMPTS + 1):
+    """Speaks a line until a take passes the checks (at most takes.ATTEMPTS), trimmed of its silent ends. When none
+    passes, it is spoken takes.PLAIN_ATTEMPTS more times as plain text with no cue (takes.plain); if still none passes,
+    the take closest to the text's expected length is kept and its problem reported."""
+    best, tried = None, 0
+    plain = {**payload, "text": takes.plain(payload["text"]), "emotion": None, "tone": None, "pace": None, "design": None}
+    for attempt in range(1, takes.ATTEMPTS + takes.PLAIN_ATTEMPTS + 1):
+        if attempt > takes.ATTEMPTS and not payload.get("voice"):
+            break  # a voice still being invented needs its description
+        spoken = payload if attempt <= takes.ATTEMPTS else plain
+        tried = attempt
         raw = work / f"{name}.{attempt}.raw.wav"
-        result = await ctx.call(MODEL, "speak", {**payload, "out": str(raw), "seed": seed + attempt - 1})
+        result = await ctx.call(MODEL, "speak", {**spoken, "out": str(raw), "seed": seed + attempt - 1})
         pcm, rate = await asyncio.to_thread(read_pcm, raw)
         trimmed, head, tail = takes.trim(pcm, rate)
-        take = {"pcm": trimmed, "rate": rate, "seed": result.get("seed", seed + attempt - 1), "attempts": attempt,
-                "trimmed_s": round((head + tail) / rate, 3), "problem": takes.problem(payload["text"], trimmed, rate, result.get("stop"))}
+        take = {"pcm": trimmed, "rate": rate, "seed": result.get("seed", seed + attempt - 1), "attempts": attempt, "plain": spoken is plain,
+                "trimmed_s": round((head + tail) / rate, 3), "problem": takes.problem(spoken["text"], trimmed, rate, result.get("stop"))}
         if best is None or take["problem"] is None or takes.distance(payload["text"], trimmed, rate) < takes.distance(payload["text"], best["pcm"], best["rate"]):
             best = {**take, "attempts": attempt}
         if take["problem"] is None:
             break
         log.info("%s: take %d %s; speaking it again", name, attempt, take["problem"])
-    best["attempts"] = attempt
+    best["attempts"] = tried
     best["path"] = str(work / f"{name}.wav")
     await asyncio.to_thread(write_pcm, best["path"], best["pcm"], best["rate"])
     return best

@@ -33,6 +33,19 @@ PAUSE_DBFS = -45.0
 _WINDOW_S = 0.05
 
 _CUE = re.compile(r"\[[^\]]*\]|<\|[^|]*\|>")
+# A line that fails every take is spoken PLAIN_ATTEMPTS more times as plain text with no cue. Voice A/B 2026-10-28: with
+# the new fast voice, a line opening "तभी, एक नया दृश्य: “तीन साल पहले...”" under "[mysterious, low voice, energetic,
+# quickly]" stopped after about 3 s of its 12 in all three takes.
+PLAIN_ATTEMPTS = 2
+
+
+def plain(text: str) -> str:
+    """The line without what can derail a take: quote marks, dashes and ellipses (each a comma), and no cues."""
+    text = _CUE.sub("", text)
+    text = re.sub(r"[\"“”‘’]|(?<![A-Za-z])'|'(?![A-Za-z])", "", text)
+    text = re.sub(r"\s*(?:—|–|―|-{2,}|…|\.{2,})\s*", ", ", text)
+    text = re.sub(r"\s*,(\s*,)+", ",", text)
+    return re.sub(r"\s+", " ", re.sub(r",\s*([।?!])", r"\1", text)).strip(" ,")
 
 
 def spoken_chars(text: str) -> int:
