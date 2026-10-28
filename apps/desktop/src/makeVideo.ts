@@ -24,8 +24,9 @@ async function waitForWorker() {
  * Drama 3 in one T4 session that ends as soon as the voice is done, then the render on Kaggle CPU machines.
  * A script with failed scenes or rule problems stops the run for review; pressing Make Video again continues.
  *
- * Method 2 (ADR 0006) never runs the Director and never approves on its own: its T4 session only finds the panels,
- * then the run stops until the person has pasted Gemini's answer and approved the script.
+ * Method 2 (ADR 0006) never runs the Director and never approves on its own: its T4 session only finds the panels
+ * (of every chapter still waiting for them), then the run stops until the person has pasted Gemini's answer and
+ * approved the script.
  */
 export async function makeVideo(chapter: string, method: Method, onStage: (stage: MakeVideoStage) => void): Promise<void> {
   const state = async () => {
@@ -57,7 +58,21 @@ export async function makeVideo(chapter: string, method: Method, onStage: (stage
         await api.analyzeChapter(chapter, "magi");
         current = await state();
         if (method === "method2") {
-          throw new ReviewNeeded("Panels found. Give Gemini the numbered PDF, paste its answer on the Gemini script screen and approve it, then press Make video again.");
+          // The session is up anyway: find the panels of every other chapter still waiting for them, so later
+          // chapters do not each pay for a boot and Magi's load just for this step.
+          const waiting = (await api.listChapters()).filter((c) => c.id !== chapter && !at(c.state, "analyzed"));
+          const done = [chapter];
+          for (const other of waiting) {
+            try {
+              await api.analyzeChapter(other.id, "magi");
+              done.push(other.id);
+            } catch {
+              break;
+            }
+          }
+          throw new ReviewNeeded(
+            `Panels found for ${done.join(", ")}. Give Gemini the numbered PDF, paste its answer on the Gemini script screen and approve it, then press Make video again.`,
+          );
         }
       }
       if (!at(current.state, "directed") || (current.state === "directed" && !(await api.chapterScript(chapter)).script)) {
