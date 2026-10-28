@@ -56,3 +56,13 @@ in place of Method 1's Director.
 - **Guards:** the project's method is stored (old projects are Method 1) and fixed once a chapter has a script;
   Method 2's Make video never runs the Director or approves on its own; approval checks the Devanagari rule before
   any voice session is spent.
+
+## Video fixes after the first test (2026-10-28)
+- **Webtoons exported as short pages** are routed as strips: the layout router counts page breaks that run through
+  drawing, not only page shapes, so the pages are joined back into one scroll and no panel is cut at a page break.
+  Strips never look for spreads. A panel left more than three widths tall is cut at its quietest rows.
+- **Junk panels** are dropped before the script: slivers, boxes inside a bigger box, near-empty boxes and the
+  credits page (their texts go to the nearest real panel).
+- **One panel at a time:** a line with several panels shows them one after another, each filling the frame, with
+  the line's clip running across them (`Beat.audio.from`). Two tall panels may still share the frame. A tall panel
+  panned up or down scrolls top to bottom at a readable width. Lines fade into each other instead of cutting.
