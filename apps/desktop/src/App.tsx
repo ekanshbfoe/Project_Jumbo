@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errorText, type ProjectInfo } from "./api";
+import { api, bridgeApi, errorText, type ProjectInfo } from "./api";
 import { MODULES, screensFor } from "./hub/modules";
 import { useRuns } from "./runs";
 import { HomeScreen } from "./screens/HomeScreen";
@@ -25,6 +25,8 @@ export function App() {
       .currentProject()
       .then(setProject)
       .finally(() => setReady(true));
+    // A Kaggle session left running by a crash or restart is found again, so its finished work is not redone.
+    bridgeApi.resume().catch(() => undefined);
   }, []);
 
   if (!ready) return null;

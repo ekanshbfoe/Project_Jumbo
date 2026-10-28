@@ -69,6 +69,7 @@ fn main() {
             render::render_chapter,
             render::chapter_render,
             bridge::stop_session,
+            bridge::resume_session,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| panic!("failed to start Jumbo: {e}"))

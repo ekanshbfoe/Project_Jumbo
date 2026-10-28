@@ -312,5 +312,7 @@ export const bridgeApi = {
   start: (mode?: BridgeMode) => invoke<void>("start_session", { mode: mode ?? null }),
   test: () => invoke<BridgeTestReport>("run_bridge_test"),
   stop: () => invoke<void>("stop_session"),
+  /** Finds the worker of a session that was running when the app last closed; true when one was found. */
+  resume: () => invoke<boolean>("resume_session"),
   pool: () => invoke<PoolStatus>("pool_status"),
 };

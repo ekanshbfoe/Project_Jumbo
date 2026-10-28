@@ -135,6 +135,43 @@ fn load_settings(app: &AppHandle) -> CmdResult<BridgeSettings> {
     Ok(std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default())
 }
 
+/// The secret key of the running Kaggle session; empty when there is none.
+const SESSION_SECRET: &str = "session-key";
+
+/// A running Kaggle session, kept so the app can find its worker again after a crash or restart. The ticket holds
+/// only public data; the key is stored with the other secrets.
+#[derive(Serialize, Deserialize)]
+struct SavedSession {
+    ticket: SessionTicket,
+    mode: BridgeMode,
+    kernel_slug: String,
+    since_ms: u64,
+}
+
+fn saved_session_path(app: &AppHandle) -> CmdResult<PathBuf> {
+    Ok(config_dir(app)?.join("session.json"))
+}
+
+fn save_session(app: &AppHandle, keys: &AppKeys, saved: &SavedSession) -> CmdResult<()> {
+    let hex: String = keys.secret_bytes().iter().map(|b| format!("{b:02x}")).collect();
+    set_secret(app, SESSION_SECRET, &hex)?;
+    fsx::atomic_write_json(&saved_session_path(app)?, saved).map_err(msg)
+}
+
+fn forget_session(app: &AppHandle) {
+    let _ = saved_session_path(app).map(std::fs::remove_file);
+    let _ = set_secret(app, SESSION_SECRET, "");
+}
+
+fn load_session(app: &AppHandle) -> Option<(SavedSession, AppKeys)> {
+    let saved: SavedSession =
+        serde_json::from_str(&std::fs::read_to_string(saved_session_path(app).ok()?).ok()?).ok()?;
+    let hex = secret(app, SESSION_SECRET)?;
+    let bytes: Vec<u8> =
+        (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok()).collect::<Option<_>>()?;
+    Some((saved, AppKeys::from_secret_bytes(bytes.try_into().ok()?)))
+}
+
 #[tauri::command]
 pub fn bridge_settings(app: AppHandle) -> CmdResult<BridgeSettings> {
     load_settings(&app)
@@ -357,49 +394,113 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>, mode: 
             Some((client, config, _)) => Launch::Kaggle { client, config },
             None => Launch::External,
         };
-        let mut client = match boot(&http, launch, &mut reader, &keys, &ticket, &timings, on_state).await {
+        let client = match boot(&http, launch, &mut reader, &keys, &ticket, &timings, on_state).await {
             Ok(client) => client,
             Err(e) => return set_view(&app, SessionView::Failed { error: format!("{e}{log_hint}") }),
         };
-        // Keep the session: forward worker events, and follow the worker to new epochs if the tunnel drops.
-        loop {
-            let endpoint = client.endpoint().clone();
-            set_view(
-                &app,
-                SessionView::Ready { epoch: endpoint.epoch, facts: endpoint.boot.clone(), mode, since_ms: since },
-            );
-            let shared = Arc::new(client);
-            if let Some(state) = app.try_state::<BridgeState>() {
-                *state.client.lock().await = Some(shared.clone());
-            }
-            if let Ok(mut events) = shared.events().await {
-                while let Some(event) = events.recv().await {
-                    let stopped = event["type"] == "session.stopped";
-                    let _ = app.emit("bridge://event", event);
-                    if stopped {
-                        return set_view(&app, SessionView::Stopped);
-                    }
-                }
-            }
-            let on_state = |s: BootState| {
-                if let BootState::Reconnecting { from_epoch } = s {
-                    set_view(&app, SessionView::Reconnecting { from_epoch });
-                }
-            };
-            // Watching the kernel too means a finished session is reported at once, not after a timeout.
-            let kernel = kaggle.as_ref().map(|(client, config, _)| (client, config.kernel_slug.as_str()));
-            client =
-                match reconnect(&http, &mut reader, &keys, &ticket, endpoint.epoch, kernel, &timings, on_state).await {
-                    Ok(next) => next,
-                    Err(e) => return set_view(&app, SessionView::Failed { error: e.to_string() }),
-                };
+        let kernel = kaggle.as_ref().map(|(client, config, _)| (client, config.kernel_slug.clone()));
+        if let Some((_, slug)) = &kernel {
+            let saved = SavedSession { ticket: ticket.clone(), mode, kernel_slug: slug.clone(), since_ms: since };
+            let _ = save_session(&app, &keys, &saved);
         }
+        keep_session(&app, &mut reader, &keys, &ticket, kernel, mode, since, client).await;
     });
     // An older task (a session that failed or stopped) must not later overwrite this session's client or view.
     if let Some(old) = state.task.lock().map_err(msg)?.replace(task) {
         old.abort();
     }
     Ok(())
+}
+
+/// Keeps a connected session: forwards worker events, and follows the worker to new epochs if the tunnel drops,
+/// until it stops or is lost.
+#[allow(clippy::too_many_arguments)]
+async fn keep_session(
+    app: &AppHandle,
+    reader: &mut RendezvousReader,
+    keys: &AppKeys,
+    ticket: &SessionTicket,
+    kernel: Option<(&KaggleClient, String)>,
+    mode: BridgeMode,
+    since: u64,
+    mut client: WorkerClient,
+) {
+    let timings = BootTimings::default();
+    let http = http::client();
+    loop {
+        let endpoint = client.endpoint().clone();
+        set_view(
+            app,
+            SessionView::Ready { epoch: endpoint.epoch, facts: endpoint.boot.clone(), mode, since_ms: since },
+        );
+        let shared = Arc::new(client);
+        if let Some(state) = app.try_state::<BridgeState>() {
+            *state.client.lock().await = Some(shared.clone());
+        }
+        if let Ok(mut events) = shared.events().await {
+            while let Some(event) = events.recv().await {
+                let stopped = event["type"] == "session.stopped";
+                let _ = app.emit("bridge://event", event);
+                if stopped {
+                    forget_session(app);
+                    return set_view(app, SessionView::Stopped);
+                }
+            }
+        }
+        let on_state = |s: BootState| {
+            if let BootState::Reconnecting { from_epoch } = s {
+                set_view(app, SessionView::Reconnecting { from_epoch });
+            }
+        };
+        // Watching the kernel too means a finished session is reported at once, not after a timeout.
+        let watch = kernel.as_ref().map(|(client, slug)| (*client, slug.as_str()));
+        client = match reconnect(&http, reader, keys, ticket, endpoint.epoch, watch, &timings, on_state).await {
+            Ok(next) => next,
+            Err(e) => {
+                forget_session(app);
+                return set_view(app, SessionView::Failed { error: e.to_string() });
+            }
+        };
+    }
+}
+
+/// Finds the worker of a Kaggle session that was running when the app last closed or crashed, so a job it
+/// finished meanwhile is not run again (the worker answers a repeated job with the finished one). Returns
+/// whether such a session was found; a session that has ended is forgotten quietly.
+#[tauri::command]
+pub async fn resume_session(app: AppHandle, state: State<'_, BridgeState>) -> CmdResult<bool> {
+    if !matches!(*state.view.lock().map_err(msg)?, SessionView::Idle) {
+        return Ok(false);
+    }
+    let Some((saved, keys)) = load_session(&app) else { return Ok(false) };
+    let RendezvousSpec::Gist { gist_id } = &saved.ticket.rendezvous;
+    let (Some(token), Ok(auth)) = (secret(&app, GITHUB_SECRET), kaggle_auth(&app)) else { return Ok(false) };
+    let http = http::client();
+    let mut reader = RendezvousReader::Gist(GistReader::new(http.clone(), gist_id, &token));
+    let kaggle = KaggleClient::new(http.clone(), auth);
+    let (mode, since) = (saved.mode, saved.since_ms);
+    set_view(&app, SessionView::Reconnecting { from_epoch: 0 });
+    let task_app = app.clone();
+    let task = tauri::async_runtime::spawn(async move {
+        let app = task_app;
+        let timings = BootTimings::default();
+        let on_state = |_: BootState| {};
+        let watch = Some((&kaggle, saved.kernel_slug.as_str()));
+        match reconnect(&http, &mut reader, &keys, &saved.ticket, 0, watch, &timings, on_state).await {
+            Ok(client) => {
+                let kernel = Some((&kaggle, saved.kernel_slug.clone()));
+                keep_session(&app, &mut reader, &keys, &saved.ticket, kernel, mode, since, client).await;
+            }
+            Err(_) => {
+                forget_session(&app);
+                set_view(&app, SessionView::Idle);
+            }
+        }
+    });
+    if let Some(old) = state.task.lock().map_err(msg)?.replace(task) {
+        old.abort();
+    }
+    Ok(true)
 }
 
 pub(crate) async fn current_client(state: &BridgeState) -> CmdResult<Arc<WorkerClient>> {
@@ -527,6 +628,7 @@ pub async fn stop_session(app: AppHandle, state: State<'_, BridgeState>) -> CmdR
         std::thread::sleep(std::time::Duration::from_millis(500));
         let _ = child.kill();
     }
+    forget_session(&app);
     set_view(&app, SessionView::Stopped);
     stopped
 }

@@ -38,6 +38,11 @@ impl AppKeys {
         Self { secret: StaticSecret::from(bytes) }
     }
 
+    /// The secret key, for keeping a running session across an app restart (stored like the other secrets).
+    pub fn secret_bytes(&self) -> [u8; 32] {
+        self.secret.to_bytes()
+    }
+
     pub fn public_b64(&self) -> String {
         B64.encode(PublicKey::from(&self.secret).as_bytes())
     }
