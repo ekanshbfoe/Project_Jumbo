@@ -139,10 +139,17 @@ code,
 
 .page-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 20px;
+}
+
+/* A narrow window wraps the header's actions instead of pushing them off screen. */
+.page-header .row {
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .page-header h1 {
