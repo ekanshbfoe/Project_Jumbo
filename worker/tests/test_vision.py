@@ -138,6 +138,16 @@ def test_slivers_and_nested_boxes_are_not_shots():
     assert keep_shots([sliver], 1000) == [sliver], "an image with only a sliver keeps it"
 
 
+def test_a_credits_page_is_recognised_by_its_texts():
+    from jumbo_worker.pipeline.vision.stage import is_credits
+    box = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    credits = Detection(box, bubbles=[{"text": "Downloaded from @MangaStoreOrg"}])
+    assert is_credits(credits)
+    assert not is_credits(Detection(box, bubbles=[{"text": "Downloaded from @x"}, {"text": "Run!"}]))
+    assert not is_credits(Detection(box, bubbles=[{"text": "@MangaStoreOrg"}], characters=[{"cluster": "c_1"}]))
+    assert not is_credits(Detection(box))
+
+
 def test_reading_order_rows_then_columns():
     boxes = [(500, 0, 900, 400), (0, 10, 450, 400), (0, 450, 900, 800)]
     assert reading_order(boxes) == [1, 0, 2]

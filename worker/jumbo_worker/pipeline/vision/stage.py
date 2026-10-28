@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 from dataclasses import asdict
 
 import cv2
@@ -68,6 +69,15 @@ def _norm_box(x0: float, y0: float, x1: float, y1: float, w: int, h: int) -> dic
     x1, y1 = min(float(w), x1), min(float(h), y1)
     bx, by = _unit(x0 / w), _unit(y0 / h)
     return {"x": bx, "y": by, "w": max(1e-6, min(1.0 - bx, round((x1 - x0) / w, 6))), "h": max(1e-6, min(1.0 - by, round((y1 - y0) / h, 6)))}
+
+
+# Text that only a credits or scanlation page carries.
+CREDITS = re.compile(r"download|scanlat|@\w{3,}|discord|patreon|t\.me/|\.(com|org|net)\b|read (it )?(at|on)\b|mangastore", re.I)
+
+
+def is_credits(det: Detection) -> bool:
+    texts = [b.get("text") or "" for b in det.bubbles]
+    return bool(texts) and not det.characters and all(CREDITS.search(t) for t in texts)
 
 
 def make_detector(name: str, ctx: JobContext) -> Detector:
@@ -134,6 +144,12 @@ async def run(ctx: JobContext) -> str:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+    # Credits and scanlation pages (first or last image only): every text on them is a credit, nobody is drawn.
+    dropped_credits = 0
+    for n in {0, len(images) - 1}:
+        kept = [d for d in per_image[n] if not is_credits(d)]
+        dropped_credits += len(per_image[n]) - len(kept)
+        per_image[n] = kept
     # Back in chapter order, whatever order the replicas finished in.
     found: list[tuple[int, str, np.ndarray, Detection]] = []
     for n, ((image, _), detections) in enumerate(zip(images, per_image)):
@@ -213,6 +229,7 @@ async def run(ctx: JobContext) -> str:
         "images": len(images),
         "panels": len(panels),
         "text_only_folded": getattr(detector, "folded", 0),
+        "credits_dropped": dropped_credits,
         "fingerprints": len(rows) if fingerprints else 0,
     }
     manifest = {"schema_version": 1, "chapter_id": chapter, "panels": doc.model_dump(mode="json", exclude_none=True), "files": files, "report": report}
