@@ -94,6 +94,9 @@ describe("buildEpisodeSpec", () => {
     const tallDoc = PanelsDoc.parse({ ...panels, panels: [{ ...panel("p_0001", 0), bbox: { x: 0, y: 0, w: 0.3, h: 1 } }] });
     const one = ScriptDoc.parse({ ...script, lines: [{ ...script.lines[0]!, preset: { name: "hold" } }] });
     expect(buildEpisodeSpec(one, tallDoc).beats[0]!.preset).toEqual({ name: "pan", params: { direction: "down", distance: 0.2 } });
+    // So is a sideways pan, which is what a bare {pan} becomes (the real test chapter's first panel).
+    const panned = ScriptDoc.parse({ ...script, lines: [{ ...script.lines[0]!, preset: { name: "pan" } }] });
+    expect(buildEpisodeSpec(panned, tallDoc).beats[0]!.preset).toEqual({ name: "pan", params: { direction: "down", distance: 0.2 } });
     // A move the script chose on purpose stays.
     const shaken = ScriptDoc.parse({ ...script, lines: [{ ...script.lines[0]!, preset: { name: "shake" } }] });
     expect(buildEpisodeSpec(shaken, tallDoc).beats[0]!.preset.name).toBe("shake");
