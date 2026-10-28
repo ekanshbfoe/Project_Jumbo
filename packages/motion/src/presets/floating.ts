@@ -11,13 +11,14 @@ const spread = (index: number, count: number) => (count > 1 ? (index - (count - 
 
 /**
  * Fans 2-3 tall panels across the frame like a hand of photos: each is scaled up to most of the frame
- * height, neighbours overlap slightly, alternate panels sit a little higher or lower, and the centre
- * panel is in front.
+ * height within its own slot (no overlap, so no caption is covered), alternate panels sit a little higher
+ * or lower, and the centre panel is in front.
  */
 export function floatingLayout(sizes: Size[], frame: Size): PanelSlot[] {
   const n = sizes.length;
   const slotWidth = (frame.width * 0.84) / n;
-  const maxWidth = slotWidth * 1.18;
+  // Each panel stays inside its own slot: overlapping neighbours hid their captions (Method 2 test video, 1:04).
+  const maxWidth = slotWidth * 0.96;
   const maxHeight = frame.height * 0.76;
   return sizes.map((size, i) => {
     const scale = Math.min(maxWidth / size.width, maxHeight / size.height);
