@@ -55,6 +55,15 @@ def test_every_panel_is_shown_once_in_reading_order():
     assert repairs == ["L3: unknown panel p_0009 dropped", "p_0005 was not narrated: joined L3"]
 
 
+def test_a_line_left_without_panels_is_dropped():
+    lines = [{"n": 1, "panel_ids": ["p_0001"], "emotion": None, "narration": "एक।"},
+             {"n": 2, "panel_ids": ["p_0001", "p_0042"], "emotion": None, "narration": "दो।"},
+             {"n": 3, "panel_ids": ["p_0002"], "emotion": None, "narration": "तीन।"}]
+    lines, repairs = passes.fix_panels(lines, scene(2))
+    assert [l["n"] for l in lines] == [1, 3]
+    assert repairs == ["L2: p_0001 already shown, dropped", "L2: unknown panel p_0042 dropped", "L2: no valid panel, line merged away"]
+
+
 def test_pass2_schema_ties_each_line_to_its_panel_count():
     base = json.loads(passes.load_prompts()["camera.schema.json"])
     schema = passes.pass2_schema(base, [{"panel_ids": ["p_0001", "p_0002"]}, {"panel_ids": ["p_0003"]}])

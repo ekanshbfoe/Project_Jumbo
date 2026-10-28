@@ -90,7 +90,13 @@ def fix_panels(lines, scene):
                 seen.discard(pid)
             ids = ids[:3]
         l["panel_ids"] = ids
-    lines = [l for l in lines if l["panel_ids"] or not repairs.append(f"L{l['n']}: no valid panel, line merged away")]
+    kept = []
+    for l in lines:
+        if l["panel_ids"]:
+            kept.append(l)
+        else:
+            repairs.append(f"L{l['n']}: no valid panel, line merged away")
+    lines = kept
     for pid in order:
         if pid in seen:
             continue
