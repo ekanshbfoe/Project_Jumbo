@@ -10,7 +10,7 @@ def test_the_shipped_registry_loads_at_both_ceilings():
         config = load_specs(DEFAULT_SPECS, hbm_ceiling=ceiling)
         assert config.chip_budget_gb == pytest.approx(16 * ceiling)
         assert config.soft_limit == pytest.approx(ceiling - 0.04)
-        assert config.spec("qwen25vl_72b_int8").chips == 8
+        assert config.spec("qwen3vl_32b_tpu").chips == 8
         assert config.spec("remotion").on_tpu is False
 
 

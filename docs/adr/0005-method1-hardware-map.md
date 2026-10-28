@@ -20,7 +20,7 @@ is built.
 | Remotion render | 5 × Kaggle CPU in parallel (`--chunk=i/5`) | No GPU or TPU quota; ~7 min for a 1:48 scene. Kaggle T4s have no graphics drivers, and the local PC (7 GB RAM) took ~44 min and crashed. |
 | Joining chunks, review | Local PC | Concat demuxer, stream copy, seconds. |
 
-The `qwen25vl_72b_int8` entry in `worker/model_specs.json` is stale; the Director is Qwen3-VL-32B Instruct.
+In `worker/model_specs.json` the T4 Director is the llama.cpp runner (`models/qwen3vl.py`) and `qwen3vl_32b_tpu` is the TPU one.
 
 ## Saving quota
 - **One GPU session per batch.** Magi, the Director and Drama 3 run in one T4 session, so there is one boot

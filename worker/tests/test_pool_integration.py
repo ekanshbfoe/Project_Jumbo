@@ -58,7 +58,7 @@ def test_tpu_chips_are_counted_from_device_nodes(tmp_path):
 
 def test_a_host_without_a_tpu_still_loads_every_model():
     config = load_specs(DEFAULT_SPECS, chips=0)
-    assert config.spec("qwen25vl_72b_int8").chips == 8
+    assert config.spec("qwen3vl_32b_tpu").chips == 8
     with pytest.raises(ValueError, match="needs 8 chips, the host has 4"):
         load_specs(DEFAULT_SPECS, chips=4)
 

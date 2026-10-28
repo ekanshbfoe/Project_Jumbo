@@ -41,7 +41,7 @@
       },
       "notes": "Fish Audio Drama 3 (35B MoE, 3B active) through speech.cpp 0.8.11 built for CUDA sm_75 with the dual-GPU and memory-cap patch; weights sakasegawa/drama-3-GGUF. Setup (c), chosen by the project lead from spike 5: one Q5_K replica split over both T4s, later layers' experts on CUDA1, 8 of 40 layers' experts on the CPU. Spike 5 at a 0.8 cap: peak 11.5 / 10.5 GiB on the two cards, 8.3 GB RAM, load 104 s, 1.22 s per second of audio. 44.1 kHz. On a TPU host it does not run yet (no ggml TPU backend; TorchTPU is the path to test)."
     },
-    "qwen25vl_72b_int8": {
+    "qwen3vl_32b_tpu": {
       "backend": "vllm-tpu",
       "chips": 8,
       "hbm_gb_per_chip": 12.5,
@@ -54,8 +54,8 @@
       "wake_s": 600,
       "job_s": 90,
       "phase": "director",
-      "weights": "qwen25vl-72b-int8",
-      "notes": "TP=8 Director. vLLM fills each chip to gpu_memory_utilization (= hbm_ceiling). Unvalidated on vLLM TPU; spike 6."
+      "weights": "qwen3vl-32b-bf16",
+      "notes": "The Director on a TPU: Qwen3-VL-32B Instruct bf16 (66.7 GB), TP=8 on vLLM-TPU, only on the project lead's command (ADR 0004/0005). vLLM fills each chip to gpu_memory_utilization (= hbm_ceiling). Not yet run: TPU run 1 timed out compiling. On the T4s the Director is the llama.cpp runner (models/qwen3vl.py)."
     },
     "librarian": {
       "backend": "vllm-tpu",
