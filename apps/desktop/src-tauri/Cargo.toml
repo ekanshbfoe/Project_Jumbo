@@ -11,6 +11,7 @@ publish.workspace = true
 tauri-build = { version = "2.7.1", features = [] }
 
 [dependencies]
+futures-util = "0.3.34"
 jumbo-bridge = { path = "../../../crates/jumbo-bridge" }
 jumbo-contracts.workspace = true
 jumbo-core.workspace = true

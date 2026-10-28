@@ -5,6 +5,7 @@ mod bridge;
 mod commands;
 mod credentials;
 mod recent;
+mod render;
 mod script;
 mod vision;
 mod voice;
@@ -57,6 +58,9 @@ fn main() {
             voice::import_voice,
             voice::record_voice,
             voice::chapter_audio,
+            render::save_episode,
+            render::render_chapter,
+            render::chapter_render,
             bridge::stop_session,
         ])
         .run(tauri::generate_context!())

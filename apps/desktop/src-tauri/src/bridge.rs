@@ -192,6 +192,15 @@ fn kaggle_auth(app: &AppHandle) -> CmdResult<KaggleAuth> {
     }
 }
 
+/// A Kaggle client with the saved credentials, and the account that owns the kernels (from Bridge settings).
+pub(crate) fn kaggle_client(app: &AppHandle) -> CmdResult<(KaggleClient, String)> {
+    let settings = load_settings(app)?;
+    let owner =
+        settings.kernel_slug.trim().split_once('/').map(|(owner, _)| owner.to_owned()).filter(|o| !o.is_empty());
+    let owner = owner.ok_or("set the Kaggle kernel as owner/kernel-slug in Bridge settings")?;
+    Ok((KaggleClient::new(http::client(), kaggle_auth(app)?), owner))
+}
+
 /// What the pushed kernel needs from the private `jumbo-secrets` dataset.
 struct KaggleSecrets {
     owner: String,

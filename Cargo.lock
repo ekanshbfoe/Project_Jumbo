@@ -2534,6 +2534,7 @@ dependencies = [
 name = "jumbo-desktop"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "jumbo-bridge",
  "jumbo-contracts",
  "jumbo-core",
