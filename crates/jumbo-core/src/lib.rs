@@ -4,6 +4,7 @@
 pub mod chapter;
 pub mod error;
 pub mod fsx;
+pub mod hinglish;
 pub mod journal;
 pub mod project;
 
