@@ -337,15 +337,53 @@ def test_backdrop_is_small_blurred_and_darkened(tmp_path):
     assert (chapter / "panels/backdrops/p_0001.jpg").stat().st_size > 0
 
 
-def test_a_numbered_page_shows_each_panel_outline_and_label():
+def test_numbered_labels_sit_over_the_gutter_and_never_overlap():
+    from jumbo_worker.pipeline.vision.numbered import label_rects
+
+    # p_0001 has room above it; p_0002 and p_0003 share a top-left corner (an inset panel).
+    panels = [("p_0001", [[20, 100], [380, 100], [380, 280], [20, 280]]), ("p_0002", [[20, 320], [380, 320], [380, 580], [20, 580]]),
+              ("p_0003", [[20, 320], [200, 320], [200, 450], [20, 450]])]
+    rects = {pid: rect for pid, rect, _ in label_rects(panels, 400, 600, 30)}
+    assert rects["p_0001"][3] <= 100, "above the panel, not over its art"
+    boxes = list(rects.values())
+    assert not any(a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3] for i, a in enumerate(boxes) for b in boxes[i + 1:])
+    assert all(0 <= r[0] and r[2] <= 400 and 0 <= r[1] and r[3] <= 600 for r in boxes)
+
+
+def test_numbered_labels_stay_readable_after_gemini_scales_the_page():
+    from jumbo_worker.pipeline.vision.numbered import LABEL_PX, MAX_SIDE, TALL, label_px
+
+    # A 1600 px wide webtoon slice is cut into pages at most TALL widths tall, each scaled to MAX_SIDE.
+    px = label_px(1600, 12000)
+    assert px * MAX_SIDE / (TALL * 1600) >= LABEL_PX - 1
+
+
+def test_a_tall_page_becomes_overlapping_pdf_pages_with_the_pack_stamp():
+    import fitz
     import numpy as np
 
-    from jumbo_worker.pipeline.vision.numbered import COLOR, draw_page
+    from jumbo_worker.pipeline.vision.numbered import _slices, numbered_pdf, pack_id
 
-    page = np.full((600, 400, 3), 255, np.uint8)
-    drawn = draw_page(page, [("p_0001", [[20, 20], [380, 20], [380, 280], [20, 280]]), ("p_0002", [[20, 320], [380, 320], [380, 580], [20, 580]])])
-    purple = np.all(drawn == COLOR, axis=2)
-    # Each panel's top-left corner carries a filled label, and the outlines are drawn.
-    assert purple[25:35, 25:60].mean() > 0.3 and purple[325:335, 25:60].mean() > 0.3
-    assert purple[150, 18:23].any() and purple[450, 378:383].any()
-    assert drawn[300, 200].tolist() == [255, 255, 255]
+    assert _slices(600, 400) == [(0, 600)]
+    parts = _slices(4000, 400)
+    assert parts[0][0] == 0 and parts[-1][1] == 4000 and all(b[0] < a[1] for a, b in zip(parts, parts[1:]))
+    pages = [(np.full((4000, 400, 3), 230, np.uint8), [("p_0001", [[10, 10], [390, 10], [390, 3990], [10, 3990]])])]
+    pack = pack_id("ch_0002", pages)
+    data, count = numbered_pdf("ch_0002", pack, pages)
+    doc = fitz.open(stream=data, filetype="pdf")
+    assert count == doc.page_count == len(parts)
+    # The id changes when any outline does.
+    moved = [(pages[0][0], [("p_0001", [[12, 10], [390, 10], [390, 3990], [10, 3990]])])]
+    assert len(pack) == 4 and pack_id("ch_0002", moved) != pack
+
+
+def test_the_numbered_pdf_is_kept_under_the_size_limit():
+    import numpy as np
+
+    from jumbo_worker.pipeline.vision.numbered import numbered_pdf
+
+    rng = np.random.default_rng(1)
+    pages = [(rng.integers(0, 255, (1200, 800, 3), np.uint8), [("p_0001", [[10, 10], [790, 10], [790, 1190], [10, 1190]])]) for _ in range(3)]
+    big, _ = numbered_pdf("ch_0001", "abcd", pages)
+    small, _ = numbered_pdf("ch_0001", "abcd", pages, max_bytes=len(big) // 3)
+    assert len(small) <= len(big) // 3

@@ -12,7 +12,8 @@ The output manifest is JSON:
     {"schema_version": 1, "chapter_id": "ch_0001",
      "panels": <PanelsDoc>,                       # paths are project-relative (chapters/<id>/...)
      "files": {"pages/page_001.webp": "<blake3>", "panels/crops/p_0001.webp": "<blake3>", ...,
-               "panels/numbered.pdf": "<blake3>"},  # every page, panels outlined and labelled (Method 2)
+               "panels/numbered.pdf": "<blake3>",   # every page, panels outlined and labelled (Method 2)
+               "panels/numbered.json": "<blake3>"},  # {"chapter", "pack", "order", "pages", "bytes"} for checking answers
      "report": {"pages": n, "joins": [...], "canvases": [...], "detector": "magi"}}
 
 `files` keys are relative to the chapter folder; the app downloads each blob to that path.
@@ -33,7 +34,7 @@ from ...contracts.rules import parse
 from ...jobs import JobContext, JobError
 from .backdrop import encode_jpeg, make_backdrop
 from .detect import Detection, Detector, MagiDetector, OpenCVDetector
-from .numbered import numbered_pdf
+from .numbered import numbered_pdf, pack_id
 from .order import reading_order
 from .raster import rasterize
 from .slicer import slice_strip
@@ -183,8 +184,13 @@ async def run(ctx: JobContext) -> str:
     by_image: dict[int, list[tuple[str, list[list[float]]]]] = {}
     for order, (n, _, _, det) in enumerate(found):
         by_image.setdefault(n, []).append((f"p_{order + 1:04d}", det.polygon))
-    pack = await asyncio.to_thread(numbered_pdf, [(images[n][0], by_image[n]) for n in sorted(by_image)])
-    files["panels/numbered.pdf"] = await asyncio.to_thread(store.put, pack)
+    numbered_pages = [(images[n][0], by_image[n]) for n in sorted(by_image)]
+    pack = pack_id(chapter, numbered_pages)
+    pdf, pdf_pages = await asyncio.to_thread(numbered_pdf, chapter, pack, numbered_pages)
+    files["panels/numbered.pdf"] = await asyncio.to_thread(store.put, pdf)
+    # What the app checks a pasted Gemini answer against: this chapter, this export, these panels in reading order.
+    numbered = {"chapter": chapter, "pack": pack, "order": [f"p_{i + 1:04d}" for i in range(len(found))], "pages": pdf_pages, "bytes": len(pdf)}
+    files["panels/numbered.json"] = await asyncio.to_thread(store.put, json.dumps(numbered).encode())
     fingerprints = None
     # Only a complete set is kept: a row missing would shift every box after it.
     if box_n and len(rows) == box_n and len({len(r) for r in rows}) == 1:
