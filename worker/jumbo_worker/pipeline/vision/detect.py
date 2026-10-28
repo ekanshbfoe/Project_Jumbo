@@ -30,7 +30,7 @@ import cv2
 import numpy as np
 
 from ...models.magi import FINGERPRINT_MODEL
-from .slicer import INK_TOLERANCE
+from .slicer import INK_TOLERANCE, split_tall
 from .stitch import background_level, gray
 from .textonly import is_text_only
 from .tiling import dedupe, merge_panels, tile_spans
@@ -163,7 +163,7 @@ class MagiDetector:
 
     Images taller than a page are detected in overlapping tiles (see tiling.py); the tile images are
     written next to `path` for the replica to read, and all tiles are sent at once so the pool can
-    spread them over replicas. Boxes around a lone bubble or caption are folded (see textonly.py).
+    spread them over replicas. A panel left far taller than wide is cut at its quietest rows (slicer.split_tall). Boxes around a lone bubble or caption are folded (see textonly.py).
     """
 
     name = "magi"
@@ -202,6 +202,7 @@ class MagiDetector:
             [[_poly_box(_shift(p["polygon"], top)) for p in r["panels"] if len(p.get("polygon", [])) >= 3] for top, r in results],
             [(top, top + (spans[n][1] - spans[n][0])) for n, (top, _) in enumerate(results)],
         )
+        boxes = [piece for b in boxes for piece in split_tall(image, b)]
         panels = [Detection([(b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3])]) for b in boxes]
         texts = dedupe([{**t, "polygon": _shift(t["polygon"], top)} for top, r in results for t in r.get("texts", [])], lambda t: _poly_box(t["polygon"]))
         chars = dedupe(

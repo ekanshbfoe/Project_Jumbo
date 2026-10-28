@@ -14,7 +14,7 @@ from jumbo_worker.jobs import JobContext, JobRunner
 from jumbo_worker.pipeline.vision.detect import Detection, MagiDetector, OpenCVDetector
 from jumbo_worker.pipeline.vision.order import reading_order
 from jumbo_worker.pipeline.vision.raster import rasterize
-from jumbo_worker.pipeline.vision.slicer import merge_slivers, slice_strip
+from jumbo_worker.pipeline.vision.slicer import merge_slivers, slice_strip, split_tall
 from jumbo_worker.pipeline.vision.stitch import chapter_layout, find_joins, stitch
 
 # A webtoon strip: four panels; the PDF pages cut it at 1500 and 3000 rows.
@@ -115,6 +115,20 @@ def test_slivers_are_merged_into_the_neighbour_across_the_narrower_gap():
     image[700:730, 200:600] = 0
     image[900:1450] = art(550, 800, seed=2)
     assert slice_strip(image) == [(50, 730), (900, 1450)]
+
+
+def test_a_panel_far_taller_than_wide_is_cut_at_its_quietest_rows():
+    width = 500
+    shots = [art(1000, width, seed=s) for s in (41, 42, 43)]
+    calm = np.full((60, width, 3), 200, np.uint8)
+    image = np.vstack([shots[0], calm, shots[1], calm, shots[2]])
+    pieces = split_tall(image, (0, 0, width, image.shape[0]))
+    assert len(pieces) == 3
+    # Each cut lands inside a calm band, and the pieces tile the box.
+    for (_, _, _, bottom), (_, top, _, _) in zip(pieces, pieces[1:]):
+        assert bottom == top and (1000 <= top <= 1060 or 2060 <= top <= 2120), pieces
+    assert pieces[0][1] == 0 and pieces[-1][3] == image.shape[0]
+    assert split_tall(image, (0, 0, width, 1400)) == [(0, 0, width, 1400)]
 
 
 def test_reading_order_rows_then_columns():

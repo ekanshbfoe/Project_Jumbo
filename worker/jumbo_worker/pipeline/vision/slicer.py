@@ -95,3 +95,43 @@ def merge_slivers(slices: list[tuple[int, int]], min_slice: int) -> list[tuple[i
         a, b = sorted((i, j))
         slices[a:b + 1] = [(slices[a][0], slices[b][1])]
     return slices
+
+
+# A panel taller than this many widths is cut into pieces (a borderless scroll that Magi saw as one shot in
+# every tile, chained together across the tiles); pieces aim at TALL_PIECE widths, which pan well.
+MAX_PANEL_ASPECT = 3.0
+TALL_PIECE = 2.2
+# How far from an even cut a piece edge may move to find a quiet row, as a share of a piece.
+CUT_SLACK = 0.25
+# A pixel step above this many grey levels is drawing detail.
+DETAIL_STEP = 10
+
+
+def busy_rows(image: np.ndarray) -> np.ndarray:
+    """Share of each row's pixels on a drawing edge (horizontal or vertical step)."""
+    g = gray(image).astype(np.int16)
+    across = (np.abs(np.diff(g, axis=1)) > DETAIL_STEP).mean(axis=1)
+    down = np.r_[(np.abs(np.diff(g, axis=0)) > DETAIL_STEP).mean(axis=1), 0.0]
+    return np.maximum(across, down)
+
+
+def split_tall(image: np.ndarray, box: tuple[float, float, float, float]) -> list[tuple[float, float, float, float]]:
+    """`box` (x0, y0, x1, y1), cut into pieces at its quietest rows when it is far taller than wide."""
+    x0, y0, x1, y1 = box
+    width, height = x1 - x0, y1 - y0
+    if width <= 0 or height <= MAX_PANEL_ASPECT * width:
+        return [box]
+    pieces = int(np.ceil(height / (TALL_PIECE * width)))
+    step = height / pieces
+    busy = busy_rows(image[max(0, int(y0)) : int(np.ceil(y1)), max(0, int(x0)) : int(np.ceil(x1))])
+    # Smoothed over a few rows, so a cut lands in a calm band, not between two busy lines.
+    busy = np.convolve(busy, np.ones(15) / 15, mode="same")
+    cuts = []
+    for k in range(1, pieces):
+        lo, hi = int(k * step - CUT_SLACK * step), int(k * step + CUT_SLACK * step)
+        window = busy[lo:hi]
+        # The calmest row; among equally calm ones, the closest to the even cut.
+        calm = np.flatnonzero(window <= window.min() + 1e-3) + lo
+        cuts.append(int(calm[np.argmin(np.abs(calm - k * step))]))
+    edges = [0, *cuts, int(height)]
+    return [(x0, y0 + a, x1, y0 + b) for a, b in zip(edges, edges[1:])]
