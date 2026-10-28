@@ -1,9 +1,10 @@
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
-import { api, bridgeApi, CHAPTER_STATES, errorText, type ChapterManifest, type Detector, type VisionProgress } from "../api";
+import { api, bridgeApi, CHAPTER_STATES, errorText, type ChapterManifest, type Detector } from "../api";
 import type { ScreenProps } from "../hub/modules";
-import { makeVideo, ReviewNeeded, type MakeVideoStage } from "../makeVideo";
+import type { MakeVideoStage } from "../makeVideo";
+import { startAnalyze, startMakeVideo, useRuns } from "../runs";
 import { useAsync } from "../useAsync";
 
 function Pipeline({ chapter }: { chapter: ChapterManifest }) {
@@ -34,57 +35,28 @@ export function ChaptersScreen({ project }: ScreenProps) {
   const chapters = useAsync(api.listChapters);
   const session = useAsync(bridgeApi.view);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const [importError, setImportError] = useState<string>();
   const [detector, setDetector] = useState<Detector>("magi");
-  const [analyzing, setAnalyzing] = useState<Record<string, VisionProgress>>({});
-  const [making, setMaking] = useState<Record<string, MakeVideoStage>>({});
-  const [notice, setNotice] = useState<string>();
+  const { runs, notice, error: runError } = useRuns();
+  const error = importError ?? runError;
   const connected = session.data?.phase === "ready";
 
   useEffect(() => {
-    const follow = (e: { payload: VisionProgress }) => setAnalyzing((a) => (e.payload.chapter in a ? { ...a, [e.payload.chapter]: e.payload } : a));
-    const offs = [
-      // Every stage reports the same {chapter, progress, message} shape.
-      ...["vision", "script", "voice", "render"].map((stage) => listen<VisionProgress>(`${stage}://progress`, follow)),
-      // Analyze needs a connected worker; follow the session as it starts and stops.
-      listen("bridge://state", () => session.reload()),
-    ];
+    // Analyze needs a connected worker; follow the session as it starts and stops.
+    const off = listen("bridge://state", () => session.reload());
     return () => {
-      offs.forEach((off) => off.then((f) => f()));
+      off.then((f) => f());
     };
   }, [session.reload]);
 
-  const analyze = async (chapter: string) => {
-    setError(undefined);
-    setAnalyzing((a) => ({ ...a, [chapter]: { chapter, progress: 0, message: "starting" } }));
-    try {
-      await api.analyzeChapter(chapter, detector);
-    } catch (e) {
-      setError(`${chapter}: ${errorText(e)}`);
-    } finally {
-      setAnalyzing(({ [chapter]: _, ...rest }) => rest);
-      chapters.reload();
-    }
+  const analyze = (chapter: string) => {
+    setImportError(undefined);
+    void startAnalyze(chapter, detector, chapters.reload);
   };
 
-  const make = async (chapter: string) => {
-    setError(undefined);
-    setNotice(undefined);
-    setAnalyzing((a) => ({ ...a, [chapter]: { chapter, progress: 0, message: "" } }));
-    try {
-      await makeVideo(chapter, project.method, (stage) => {
-        setMaking((m) => ({ ...m, [chapter]: stage }));
-        setAnalyzing((a) => ({ ...a, [chapter]: { chapter, progress: 0, message: "" } }));
-        chapters.reload();
-      });
-      setNotice(`${chapter}: the video is ready on the Render screen.`);
-    } catch (e) {
-      (e instanceof ReviewNeeded ? setNotice : setError)(`${chapter}: ${errorText(e)}`);
-    } finally {
-      setMaking(({ [chapter]: _, ...rest }) => rest);
-      setAnalyzing(({ [chapter]: _, ...rest }) => rest);
-      chapters.reload();
-    }
+  const make = (chapter: string) => {
+    setImportError(undefined);
+    void startMakeVideo(chapter, project.method, chapters.reload);
   };
 
   const importPdfs = async () => {
@@ -96,13 +68,13 @@ export function ChaptersScreen({ project }: ScreenProps) {
     const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
     if (paths.length === 0) return;
     setBusy(true);
-    setError(undefined);
+    setImportError(undefined);
     try {
       // Import in natural filename order so "Chapter 2" comes before "Chapter 10".
       paths.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       await api.importChapters(paths);
     } catch (e) {
-      setError(errorText(e));
+      setImportError(errorText(e));
     } finally {
       setBusy(false);
       chapters.reload();
@@ -155,14 +127,14 @@ export function ChaptersScreen({ project }: ScreenProps) {
                   </td>
                   <td className="muted">{new Date(c.updated_at).toLocaleString()}</td>
                   <td>
-                    {making[c.id] ? (
+                    {runs[c.id]?.kind === "make" ? (
                       <span className="muted">
-                        {STAGE_LABEL[making[c.id]!]}
-                        {analyzing[c.id]?.message ? ` · ${Math.round(analyzing[c.id]!.progress * 100)}% ${analyzing[c.id]!.message}` : "…"}
+                        {runs[c.id]!.stage ? STAGE_LABEL[runs[c.id]!.stage!] : "starting"}
+                        {runs[c.id]!.message ? ` · ${Math.round(runs[c.id]!.progress * 100)}% ${runs[c.id]!.message}` : "…"}
                       </span>
-                    ) : analyzing[c.id] ? (
+                    ) : runs[c.id] ? (
                       <span className="muted">
-                        {Math.round(analyzing[c.id]!.progress * 100)}% {analyzing[c.id]!.message}
+                        {Math.round(runs[c.id]!.progress * 100)}% {runs[c.id]!.message}
                       </span>
                     ) : (
                       <button
@@ -173,10 +145,10 @@ export function ChaptersScreen({ project }: ScreenProps) {
                         {c.state === "analyzed" ? "Re-analyze" : "Analyze"}
                       </button>
                     )}{" "}
-                    {making[c.id] || analyzing[c.id] ? null : (
+                    {runs[c.id] ? null : (
                       <button
                         className="primary"
-                        disabled={Object.keys(making).length > 0 || c.state === "rendered"}
+                        disabled={Object.values(runs).some((r) => r.kind === "make") || c.state === "rendered"}
                         title="Panels, script and voice in one T4 session that ends when the voice is done, then the render on Kaggle CPUs"
                         onClick={() => make(c.id)}
                       >
