@@ -4,6 +4,7 @@ import { ChaptersScreen } from "../screens/ChaptersScreen";
 import { PanelsScreen } from "../screens/PanelsScreen";
 import { PreviewScreen } from "../screens/PreviewScreen";
 import { ReceiptBookScreen } from "../screens/ReceiptBookScreen";
+import { RenderScreen } from "../screens/RenderScreen";
 import { ScriptScreen } from "../screens/ScriptScreen";
 import { SessionScreen } from "../screens/SessionScreen";
 import { VoiceScreen } from "../screens/VoiceScreen";
@@ -37,6 +38,7 @@ export const MODULES: HubModule[] = [
       { id: "panels", label: "Panels", Component: PanelsScreen },
       { id: "script", label: "Script", Component: ScriptScreen },
       { id: "voice", label: "Voice", Component: VoiceScreen },
+      { id: "render", label: "Render", Component: RenderScreen },
       { id: "preview", label: "Preview", Component: PreviewScreen },
       { id: "receipt-book", label: "Receipt Book", Component: ReceiptBookScreen },
       { id: "session", label: "Session", Component: SessionScreen },

@@ -166,6 +166,15 @@ export interface VoiceReport {
   total_s: number;
 }
 
+/** `render://progress` events while a chapter renders on Kaggle. */
+export interface RenderProgress {
+  chapter: string;
+  progress: number;
+  message: string;
+  /** Kaggle status of each chunk machine, then the join machine. */
+  machines: string[];
+}
+
 export const api = {
   createProject: (path: string, title: string) => invoke<ProjectInfo>("create_project", { path, title }),
   openProject: (path: string) => invoke<ProjectInfo>("open_project", { path }),
@@ -186,6 +195,9 @@ export const api = {
   voiceLibrary: () => invoke<Record<string, string[]>>("voice_library"),
   importVoice: (speaker: string, emotion: string, path: string) => invoke<void>("import_voice", { speaker, emotion, path }),
   recordVoice: (chapter: string) => invoke<ChapterManifest>("record_voice", { chapter }),
+  saveEpisode: (chapter: string, episode: unknown) => invoke<void>("save_episode", { chapter, episode }),
+  renderChapter: (chapter: string) => invoke<ChapterManifest>("render_chapter", { chapter }),
+  chapterRender: (chapter: string) => invoke<{ episode: boolean; video: string | null }>("chapter_render", { chapter }),
   chapterAudio: (chapter: string) => invoke<{ audio: unknown; report: VoiceReport | null }>("chapter_audio", { chapter }),
 };
 
