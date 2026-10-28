@@ -22,6 +22,29 @@ const POLL: Duration = Duration::from_secs(15);
 const STALE_RETRIES: u32 = 12;
 /// Seconds to wait for Kaggle to process the job dataset.
 const DATASET_WAIT_S: u64 = 20 * 60;
+/// How long one Kaggle call keeps retrying a transient failure (a dropped connection, a 5xx, rate limiting)
+/// before the render gives up. A 20 to 40 minute render makes many calls; one hiccup must not end it.
+const KAGGLE_GRACE: Duration = Duration::from_secs(300);
+
+/// Runs a Kaggle call, retrying transient failures for up to `KAGGLE_GRACE`.
+async fn kaggle<T, F, Fut>(mut call: F) -> CmdResult<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = jumbo_bridge::Result<T>>,
+{
+    let deadline = std::time::Instant::now() + KAGGLE_GRACE;
+    let mut wait = Duration::from_secs(5);
+    loop {
+        match call().await {
+            Ok(value) => return Ok(value),
+            Err(e) if e.is_transient() && std::time::Instant::now() + wait < deadline => {
+                tokio::time::sleep(wait).await;
+                wait = (wait * 2).min(Duration::from_secs(60));
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+}
 
 #[derive(Clone, Serialize)]
 struct Progress<'a> {
@@ -64,10 +87,10 @@ pub fn save_episode(state: State<AppState>, chapter: String, episode: Value) -> 
 /// Pushes `kernel` and waits until it finishes. A run handed the previous job is pushed again after a minute.
 async fn run_machine(client: &KaggleClient, kernel: &KernelPush, mut on_status: impl FnMut(&str)) -> CmdResult<()> {
     for _ in 0..=STALE_RETRIES {
-        client.push(kernel).await.map_err(msg)?;
+        kaggle(|| client.push(kernel)).await?;
         tokio::time::sleep(POLL).await;
         let status = loop {
-            let status = client.status(&kernel.slug).await.map_err(msg)?;
+            let status = kaggle(|| client.status(&kernel.slug)).await?;
             on_status(&status.status);
             if status.is_finished() {
                 break status;
@@ -77,7 +100,7 @@ async fn run_machine(client: &KaggleClient, kernel: &KernelPush, mut on_status: 
         if status.status == "COMPLETE" {
             return Ok(());
         }
-        let log = client.output_log(&kernel.slug).await.unwrap_or_default();
+        let log = kaggle(|| client.output_log(&kernel.slug)).await.unwrap_or_default();
         if !log.contains("stale render job") {
             let tail = jumbo_bridge::kaggle::log_tail(&log, 15);
             return Err(format!(
@@ -122,19 +145,13 @@ pub async fn render_chapter(app: AppHandle, state: State<'_, AppState>, chapter:
     let archive = render::job_archive(&root, &episode, &files, &stamp).map_err(msg)?;
     report(0.02, format!("uploading the render job ({:.0} MB)", archive.len() as f64 / 1e6));
     let dataset = render::job_dataset(&owner);
-    client
-        .put_private_dataset(
-            &dataset,
-            "Jumbo render job",
-            &[DatasetFile { name: render::JOB_FILE.into(), bytes: archive }],
-        )
-        .await
-        .map_err(msg)?;
+    let job_files = [DatasetFile { name: render::JOB_FILE.into(), bytes: archive }];
+    kaggle(|| client.put_private_dataset(&dataset, "Jumbo render job", &job_files)).await?;
     let waited = std::time::Instant::now();
     // Right after an upload Kaggle can still report the previous version as ready, so give it a moment first.
     report(0.06, "Kaggle is processing the render job".into());
     tokio::time::sleep(Duration::from_secs(60)).await;
-    while !client.dataset_status(&dataset).await.map_err(msg)?.is_some_and(|s| s.is_ready()) {
+    while !kaggle(|| client.dataset_status(&dataset)).await?.is_some_and(|s| s.is_ready()) {
         if waited.elapsed().as_secs() > DATASET_WAIT_S {
             return Err(format!("Kaggle did not finish processing {dataset}"));
         }
@@ -176,11 +193,11 @@ pub async fn render_chapter(app: AppHandle, state: State<'_, AppState>, chapter:
 
     report(0.95, "downloading the video".into());
     let name = format!("{chapter}.mp4");
-    let files = client.output_files(&join.slug).await.map_err(msg)?;
+    let files = kaggle(|| client.output_files(&join.slug)).await?;
     let video = files.iter().find(|f| f.file_name == name).ok_or_else(|| format!("{} wrote no {name}", join.slug))?;
     let out = dir.join("render").join(&name);
     std::fs::create_dir_all(out.parent().ok_or("bad path")?).map_err(msg)?;
-    client.download_output(video, &out).await.map_err(msg)?;
+    kaggle(|| client.download_output(video, &out)).await?;
     let manifest = with_project(&state, |p| {
         let manifest = chapter::load_chapter(p, id).map_err(msg)?;
         if manifest.state == ChapterState::Voiced {

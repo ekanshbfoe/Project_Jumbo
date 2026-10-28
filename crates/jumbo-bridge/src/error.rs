@@ -59,6 +59,15 @@ fn readable_body(service: &str, body: &str) -> String {
 }
 
 impl BridgeError {
+    /// Whether trying again later may succeed: a dropped connection, a timeout, rate limiting or a server error.
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::Http(_) | Self::Timeout(_) => true,
+            Self::Status { status, .. } => *status == 429 || *status >= 500,
+            _ => false,
+        }
+    }
+
     pub(crate) fn io(path: impl AsRef<std::path::Path>, source: std::io::Error) -> Self {
         Self::Io { path: path.as_ref().display().to_string(), source }
     }
