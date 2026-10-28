@@ -18,6 +18,9 @@ pub fn client() -> reqwest::Client {
     init_tls();
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(20))
+        // A half-open connection (a tunnel that dropped mid-request) fails after a minute without data instead of
+        // hanging forever; it is the time between reads, so long uploads and downloads are not cut short.
+        .read_timeout(Duration::from_secs(60))
         .user_agent(concat!("jumbo-desktop/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("static reqwest configuration is valid")
