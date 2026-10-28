@@ -14,8 +14,8 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::bridge::{BridgeState, current_client, download, upload};
+use crate::commands::{AppState, CmdResult, Lane, begin_job, msg, with_project};
 use crate::script::run_job;
-use crate::commands::{AppState, CmdResult, msg, with_project};
 
 /// What the worker's vision job returns (worker/jumbo_worker/pipeline/vision/stage.py).
 #[derive(Debug, Deserialize)]
@@ -107,6 +107,7 @@ pub async fn analyze_chapter(
     detector: String,
 ) -> CmdResult<ChapterManifest> {
     let id: ChapterId = chapter.parse().map_err(msg)?;
+    let _job = begin_job(&state, Lane::Worker, format!("{chapter} panels"))?;
     let (dir, pdf) = with_project(&state, |p| {
         let manifest = chapter::load_chapter(p, id).map_err(msg)?;
         if manifest.state > ChapterState::Analyzed {

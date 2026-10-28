@@ -138,7 +138,7 @@ export function ChaptersScreen({ project }: ScreenProps) {
                       </span>
                     ) : (
                       <button
-                        disabled={!connected || CHAPTER_STATES.indexOf(c.state) > CHAPTER_STATES.indexOf("analyzed")}
+                        disabled={!connected || Object.keys(runs).length > 0 || CHAPTER_STATES.indexOf(c.state) > CHAPTER_STATES.indexOf("analyzed")}
                         title={connected ? "Find panels with the selected detector" : "Launch a worker on the Session screen first"}
                         onClick={() => analyze(c.id)}
                       >
@@ -148,7 +148,7 @@ export function ChaptersScreen({ project }: ScreenProps) {
                     {runs[c.id] ? null : (
                       <button
                         className="primary"
-                        disabled={Object.values(runs).some((r) => r.kind === "make") || c.state === "rendered"}
+                        disabled={Object.keys(runs).length > 0 || c.state === "rendered"}
                         title="Panels, script and voice in one T4 session that ends when the voice is done, then the render on Kaggle CPUs"
                         onClick={() => make(c.id)}
                       >

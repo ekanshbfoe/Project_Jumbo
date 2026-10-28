@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, type ProjectInfo } from "./api";
+import { api, errorText, type ProjectInfo } from "./api";
 import { MODULES, screensFor } from "./hub/modules";
+import { useRuns } from "./runs";
 import { HomeScreen } from "./screens/HomeScreen";
 import { methodLabel, ProjectsScreen } from "./screens/ProjectsScreen";
 
@@ -16,6 +17,8 @@ export function App() {
   const [active, setActive] = useState(firstScreen);
   // With no project open: the content-type cards, then the manga and manhwa projects.
   const [home, setHome] = useState<"content" | "manga">("content");
+  const [switchError, setSwitchError] = useState<string>();
+  const running = Object.keys(useRuns().runs);
 
   useEffect(() => {
     api
@@ -54,10 +57,18 @@ export function App() {
           </div>
           <button
             style={{ marginTop: 8, width: "100%" }}
-            onClick={() => api.closeProject().then(() => setProject(null))}
+            disabled={running.length > 0}
+            title={running.length ? `Wait for ${running.join(", ")} to finish` : undefined}
+            onClick={() =>
+              api.closeProject().then(
+                () => setProject(null),
+                (e) => setSwitchError(errorText(e)),
+              )
+            }
           >
             Switch project
           </button>
+          {switchError ? <div className="error">{switchError}</div> : null}
         </div>
         {MODULES.map((m) => (
           <nav key={m.id} className="nav-group">

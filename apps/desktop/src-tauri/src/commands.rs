@@ -13,10 +13,53 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::recent::{self, RecentProject};
 
-/// The open project. Holding it holds the project's exclusive file lock.
+/// The open project, and the long jobs running on it. Holding the project holds its exclusive file lock.
 #[derive(Default)]
 pub struct AppState {
     project: Mutex<Option<Project>>,
+    jobs: Mutex<Vec<(Lane, String)>>,
+}
+
+/// What a long job occupies. One job at a time per lane: the T4 session runs one stage at a time (and Make
+/// video stops the session when its stage ends), and every render shares the same Kaggle job dataset and kernels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Lane {
+    Worker,
+    Render,
+}
+
+/// A running job; dropping it (the job finished, failed or was abandoned) frees its lane.
+pub(crate) struct JobGuard<'a> {
+    state: &'a AppState,
+    label: String,
+}
+
+impl Drop for JobGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut jobs) = self.state.jobs.lock() {
+            jobs.retain(|(_, l)| *l != self.label);
+        }
+    }
+}
+
+/// Claims `lane` for a job, or says which job holds it.
+pub(crate) fn begin_job<'a>(state: &'a AppState, lane: Lane, label: String) -> CmdResult<JobGuard<'a>> {
+    let mut jobs = state.jobs.lock().map_err(msg)?;
+    if let Some((_, running)) = jobs.iter().find(|(l, _)| *l == lane) {
+        return Err(format!("{running} is still running; wait for it to finish"));
+    }
+    jobs.push((lane, label.clone()));
+    Ok(JobGuard { state, label })
+}
+
+/// Refuses to change the open project while a job would write its results into it.
+fn ensure_idle(state: &AppState) -> CmdResult<()> {
+    match state.jobs.lock().map_err(msg)?.first() {
+        Some((_, running)) => {
+            Err(format!("{running} is still running in this project; wait for it to finish before switching project"))
+        }
+        None => Ok(()),
+    }
 }
 
 pub(crate) type CmdResult<T> = Result<T, String>;
@@ -91,6 +134,7 @@ pub fn create_project(
     title: String,
     method: Option<Method>,
 ) -> CmdResult<ProjectInfo> {
+    ensure_idle(&state)?;
     let mut project = Project::create(&path, &title).map_err(msg)?;
     if let Some(method) = method {
         project.set_method(method).map_err(msg)?;
@@ -118,6 +162,7 @@ pub fn set_project_method(app: AppHandle, state: State<AppState>, method: Method
 
 #[tauri::command]
 pub fn open_project(app: AppHandle, state: State<AppState>, path: String) -> CmdResult<ProjectInfo> {
+    ensure_idle(&state)?;
     // Release the current project first so reopening the same folder does not trip over our own lock.
     state.project.lock().map_err(msg)?.take();
     let project = Project::open(&path).map_err(msg)?;
@@ -132,6 +177,7 @@ pub fn open_at_startup(app: &AppHandle, state: &State<AppState>, path: PathBuf) 
 
 #[tauri::command]
 pub fn close_project(state: State<AppState>) -> CmdResult<()> {
+    ensure_idle(&state)?;
     state.project.lock().map_err(msg)?.take();
     Ok(())
 }
@@ -259,6 +305,21 @@ mod tests {
         assert_eq!(script_file(dir.path()).as_deref(), Some("draft.v10.json"));
         std::fs::write(dir.path().join("approved.json"), "{}").expect("write");
         assert_eq!(script_file(dir.path()).as_deref(), Some("approved.json"));
+    }
+
+    #[test]
+    fn a_lane_holds_one_job_and_is_freed_when_the_job_ends() {
+        let state = AppState::default();
+        let voice = begin_job(&state, Lane::Worker, "ch_0001 voice".into()).expect("free");
+        assert_eq!(
+            begin_job(&state, Lane::Worker, "ch_0002 panels".into()).err().as_deref(),
+            Some("ch_0001 voice is still running; wait for it to finish")
+        );
+        let render = begin_job(&state, Lane::Render, "ch_0003 render".into()).expect("other lane");
+        assert!(ensure_idle(&state).is_err());
+        drop(voice);
+        drop(render);
+        assert!(ensure_idle(&state).is_ok() && begin_job(&state, Lane::Worker, "ch_0002 panels".into()).is_ok());
     }
 
     #[test]

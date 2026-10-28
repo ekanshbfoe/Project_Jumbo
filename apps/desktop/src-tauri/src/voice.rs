@@ -17,7 +17,7 @@ use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::bridge::{BridgeState, current_client, download, upload};
-use crate::commands::{AppState, CmdResult, config_dir, msg, with_project};
+use crate::commands::{AppState, CmdResult, Lane, begin_job, config_dir, msg, with_project};
 use crate::script::run_job;
 
 const VOICE_EXT: &str = ".voice.gguf";
@@ -149,6 +149,7 @@ pub async fn record_voice(
     chapter: String,
 ) -> CmdResult<ChapterManifest> {
     let id: ChapterId = chapter.parse().map_err(msg)?;
+    let _job = begin_job(&state, Lane::Worker, format!("{chapter} voice"))?;
     let shared = shared_voices(&app).ok();
     let (dir, script, voices) = with_project(&state, |p| {
         let manifest = chapter::load_chapter(p, id).map_err(msg)?;

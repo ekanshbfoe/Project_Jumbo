@@ -15,7 +15,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::bridge::kaggle_client;
-use crate::commands::{AppState, CmdResult, msg, with_project};
+use crate::commands::{AppState, CmdResult, Lane, begin_job, msg, with_project};
 
 const POLL: Duration = Duration::from_secs(15);
 /// Times a machine handed the previous job is pushed again before the render gives up.
@@ -97,6 +97,7 @@ async fn run_machine(client: &KaggleClient, kernel: &KernelPush, mut on_status: 
 #[tauri::command]
 pub async fn render_chapter(app: AppHandle, state: State<'_, AppState>, chapter: String) -> CmdResult<ChapterManifest> {
     let id: ChapterId = chapter.parse().map_err(msg)?;
+    let _job = begin_job(&state, Lane::Render, format!("{chapter} render"))?;
     let (root, dir, episode) = with_project(&state, |p| {
         let manifest = chapter::load_chapter(p, id).map_err(msg)?;
         if !matches!(manifest.state, ChapterState::Voiced | ChapterState::Rendered) {

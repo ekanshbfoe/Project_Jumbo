@@ -16,7 +16,7 @@ use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::bridge::{BridgeState, current_client, download, upload, with_worker};
-use crate::commands::{AppState, CmdResult, msg, with_project};
+use crate::commands::{AppState, CmdResult, Lane, begin_job, msg, with_project};
 use crate::memory::{self, StoryMemory};
 
 /// What the worker's director job returns (worker/jumbo_worker/pipeline/director/stage.py).
@@ -116,6 +116,7 @@ pub async fn write_script(
     chapter: String,
 ) -> CmdResult<ChapterManifest> {
     let id: ChapterId = chapter.parse().map_err(msg)?;
+    let _job = begin_job(&state, Lane::Worker, format!("{chapter} script"))?;
     let (root, dir, panels, context) = with_project(&state, |p| {
         if p.manifest().method == Method::Method2 {
             return Err("this is a Method 2 project: its scripts come from Gemini, not the Director".into());
