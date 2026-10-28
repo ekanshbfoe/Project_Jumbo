@@ -64,9 +64,12 @@ async def test_magi_detector_tiles_a_tall_slice_and_shifts_results_back(tmp_path
     path.write_bytes(b"")
     panels = await MagiDetector(call).detect(image, path)
     assert len(seen) == len(tile_spans(600, 100)) > 1
-    # Overlapping full-tile panels chain into one panel covering the slice; tiles are cleaned up.
-    assert len(panels) == 1 and panels[0].box == (0, 0, 100, 600)
-    assert len(panels[0].bubbles) == len(seen)
+    # Overlapping full-tile panels chain into one box covering the slice; six widths tall, it is then cut into
+    # pieces that tile it (slicer.split_tall). Tiles are cleaned up.
+    boxes = [p.box for p in panels]
+    assert len(boxes) > 1 and boxes[0][1] == 0 and boxes[-1][3] == 600
+    assert all(a[3] == b[1] and a[0] == 0 and a[2] == 100 for a, b in zip(boxes, boxes[1:]))
+    assert sum(len(p.bubbles) for p in panels) == len(seen)
     assert list(tmp_path.iterdir()) == [path]
 
 
