@@ -1,14 +1,18 @@
+import { scriptProblems } from "./hinglish";
 import { Emotion, ScriptDoc } from "./script";
 import { MULTI_PANEL_PRESETS, PresetSpec, type PresetName } from "./presets";
 
 /**
  * Method 2: Gemini (Google AI Studio) answers in tagged text, not JSON, and this turns it into a ScriptDoc.
  *
+ *   PACK: ch_0003 7f3a
  *   L3 [p_0005, p_0006] (tense) {split_screen} …Hindi narration…
  *
- * The cleanup is Director v3's Pass 3 (worker/jumbo_worker/pipeline/director/passes.py): every panel exactly once in
- * reading order, numbers as Hindi words, common English loanwords back in Latin letters, and a camera move that
- * matches the line's panel count. The MEMORY block is kept for the next chapter's prompt.
+ * The answer is pasted by hand, so it is read forgivingly (Markdown, list markers, escaped brackets, wrapped lines,
+ * loose panel ids) but checked strictly: an answer for another chapter or pack, a cut-off answer that leaves panels
+ * unnarrated, an empty or overlong line, or a missing MEMORY block is refused with a message that says what to do.
+ * The cleanup is Director v3's Pass 3 (worker/jumbo_worker/pipeline/director/passes.py): numbers as Hindi words,
+ * common English loanwords back in Latin letters, and a camera move that fits the line's panel count.
  */
 
 export interface TaggedLine {
@@ -27,49 +31,125 @@ export interface StoryMemory {
 }
 
 export interface TaggedScript {
+  /** The PACK line: the chapter and pack the answer was written for. */
+  pack: { chapter: string; id: string } | null;
   beats: string;
   lines: TaggedLine[];
   memory: StoryMemory;
+  /** How many NARRATION blocks the text holds; more than one means two answers were pasted. */
+  answers: number;
 }
 
-const LINE_RE = /^\s*L(\d+)\s*\[([^\]]*)\]\s*(?:\(([^)]*)\))?\s*(?:\{([^}]*)\})?\s*(.+?)\s*$/;
-const PANEL_RE = /p_\d{4}/g;
-const SECTION_RE = /^\s*\**\s*(BEATS|NARRATION|MEMORY)\s*\**\s*:\s*\**\s*$/;
+/** Strips what copying from AI Studio adds around a line: Markdown, list markers, escapes, full-width brackets. */
+export function cleanLine(raw: string): string {
+  return raw
+    .replace(/\\([[\]_*(){}#.\-|])/g, "$1")
+    .replace(/\*+|__|`/g, "")
+    .replace(/[【［]/g, "[")
+    .replace(/[】］]/g, "]")
+    .replace(/（/g, "(")
+    .replace(/）/g, ")")
+    .replace(/｛/g, "{")
+    .replace(/｝/g, "}")
+    .replace(/^\s*(?:[>#•\-–]+\s*|\d+[.)]\s+)+/, "")
+    .trim();
+}
+
+const LINE_RE = /^L\s*(\d+)\s*[:.\-–]?\s*\[([^\]]*)\]\s*(?:\(([^)]*)\))?\s*(?:\{([^}]*)\})?\s*(.*)$/i;
+const SECTION_RE = /^(BEATS|NARRATION|MEMORY)\s*:?\s*(.*)$/i;
+const PACK_RE = /^PACK\s*:?\s*(ch_\d{4})\W*(?:pack\W*)?([0-9a-f]{4})\b/i;
+const STORY_RE = /^STORY SO FAR\s*:?\s*/i;
+const CHARACTERS_RE = /^CHARACTERS\s*:?\s*/i;
+
+const panelId = (n: number) => `p_${String(n).padStart(4, "0")}`;
+
+/** Panel ids in a line's brackets, however Gemini wrote them: p_0007, P_7, p0007, and ranges p_0003-p_0005. */
+export function panelIds(text: string): string[] {
+  const out: string[] = [];
+  const re = /p[\s_-]?0*(\d{1,4})(?:\s*(?:-|–|—|to)\s*p?[\s_-]?0*(\d{1,4}))?/gi;
+  for (const m of text.matchAll(re)) {
+    const from = Number(m[1]);
+    const to = m[2] === undefined ? from : Number(m[2]);
+    if (to >= from && to - from <= 10) for (let n = from; n <= to; n++) out.push(panelId(n));
+    else out.push(panelId(from));
+  }
+  return out;
+}
 
 export function parseTagged(text: string): TaggedScript {
-  const sections: Record<string, string[]> = {};
+  const sections: Record<string, string[]> = { BEATS: [], NARRATION: [], MEMORY: [] };
   let current = "NARRATION";
+  let answers = 0;
+  let pack: TaggedScript["pack"] = null;
+  const lines: TaggedLine[] = [];
   for (const raw of text.replace(/\r\n/g, "\n").split("\n")) {
-    const heading = SECTION_RE.exec(raw);
-    if (heading) {
-      current = heading[1]!;
+    const line = cleanLine(raw);
+    if (!line) continue;
+    const packMatch = PACK_RE.exec(line);
+    if (packMatch) {
+      pack ??= { chapter: packMatch[1]!.toLowerCase(), id: packMatch[2]!.toLowerCase() };
       continue;
     }
-    (sections[current] ??= []).push(raw);
+    const heading = SECTION_RE.exec(line);
+    if (heading) {
+      current = heading[1]!.toUpperCase();
+      if (current === "NARRATION") answers++;
+      if (heading[2]) sections[current]!.push(heading[2]);
+      continue;
+    }
+    const m = current === "MEMORY" ? null : LINE_RE.exec(line);
+    if (m) {
+      const emotion = Emotion.safeParse((m[3] ?? "").trim().toLowerCase());
+      lines.push({
+        n: Number(m[1]),
+        panel_ids: panelIds(m[2]!),
+        emotion: emotion.success ? emotion.data : null,
+        move: m[4] ? m[4].trim().toLowerCase() : null,
+        narration: m[5]!.trim(),
+      });
+      current = "NARRATION";
+    } else if (current === "NARRATION" && lines.length) {
+      // A narration wrapped onto the next line when it was copied.
+      const last = lines[lines.length - 1]!;
+      last.narration = `${last.narration} ${line}`.trim();
+    } else {
+      sections[current]!.push(line);
+    }
   }
-  const lines: TaggedLine[] = [];
-  for (const raw of sections.NARRATION ?? []) {
-    const m = LINE_RE.exec(raw);
-    if (!m) continue;
-    const emotion = Emotion.safeParse((m[3] ?? "").trim().toLowerCase());
-    lines.push({
-      n: Number(m[1]),
-      panel_ids: m[2]!.match(PANEL_RE) ?? [],
-      emotion: emotion.success ? emotion.data : null,
-      move: m[4] ? m[4].trim().toLowerCase() : null,
-      narration: m[5]!.trim(),
-    });
-  }
-  const memory = (sections.MEMORY ?? []).map((l) => l.trim()).filter(Boolean);
-  const storyAt = memory.findIndex((l) => /^STORY SO FAR\s*:/i.test(l));
-  const charsAt = memory.findIndex((l) => /^CHARACTERS\s*:/i.test(l));
-  const story = storyAt < 0 ? "" : [memory[storyAt]!.replace(/^STORY SO FAR\s*:\s*/i, ""), ...memory.slice(storyAt + 1, charsAt > storyAt ? charsAt : undefined)].join(" ").trim();
-  const characters = charsAt < 0 ? [] : [memory[charsAt]!.replace(/^CHARACTERS\s*:\s*/i, ""), ...memory.slice(charsAt + 1)].map((l) => l.replace(/^[-*]\s*/, "").trim()).filter(Boolean);
-  return { beats: (sections.BEATS ?? []).join("\n").trim(), lines, memory: { story, characters } };
+  return {
+    pack,
+    beats: sections.BEATS!.join("\n"),
+    lines,
+    memory: readMemory(sections.MEMORY!),
+    answers: Math.max(answers, lines.length ? 1 : 0),
+  };
 }
 
-/** Every panel on screen exactly once, in reading order, at most three per line. */
-export function fixPanels(lines: TaggedLine[], order: string[]): { lines: TaggedLine[]; repairs: string[] } {
+function readMemory(lines: string[]): StoryMemory {
+  const story: string[] = [];
+  const characters: string[] = [];
+  let into: string[] | null = null;
+  for (const line of lines) {
+    if (STORY_RE.test(line)) {
+      into = story;
+      const rest = line.replace(STORY_RE, "");
+      if (rest) story.push(rest);
+    } else if (CHARACTERS_RE.test(line)) {
+      into = characters;
+      const rest = line.replace(CHARACTERS_RE, "");
+      if (rest) characters.push(rest);
+    } else {
+      into?.push(line);
+    }
+  }
+  return { story: story.join(" ").trim(), characters };
+}
+
+/**
+ * Every panel on screen once, at most three per line, in the order Gemini narrated them. A single skipped panel
+ * between narrated ones joins its neighbour's line; any other unnarrated panel is reported as missing.
+ */
+export function fixPanels(lines: TaggedLine[], order: string[]): { lines: TaggedLine[]; repairs: string[]; missing: string[] } {
   const pos = new Map(order.map((id, i) => [id, i]));
   const repairs: string[] = [];
   const seen = new Set<string>();
@@ -92,20 +172,20 @@ export function fixPanels(lines: TaggedLine[], order: string[]): { lines: Tagged
     line.panel_ids = ids;
   }
   const kept = lines.filter((l) => l.panel_ids.length > 0 || (repairs.push(`L${l.n}: no valid panel, line dropped`), false));
-  for (const id of order) {
-    if (seen.has(id)) continue;
-    // A missing panel joins the line holding its next or previous neighbour, if that line has room.
-    const host = kept.find((l) => l.panel_ids.length < 3 && l.panel_ids.some((q) => Math.abs(pos.get(q)! - pos.get(id)!) === 1));
+  const narrated = new Set(seen);
+  const missing: string[] = [];
+  order.forEach((id, i) => {
+    if (narrated.has(id)) return;
+    const isolated = i > 0 && narrated.has(order[i - 1]!) && (i === order.length - 1 || narrated.has(order[i + 1]!));
+    const host = isolated && kept.find((l) => l.panel_ids.length < 3 && l.panel_ids.some((q) => Math.abs(pos.get(q)! - i) === 1));
     if (host) {
       host.panel_ids = [...host.panel_ids, id].sort((a, b) => pos.get(a)! - pos.get(b)!);
-      seen.add(id);
       repairs.push(`${id} was not narrated: joined L${host.n}`);
     } else {
-      repairs.push(`${id} was not narrated and has no neighbour line with room`);
+      missing.push(id);
     }
-  }
-  kept.sort((a, b) => pos.get(a.panel_ids[0]!)! - pos.get(b.panel_ids[0]!)!);
-  return { lines: kept, repairs };
+  });
+  return { lines: kept, repairs, missing };
 }
 
 const ONES = (
@@ -134,10 +214,15 @@ export function hindiNumber(n: number): string {
   return String(n);
 }
 
+const DEVANAGARI_DIGITS = "०१२३४५६७८९";
+
 export function numbersToWords(text: string): string {
   return text
+    .replace(/[०-९]/g, (d) => String(DEVANAGARI_DIGITS.indexOf(d)))
+    .replace(/(?<=\d),(?=\d{2,3}(?:\D|$))/g, "")
     .replace(/\b(\d{1,2}):(\d{2})\b(\s*बजे)?/g, (_, h: string, m: string) => `${hindiNumber(Number(h))} बजकर ${hindiNumber(Number(m))} मिनट`)
     .replace(/(\d+)%/g, (_, n: string) => `${hindiNumber(Number(n))} प्रतिशत`)
+    .replace(/(\d+)\.(\d+)/g, (_, a: string, b: string) => `${hindiNumber(Number(a))} दशमलव ${[...b].map((d) => ONES[Number(d)]).join(" ")}`)
     .replace(/\d+/g, (d) => (d.length <= 9 ? hindiNumber(Number(d)) : d));
 }
 
@@ -158,6 +243,7 @@ export function loanwordsToLatin(text: string): string {
 }
 
 const PRESET_NAMES = new Set<string>(PresetSpec.options.map((o) => o.shape.name.value));
+const MAX_NARRATION = 2000;
 
 /** The line's camera move, made to fit its panel count (the strict Pass 2 schema did this in Method 1). */
 function presetFor(move: string | null, panels: number, note: (msg: string) => void): PresetSpec {
@@ -176,23 +262,78 @@ function presetFor(move: string | null, panels: number, note: (msg: string) => v
   return PresetSpec.parse({ name, params: {} });
 }
 
-export interface TaggedResult {
-  doc: ScriptDoc;
+/** The pack a chapter's numbered PDF was made as (panels/numbered.json): the answer must name the same one. */
+export interface GeminiPack {
+  chapter: string;
+  pack: string;
+  /** Panel ids in reading order. */
+  order: string[];
+}
+
+export interface GeminiResult {
+  /** The script, or null while there are errors. */
+  doc: ScriptDoc | null;
   memory: StoryMemory;
   beats: string;
-  /** Repairs and notes, for the review screen. */
+  /** Problems that block saving, each saying what to do. */
+  errors: string[];
+  /** Repairs and warnings for the review screen. */
   notes: string[];
 }
 
-/** Gemini's tagged answer -> a validated ScriptDoc for `chapter`, whose panels are `order` in reading order. */
-export function taggedToScript(text: string, chapter: string, order: string[]): TaggedResult {
+/** Ids for a message: a short list, or "first–last (n panels)". */
+function describe(ids: string[]): string {
+  return ids.length > 4 ? `${ids[0]}–${ids[ids.length - 1]} (${ids.length} panels)` : ids.join(", ");
+}
+
+/** Gemini's pasted answer, checked against the pack the chapter was exported as. */
+export function readGeminiAnswer(text: string, pack: GeminiPack): GeminiResult {
   const parsed = parseTagged(text);
-  if (parsed.lines.length === 0) throw new Error("No narration lines found. Each line must look like: L1 [p_0001] (calm) {hold} …");
-  const { lines, repairs } = fixPanels(parsed.lines, order);
-  const notes = [...repairs];
+  const errors: string[] = [];
+  const notes: string[] = [];
+  const result = (doc: ScriptDoc | null): GeminiResult => ({ doc: errors.length ? null : doc, memory: parsed.memory, beats: parsed.beats, errors, notes });
+
+  if (parsed.answers > 1 || new Set(parsed.lines.map((l) => l.n)).size < parsed.lines.length) {
+    errors.push("Two answers are pasted (the narration starts again). Paste only the one you want to keep.");
+  }
+  if (!parsed.pack) {
+    errors.push(`The answer has no PACK line. Its first line must be "PACK: ${pack.chapter} ${pack.pack}"; copy the prompt again and regenerate.`);
+  } else if (parsed.pack.chapter !== pack.chapter || parsed.pack.id !== pack.pack) {
+    errors.push(
+      `This answer was written for ${parsed.pack.chapter} pack ${parsed.pack.id}, but this chapter's numbered PDF is ${pack.chapter} pack ${pack.pack}. ` +
+        "Paste the answer for this chapter, or give Gemini the current numbered PDF.",
+    );
+  }
+  if (parsed.lines.length === 0) {
+    errors.push("No narration lines found. Each line must look like: L1 [p_0001] (calm) {hold} …");
+    return result(null);
+  }
+  for (const l of parsed.lines) {
+    if (!/[ऀ-ॿA-Za-z]/.test(l.narration)) errors.push(`L${l.n} has no narration.`);
+    else if (l.narration.length > MAX_NARRATION) errors.push(`L${l.n} is ${l.narration.length} characters, over ${MAX_NARRATION}. Ask Gemini to split it.`);
+  }
+  const { lines, repairs, missing } = fixPanels(parsed.lines, pack.order);
+  notes.push(...repairs);
+  if (missing.length) {
+    const first = pack.order.indexOf(missing[0]!);
+    const tail = missing.length === pack.order.length - first;
+    errors.push(
+      tail
+        ? `The answer stops before ${missing[0]}: ${describe(missing)} have no narration. It was cut off; regenerate it (or lower the Thinking level).`
+        : `No narration for ${describe(missing)}. Ask Gemini to narrate every labelled panel.`,
+    );
+  }
+  if (!parsed.memory.story) errors.push("The MEMORY block (STORY SO FAR) is missing, so the next chapter would start without the story. Regenerate the answer.");
+  for (let i = 1; i < lines.length; i++) {
+    const before = pack.order.indexOf(lines[i - 1]!.panel_ids[0]!);
+    const now = pack.order.indexOf(lines[i]!.panel_ids[0]!);
+    if (now < before) notes.push(`L${lines[i]!.n} narrates ${lines[i]!.panel_ids[0]} after ${lines[i - 1]!.panel_ids[0]}: check the reading direction.`);
+  }
+  if (errors.length || lines.length === 0) return result(null);
+
   const doc = ScriptDoc.parse({
     schema_version: 1,
-    chapter_id: chapter,
+    chapter_id: pack.chapter,
     lines: lines.map((l, i) => ({
       id: `l_${String(i + 1).padStart(4, "0")}`,
       panel_ids: l.panel_ids,
@@ -203,5 +344,6 @@ export function taggedToScript(text: string, chapter: string, order: string[]): 
       transition_in: { name: "cut", duration: 0.3 },
     })),
   });
-  return { doc, memory: parsed.memory, beats: parsed.beats, notes };
+  for (const p of scriptProblems(doc)) errors.push(`L${lines[Number(p.path[1])]!.n}: ${p.message}`);
+  return result(doc);
 }
