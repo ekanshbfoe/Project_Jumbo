@@ -26,9 +26,9 @@ describe("fixtures", () => {
   it("sample episode mixes voiced and unvoiced beats", () => {
     const spec = sampleEpisode();
     expect(spec.beats.map((b) => b.audio !== null)).toEqual([true, false, true, false, false]);
-    // 5 beats with three overlapping transitions (fade 12, wipe 9, slide 12 frames).
+    // 5 beats with three overlapping transitions (fade, wipe and slide, each capped at 0.3 s = 9 frames).
     const total = spec.beats.reduce((sum, b) => sum + Math.round(b.duration * 30), 0);
-    expect(episodeTimeline(spec).durationInFrames).toBe(total - 33);
+    expect(episodeTimeline(spec).durationInFrames).toBe(total - 27);
   });
 });
 
