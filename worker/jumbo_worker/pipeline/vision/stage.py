@@ -11,7 +11,8 @@ The output manifest is JSON:
 
     {"schema_version": 1, "chapter_id": "ch_0001",
      "panels": <PanelsDoc>,                       # paths are project-relative (chapters/<id>/...)
-     "files": {"pages/page_001.webp": "<blake3>", "panels/crops/p_0001.webp": "<blake3>", ...},
+     "files": {"pages/page_001.webp": "<blake3>", "panels/crops/p_0001.webp": "<blake3>", ...,
+               "panels/numbered.pdf": "<blake3>"},  # every page, panels outlined and labelled (Method 2)
      "report": {"pages": n, "joins": [...], "canvases": [...], "detector": "magi"}}
 
 `files` keys are relative to the chapter folder; the app downloads each blob to that path.
@@ -32,6 +33,7 @@ from ...contracts.rules import parse
 from ...jobs import JobContext, JobError
 from .backdrop import encode_jpeg, make_backdrop
 from .detect import Detection, Detector, MagiDetector, OpenCVDetector
+from .numbered import numbered_pdf
 from .order import reading_order
 from .raster import rasterize
 from .slicer import slice_strip
@@ -177,6 +179,12 @@ async def run(ctx: JobContext) -> str:
                 "characters": characters,
             }
         )
+    # Method 2's pack for Gemini: every page with its panels outlined and labelled by id.
+    by_image: dict[int, list[tuple[str, list[list[float]]]]] = {}
+    for order, (n, _, _, det) in enumerate(found):
+        by_image.setdefault(n, []).append((f"p_{order + 1:04d}", det.polygon))
+    pack = await asyncio.to_thread(numbered_pdf, [(images[n][0], by_image[n]) for n in sorted(by_image)])
+    files["panels/numbered.pdf"] = await asyncio.to_thread(store.put, pack)
     fingerprints = None
     # Only a complete set is kept: a row missing would shift every box after it.
     if box_n and len(rows) == box_n and len({len(r) for r in rows}) == 1:

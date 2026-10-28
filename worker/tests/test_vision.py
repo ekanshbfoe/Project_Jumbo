@@ -217,6 +217,11 @@ async def test_vision_stage_on_pages_and_a_spread(tmp_path):
     assert [c["kind"] for c in manifest["report"]["canvases"]] == ["page", "spread"]
     # 4 grid panels plus the spread as one full-bleed panel, not two halves.
     assert len(manifest["panels"]["panels"]) == 5 and manifest["panels"]["layout"] == "page"
+    # Method 2's numbered pack: one PDF page per canvas, each panel's id written on it.
+    import fitz
+
+    pack = fitz.open(stream=store.path(manifest["files"]["panels/numbered.pdf"]).read_bytes(), filetype="pdf")
+    assert pack.page_count == 2
 
 
 async def test_images_are_detected_in_parallel_and_kept_in_chapter_order(tmp_path, monkeypatch):
@@ -330,3 +335,17 @@ def test_backdrop_is_small_blurred_and_darkened(tmp_path):
     doc = json.loads((chapter / "panels/panels.json").read_text())
     assert doc["panels"][0]["backdrop"] == "chapters/ch_0001/panels/backdrops/p_0001.jpg" and "backdrop" not in doc["panels"][1]
     assert (chapter / "panels/backdrops/p_0001.jpg").stat().st_size > 0
+
+
+def test_a_numbered_page_shows_each_panel_outline_and_label():
+    import numpy as np
+
+    from jumbo_worker.pipeline.vision.numbered import COLOR, draw_page
+
+    page = np.full((600, 400, 3), 255, np.uint8)
+    drawn = draw_page(page, [("p_0001", [[20, 20], [380, 20], [380, 280], [20, 280]]), ("p_0002", [[20, 320], [380, 320], [380, 580], [20, 580]])])
+    purple = np.all(drawn == COLOR, axis=2)
+    # Each panel's top-left corner carries a filled label, and the outlines are drawn.
+    assert purple[25:35, 25:60].mean() > 0.3 and purple[325:335, 25:60].mean() > 0.3
+    assert purple[150, 18:23].any() and purple[450, 378:383].any()
+    assert drawn[300, 200].tolist() == [255, 255, 255]
