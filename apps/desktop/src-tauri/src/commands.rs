@@ -278,15 +278,20 @@ pub fn chapter_preview(state: State<AppState>, chapter: String) -> CmdResult<Pre
         let id: ChapterId = chapter.parse().map_err(msg)?;
         let dir = chapter::chapter_dir(p, id);
         let script_file = script_file(&dir.join("script"));
+        let episode = dir.join("render").join("episode.json");
+        let audio = dir.join("audio").join("audio.manifest.json");
+        // An episode built before the voice was recorded again has the old timings: the preview builds a fresh one.
+        let modified = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+        let outdated = matches!((modified(&episode), modified(&audio)), (Some(e), Some(a)) if a > e);
         Ok(PreviewSources {
-            episode: read_json(&dir.join("render").join("episode.json"))?,
+            episode: if outdated { None } else { read_json(&episode)? },
             script: match &script_file {
                 Some(name) => read_json(&dir.join("script").join(name))?,
                 None => None,
             },
             script_file,
             panels: read_json(&dir.join("panels").join("panels.json"))?,
-            audio: read_json(&dir.join("audio").join("audio.manifest.json"))?,
+            audio: read_json(&audio)?,
         })
     })
 }
