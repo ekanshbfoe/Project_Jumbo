@@ -441,13 +441,6 @@
         "duration": {
           "type": "number",
           "exclusiveMinimum": 0
-        },
-        "shots": {
-          "default": [],
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Shot"
-          }
         }
       },
       "required": [
@@ -872,28 +865,6 @@
           "maximum": 1.5
         }
       }
-    },
-    "Shot": {
-      "type": "object",
-      "properties": {
-        "at": {
-          "type": "number",
-          "minimum": 0
-        },
-        "focus": {
-          "$ref": "#/$defs/Point"
-        },
-        "zoom": {
-          "type": "number",
-          "minimum": 1,
-          "maximum": 2.5
-        }
-      },
-      "required": [
-        "at",
-        "focus",
-        "zoom"
-      ]
     }
   }
 }

@@ -16,4 +16,3 @@ export * from "./noise";
 export * from "./presets/registry";
 export * from "./presets/types";
 export * from "./timeline";
-export * from "./shots";
