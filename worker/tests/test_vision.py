@@ -153,7 +153,8 @@ def test_a_credits_page_is_recognised_by_its_texts():
     credits = Detection(box, bubbles=[{"text": "Downloaded from @MangaStoreOrg"}])
     assert is_credits(credits)
     assert not is_credits(Detection(box, bubbles=[{"text": "Downloaded from @x"}, {"text": "Run!"}]))
-    assert not is_credits(Detection(box, bubbles=[{"text": "@MangaStoreOrg"}], characters=[{"cluster": "c_1"}]))
+    # The scanlator's mascot is "a character" to Magi; the texts decide (the real test chapter's last page).
+    assert is_credits(Detection(box, bubbles=[{"text": "Download from, @ManaaStoreOne_"}], characters=[{"cluster": "c_1"}]))
     assert not is_credits(Detection(box))
 
 

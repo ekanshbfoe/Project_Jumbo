@@ -76,8 +76,10 @@ CREDITS = re.compile(r"download|scanlat|@\w{3,}|discord|patreon|t\.me/|\.(com|or
 
 
 def is_credits(det: Detection) -> bool:
+    """Every text on the box is a credit. Drawn figures do not count against it: credits pages often carry a mascot,
+    which Magi reports as a character. Only the first and last image are ever checked."""
     texts = [b.get("text") or "" for b in det.bubbles]
-    return bool(texts) and not det.characters and all(CREDITS.search(t) for t in texts)
+    return bool(texts) and all(CREDITS.search(t) for t in texts)
 
 
 def make_detector(name: str, ctx: JobContext) -> Detector:
@@ -144,7 +146,7 @@ async def run(ctx: JobContext) -> str:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-    # Credits and scanlation pages (first or last image only): every text on them is a credit, nobody is drawn.
+    # Credits and scanlation pages (first or last image only): every text on them is a credit.
     dropped_credits = 0
     for n in {0, len(images) - 1}:
         kept = [d for d in per_image[n] if not is_credits(d)]
