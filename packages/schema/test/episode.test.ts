@@ -52,7 +52,7 @@ describe("buildEpisodeSpec", () => {
     // 4.2 s of audio + 0.12 s pause + the next beat's 0.5 s fade cut to 0.3 s, rounded up to a frame.
     expect(spec.beats[0]?.duration).toBeCloseTo(4.6333, 3);
     expect(spec.beats[1]?.transition_in.duration).toBe(0.3);
-    expect(spec.beats[0]?.audio).toEqual({ src: "chapters/ch_0001/audio/l_0001.wav", duration: 4.2 });
+    expect(spec.beats[0]?.audio).toEqual({ src: "chapters/ch_0001/audio/l_0001.wav", duration: 4.2, from: 0 });
     // 2 words / 2.6 wps + 0.12 padding is under the 1.5 s floor.
     expect(spec.beats[1]?.duration).toBe(1.5);
     expect(spec.beats[1]?.audio).toBeNull();
@@ -63,6 +63,31 @@ describe("buildEpisodeSpec", () => {
     const [first, second] = spec.beats;
     expect(first!.duration - second!.transition_in.duration).toBeGreaterThanOrEqual(first!.audio!.duration + 0.12);
     expect(Number.isInteger(Math.round(first!.duration * 30 * 1e6) / 1e6)).toBe(true);
+  });
+
+  it("steps a multi-panel line through its panels one at a time, playing one clip across them", () => {
+    const long = ScriptDoc.parse({
+      ...script,
+      lines: [{ id: "l_0001", panel_ids: ["p_0001", "p_0002", "p_0003"], narration: "एक दो तीन", emotion: "calm", preset: { name: "split_screen" } }],
+    });
+    const clip = AudioManifest.parse({ ...audio, clips: [{ line_id: "l_0001", src: "a.wav", duration: 6 }] });
+    const spec = buildEpisodeSpec(long, panels, clip);
+    expect(spec.beats.map((b) => b.panel_ids)).toEqual([["p_0001"], ["p_0002"], ["p_0003"]]);
+    expect(spec.beats.map((b) => b.transition_in.name)).toEqual(["cut", "fade", "fade"]);
+    // Each step plays the next part of the clip: no gap, no overlap, the whole clip heard.
+    let heard = 0;
+    spec.beats.forEach((b, i) => {
+      expect(b.audio!.from).toBeCloseTo(heard, 6);
+      heard += b.audio!.duration;
+      const next = spec.beats[i + 1];
+      if (next) expect(b.duration - next.transition_in.duration).toBeCloseTo(b.audio!.duration, 4);
+    });
+    expect(heard).toBeCloseTo(6, 4);
+    // On the timeline the steps take as long as the line did in one beat.
+    const together = buildEpisodeSpec(long, panels, clip, { sequential: false }).beats[0]!.duration;
+    const stepped = spec.beats.reduce((t, b, i) => t + b.duration - (i ? b.transition_in.duration : 0), 0);
+    expect(stepped).toBeCloseTo(together, 4);
+    expect(() => EpisodeSpec.parse(spec)).not.toThrow();
   });
 
   it("keeps only referenced panels and applies format defaults", () => {

@@ -426,6 +426,11 @@
                 "duration": {
                   "type": "number",
                   "exclusiveMinimum": 0
+                },
+                "from": {
+                  "default": 0,
+                  "type": "number",
+                  "minimum": 0
                 }
               },
               "required": [

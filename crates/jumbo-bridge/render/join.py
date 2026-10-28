@@ -73,6 +73,9 @@ def soundtrack(spec, public, out):
         if not b.get("audio"):
             continue
         r, pcm = read_clip(public / b["audio"]["src"])
+        # A line shown panel by panel plays one clip across its beats: this beat's part only.
+        start = round(b["audio"].get("from", 0) * r)
+        pcm = pcm[start : start + round(b["audio"]["duration"] * r)]
         if mix is None:
             rate, mix = r, np.zeros(int(np.ceil(total / fps * r)) + r, np.int32)
         if r != rate:

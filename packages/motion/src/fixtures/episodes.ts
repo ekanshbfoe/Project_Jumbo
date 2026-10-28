@@ -73,7 +73,7 @@ export function galleryEpisode(): EpisodeSpec {
   );
   const script = ScriptDoc.parse({ schema_version: 1, chapter_id: "ch_0001", title: "Preset gallery", lines });
   // Bubble masking is on so the bubble-heavy panels exercise it.
-  const spec = buildEpisodeSpec(script, panelsDoc(), undefined, { hideBubbles: true });
+  const spec = buildEpisodeSpec(script, panelsDoc(), undefined, { hideBubbles: true, sequential: false });
   // Fixed 2.5 s beats so every cell of the gallery gets the same screen time.
   return EpisodeSpec.parse({ ...spec, beats: spec.beats.map((b) => ({ ...b, duration: 2.5 })) });
 }
@@ -138,7 +138,7 @@ export const SAMPLE_AUDIO = AudioManifest.parse({
 
 /** A short end-to-end chapter: mixed shapes, transitions, audio and unvoiced beats. */
 export function sampleEpisode(): EpisodeSpec {
-  return buildEpisodeSpec(SAMPLE_SCRIPT, panelsDoc(), SAMPLE_AUDIO);
+  return buildEpisodeSpec(SAMPLE_SCRIPT, panelsDoc(), SAMPLE_AUDIO, { sequential: false });
 }
 
 /**
@@ -156,7 +156,7 @@ export function ambientPreviewEpisode(effect: AmbientEffect): EpisodeSpec {
       { id: "l_0003", panel_ids: ["p_0008"], narration: "Ambient preview", emotion: "calm", preset: { name: "hold" } },
     ],
   });
-  const spec = buildEpisodeSpec(script, panelsDoc());
+  const spec = buildEpisodeSpec(script, panelsDoc(), undefined, { sequential: false });
   return EpisodeSpec.parse({
     ...spec,
     ambient_effect: effect,

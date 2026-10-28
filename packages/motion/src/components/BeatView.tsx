@@ -101,7 +101,10 @@ export function BeatView({
         </Camera>
       ))}
       {impl.Overlay ? <impl.Overlay ctx={ctx(0)} params={beat.preset.params as never} /> : null}
-      {beat.audio ? <Html5Audio src={resolve(beat.audio.src)} /> : null}
+      {beat.audio ? (
+        // A line shown panel by panel plays one clip across its beats: each starts where the last one stopped.
+        <Html5Audio src={resolve(beat.audio.src)} trimBefore={Math.round((beat.audio.from ?? 0) * fps)} />
+      ) : null}
     </AbsoluteFill>
   );
 }

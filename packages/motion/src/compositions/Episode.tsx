@@ -36,14 +36,15 @@ export function Episode(spec: EpisodeSpec) {
     if (timing.transitionInFrames > 0 && beat.transition_in.name !== "cut") {
       children.push(
         <TransitionSeries.Transition
-          key={`t-${beat.line_id}`}
+          key={`t-${i}`}
           presentation={presentation(beat.transition_in.name)}
           timing={linearTiming({ durationInFrames: timing.transitionInFrames })}
         />,
       );
     }
     children.push(
-      <TransitionSeries.Sequence key={beat.line_id} durationInFrames={timing.durationInFrames} name={`${beat.line_id} · ${beat.preset.name}`}>
+      // A line shown panel by panel has several beats, so the beat's place is its key.
+      <TransitionSeries.Sequence key={i} durationInFrames={timing.durationInFrames} name={`${beat.line_id} · ${beat.preset.name}`}>
         <BeatView
           beat={beat}
           panels={panels}

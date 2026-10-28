@@ -65,6 +65,7 @@ class PanelId(RootModel[str]):
 class Audio(BaseModel):
     src: Annotated[str, Field(min_length=1)]
     duration: Annotated[float, Field(gt=0.0)]
+    from_: Annotated[float | None, Field(alias="from", ge=0.0)] = 0
 
 
 class HoldParams(BaseModel):

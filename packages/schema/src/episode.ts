@@ -64,7 +64,11 @@ export const Beat = z.object({
   emotion: Emotion,
   preset: PresetSpec,
   transition_in: TransitionSpec.prefault({}),
-  audio: AudioClip.omit({ line_id: true }).nullable(),
+  /** The narration played during this beat: `duration` seconds of the clip, starting `from` seconds into it (a line
+   *  whose panels are shown one after another plays one clip across several beats). */
+  audio: AudioClip.omit({ line_id: true })
+    .extend({ from: z.number().min(0).default(0) })
+    .nullable(),
   /** Time on screen in seconds. Never shorter than the narration audio. */
   duration: z.number().positive(),
 }).meta({ id: "Beat" });
@@ -130,6 +134,59 @@ export interface BuildEpisodeOptions {
   /** Speaking rate used to size beats that have no audio yet (preview before voicing). */
   wordsPerSecond?: number;
   hideBubbles?: boolean;
+  /** Show the panels of a multi-panel line one after another, each filling the frame (default true). */
+  sequential?: boolean;
+}
+
+/** A panel this many times taller than wide is "tall": two of them may share the frame side by side. */
+const TALL = 1.3;
+/** Height over width of a panel as shown. */
+const aspect = (p: EpisodePanel) => (p.bbox.h * p.page_size.height) / Math.max(1e-6, p.bbox.w * p.page_size.width);
+/** Fade between the panels of one line, in seconds. */
+const STEP_FADE = 0.25;
+/** A line too short to give each of its panels this long stays one beat with its panels together. */
+const MIN_STEP = 1.2;
+
+/** A camera move that suits a panel's shape: tall panels scroll down, wide ones pan across, the rest push in. */
+function moveFor(panel: EpisodePanel, n: number): PresetSpec {
+  const a = aspect(panel);
+  if (a >= 1.5) return PresetSpec.parse({ name: "pan", params: { direction: "down", distance: 0.2 } });
+  if (a <= 0.55) return PresetSpec.parse({ name: "pan", params: { direction: "right", distance: 0.12 } });
+  return PresetSpec.parse(n % 2 === 0 ? { name: "zoom", params: { from: 1, to: 1.12 } } : { name: "pan", params: { direction: "right", distance: 0.06 } });
+}
+
+/**
+ * One beat as shown: a multi-panel beat becomes one beat per panel, one after another, sharing the line's clip (each
+ * plays the next part of it) and its screen time, with a short fade between them. Two tall panels stay side by side,
+ * and so does a line too short to step through.
+ */
+function stepThrough(beat: z.input<typeof Beat>, panels: ReadonlyMap<string, EpisodePanel>, fps: number): z.input<typeof Beat>[] {
+  const shown = beat.panel_ids.map((id) => panels.get(id)).filter((p): p is EpisodePanel => p !== undefined);
+  const n = shown.length;
+  const together = n === 2 && shown.every((p) => aspect(p) >= TALL);
+  if (n < 2 || together || beat.duration / n < MIN_STEP) return [beat];
+  // The steps overlap by the fade, so they add up to the line's own length on the timeline.
+  const total = beat.duration + (n - 1) * STEP_FADE;
+  const clip = beat.audio;
+  let used = 0;
+  let heard = 0;
+  return shown.map((panel, k) => {
+    const last = k === n - 1;
+    const duration = last ? beatLength(total - used, fps) : beatLength(total / n, fps);
+    used += duration;
+    const room = last ? duration : duration - STEP_FADE;
+    const length = clip ? Math.min(room - 1e-6, clip.duration - heard) : 0;
+    const audio = clip && length > 0.01 ? { src: clip.src, duration: length, from: heard } : null;
+    heard += Math.max(0, length);
+    return {
+      ...beat,
+      panel_ids: [panel.id],
+      preset: moveFor(panel, k),
+      transition_in: k === 0 ? beat.transition_in : { name: "fade", duration: STEP_FADE },
+      audio,
+      duration,
+    };
+  });
 }
 
 /**
@@ -142,12 +199,13 @@ export function buildEpisodeSpec(
   audio?: AudioManifest,
   options: BuildEpisodeOptions = {},
 ): EpisodeSpec {
-  const { padding = 0.12, maxTransition = 0.3, minBeat = 1.5, wordsPerSecond = 2.6 } = options;
+  const { padding = 0.12, maxTransition = 0.3, minBeat = 1.5, wordsPerSecond = 2.6, sequential = true } = options;
   const transition = (line?: ScriptDoc["lines"][number]) =>
     line && { ...line.transition_in, duration: Math.min(line.transition_in.duration, maxTransition) };
   const clips = new Map(audio?.clips.map((c) => [c.line_id, c]));
   const { fps } = VideoFormat.parse(options.video ?? {});
   const used = new Set(script.lines.flatMap((l) => l.panel_ids));
+  const byId = new Map(panelsDoc.panels.map((p) => [p.id, EpisodePanel.parse(p)]));
 
   return EpisodeSpec.parse({
     schema_version: 1,
@@ -156,19 +214,20 @@ export function buildEpisodeSpec(
     video: options.video ?? {},
     hide_bubbles: options.hideBubbles ?? false,
     panels: panelsDoc.panels.filter((p) => used.has(p.id)),
-    beats: script.lines.map((line, i) => {
+    beats: script.lines.flatMap((line, i) => {
       const clip = clips.get(line.id);
       const spoken = clip ? clip.duration : line.narration.split(/\s+/).length / wordsPerSecond;
-      return {
+      const beat = {
         line_id: line.id,
         panel_ids: line.panel_ids,
         narration: line.narration,
         emotion: line.emotion,
         preset: line.preset,
         transition_in: transition(line),
-        audio: clip ? { src: clip.src, duration: clip.duration } : null,
+        audio: clip ? { src: clip.src, duration: clip.duration, from: 0 } : null,
         duration: beatLength(Math.max(minBeat, spoken + padding + overlapOf(transition(script.lines[i + 1]))), fps),
       };
+      return sequential ? stepThrough(beat, byId, fps) : [beat];
     }),
   });
 }
