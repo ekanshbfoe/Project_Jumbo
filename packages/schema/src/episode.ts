@@ -54,6 +54,7 @@ export const EpisodePanel = Panel.pick({
   polygon: true,
   crop: true,
   clean: true,
+  backdrop: true,
   bubbles: true,
 }).meta({ id: "EpisodePanel" });
 

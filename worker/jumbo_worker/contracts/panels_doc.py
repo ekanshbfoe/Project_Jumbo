@@ -56,6 +56,7 @@ class Panel(BaseModel):
     polygon: Annotated[list[tuple[PointItem, PointItem]], Field(min_length=3)]
     crop: Annotated[str | None, Field(min_length=1)] = None
     clean: Annotated[str | None, Field(min_length=1)] = None
+    backdrop: Annotated[str | None, Field(min_length=1)] = None
     bubbles: Annotated[list[Bubble] | None, Field(validate_default=True)] = []
     characters: Annotated[list[CharacterBox] | None, Field(validate_default=True)] = []
 

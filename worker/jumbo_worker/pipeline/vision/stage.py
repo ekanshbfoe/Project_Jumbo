@@ -30,6 +30,7 @@ import numpy as np
 from ...contracts import PanelsDoc
 from ...contracts.rules import parse
 from ...jobs import JobContext, JobError
+from .backdrop import encode_jpeg, make_backdrop
 from .detect import Detection, Detector, MagiDetector, OpenCVDetector
 from .order import reading_order
 from .raster import rasterize
@@ -148,6 +149,8 @@ async def run(ctx: JobContext) -> str:
         crop = image[max(0, int(y0)) : min(h, int(np.ceil(y1))), max(0, int(x0)) : min(w, int(np.ceil(x1)))]
         crop_rel = f"panels/crops/{pid}.webp"
         files[crop_rel] = await asyncio.to_thread(store.put, await asyncio.to_thread(encode_webp, crop))
+        backdrop_rel = f"panels/backdrops/{pid}.jpg"
+        files[backdrop_rel] = await asyncio.to_thread(store.put, await asyncio.to_thread(lambda c=crop: encode_jpeg(make_backdrop(c))))
         bubbles = []
         # Bubbles in reading order, so narration follows the page.
         boxes = [Detection(b["polygon"]).box for b in det.bubbles]
@@ -169,6 +172,7 @@ async def run(ctx: JobContext) -> str:
                 "bbox": _norm_box(x0, y0, x1, y1, w, h),
                 "polygon": _norm_polygon(det.polygon, w, h),
                 "crop": f"chapters/{chapter}/{crop_rel}",
+                "backdrop": f"chapters/{chapter}/{backdrop_rel}",
                 "bubbles": bubbles,
                 "characters": characters,
             }

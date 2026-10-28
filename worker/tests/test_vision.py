@@ -202,6 +202,9 @@ async def test_vision_stage_recovers_every_panel_of_a_strip_cut_mid_panel(tmp_pa
     assert len(doc.panels) == 4 and doc.layout == "strip"
     assert [p.id for p in doc.panels] == ["p_0001", "p_0002", "p_0003", "p_0004"]
     assert all(p.page.startswith("chapters/ch_0003/pages/") and p.crop.startswith("chapters/ch_0003/panels/crops/") for p in doc.panels)
+    # Each panel's blurred backdrop is made here, once, for the renderer.
+    assert [p.backdrop for p in doc.panels] == [f"chapters/ch_0003/panels/backdrops/{p.id}.jpg" for p in doc.panels]
+    assert all(f"panels/backdrops/{p.id}.jpg" in manifest["files"] for p in doc.panels)
     assert all(store.has(h) for h in manifest["files"].values())
     assert any(j["kind"] == "vertical" for j in manifest["report"]["joins"])
 
@@ -304,3 +307,26 @@ async def test_tiles_of_a_tall_image_keep_their_clusters_apart(tmp_path):
     assert len(clusters) == len(chars) and all(c.startswith("t") and c.endswith(".c_0") for c in clusters)
     assert all(c["fingerprint"] == "AAAA" for c in chars)
     assert {b["speaker"] for p in panels for b in p.bubbles} <= clusters
+
+
+def test_backdrop_is_small_blurred_and_darkened(tmp_path):
+    from jumbo_worker.pipeline.vision.backdrop import BRIGHTNESS, WIDTH, backfill, make_backdrop
+
+    img = np.zeros((900, 600, 3), np.uint8)
+    img[:, 300:] = 255  # a hard black/white edge
+    out = make_backdrop(img)
+    assert out.shape == (900 * WIDTH // 600, WIDTH, 3)
+    # Darkened: white becomes 40%; blurred: the edge spreads over many pixels.
+    assert abs(int(out[:, -1].mean()) - round(255 * BRIGHTNESS)) <= 2
+    row = out[out.shape[0] // 2, :, 0].astype(int)
+    assert np.count_nonzero((row > 5) & (row < round(255 * BRIGHTNESS) - 5)) > 20
+
+    # Backfill an analyzed chapter that has crops but no backdrops yet.
+    chapter = tmp_path / "chapters" / "ch_0001"
+    (chapter / "panels" / "crops").mkdir(parents=True)
+    cv2.imwrite(str(chapter / "panels/crops/p_0001.webp"), img)
+    (chapter / "panels/panels.json").write_text(json.dumps({"panels": [{"id": "p_0001", "crop": "chapters/ch_0001/panels/crops/p_0001.webp"}, {"id": "p_0002"}]}))
+    assert backfill(chapter) == 1
+    doc = json.loads((chapter / "panels/panels.json").read_text())
+    assert doc["panels"][0]["backdrop"] == "chapters/ch_0001/panels/backdrops/p_0001.jpg" and "backdrop" not in doc["panels"][1]
+    assert (chapter / "panels/backdrops/p_0001.jpg").stat().st_size > 0

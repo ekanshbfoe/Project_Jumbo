@@ -209,6 +209,10 @@
           "type": "string",
           "minLength": 1
         },
+        "backdrop": {
+          "type": "string",
+          "minLength": 1
+        },
         "bubbles": {
           "default": [],
           "type": "array",

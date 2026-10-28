@@ -51,6 +51,11 @@ export const Panel = z.object({
   crop: AssetPath.optional(),
   /** `crop` with speech bubbles inpainted away. */
   clean: AssetPath.optional(),
+  /**
+   * `crop` small, blurred and darkened: the backdrop drawn behind the panel. Made once by the vision stage so the
+   * renderer does not blur the whole frame every frame; without it the renderer blurs the panel image itself.
+   */
+  backdrop: AssetPath.optional(),
   bubbles: z.array(Bubble).default([]),
   characters: z.array(CharacterBox).default([]),
 }).meta({ id: "Panel" });

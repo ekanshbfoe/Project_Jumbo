@@ -59,7 +59,9 @@ export function BeatView({
     index,
     count: panels.length,
   });
-  const backdrop = panels[0] && (panels[0].clean ?? panels[0].crop ?? panels[0].page);
+  // The vision stage's pre-blurred backdrop when there is one: blurring the whole frame here every frame is slow.
+  const blurred = panels[0]?.backdrop;
+  const backdrop = blurred ?? (panels[0] && (panels[0].clean ?? panels[0].crop ?? panels[0].page));
   // Cuts to closer framings within the beat, on top of the preset's own move (single-panel beats only).
   const framing = panels.length === 1 && beat.shots.length ? framingStyle(framingAt(beat.shots, frame, fps)) : null;
 
@@ -74,7 +76,7 @@ export function BeatView({
             width: "120%",
             height: "120%",
             objectFit: "cover",
-            filter: "blur(40px) brightness(0.4) saturate(1.2)",
+            filter: blurred ? undefined : "blur(40px) brightness(0.4) saturate(1.2)",
           }}
         />
       ) : null}
