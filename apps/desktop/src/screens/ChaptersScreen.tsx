@@ -80,16 +80,16 @@ export function ChaptersScreen({ project }: ScreenProps) {
   };
 
   const importPdfs = async () => {
-    const picked = await open({
-      multiple: true,
-      title: "Import chapter PDFs",
-      filters: [{ name: "PDF", extensions: ["pdf"] }],
-    });
-    const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
-    if (paths.length === 0) return;
-    setBusy(true);
     setImportError(undefined);
     try {
+      const picked = await open({
+        multiple: true,
+        title: "Import chapter PDFs",
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      });
+      const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
+      if (paths.length === 0) return;
+      setBusy(true);
       // Import in natural filename order so "Chapter 2" comes before "Chapter 10".
       paths.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       await api.importChapters(paths);

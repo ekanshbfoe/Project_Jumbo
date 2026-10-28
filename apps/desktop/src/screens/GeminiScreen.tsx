@@ -122,10 +122,10 @@ export function GeminiScreen({ project }: ScreenProps) {
 
   const exportPdf = async () => {
     if (!chapter) return;
-    const dest = await save({ title: "Save the numbered PDF for Gemini", defaultPath: `${chapter}-numbered.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
-    if (!dest) return;
     setError(undefined);
     try {
+      const dest = await save({ title: "Save the numbered PDF for Gemini", defaultPath: `${chapter}-numbered.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+      if (!dest) return;
       await api.exportNumberedPdf(chapter, dest);
       setCopied("pdf");
     } catch (e) {

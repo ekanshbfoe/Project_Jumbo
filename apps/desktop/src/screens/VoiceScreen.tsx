@@ -41,10 +41,10 @@ export function VoiceScreen({ project }: ScreenProps) {
   const report = useMemo(() => new Map((data.data?.report?.lines ?? []).map((l) => [l.line_id, l])), [data.data]);
 
   const importVoice = async () => {
-    const picked = await open({ title: "Narrator voice file", filters: [{ name: "Voice", extensions: ["gguf"] }] });
-    if (typeof picked !== "string") return;
     setError(undefined);
     try {
+      const picked = await open({ title: "Narrator voice file", filters: [{ name: "Voice", extensions: ["gguf"] }] });
+      if (typeof picked !== "string") return;
       await api.importVoice("narrator", "neutral", picked);
       library.reload();
     } catch (e) {
