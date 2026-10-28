@@ -157,6 +157,15 @@ export interface ScriptView {
   panels: unknown | null;
 }
 
+/** `voice://progress` events while a chapter is voiced. */
+export type VoiceProgress = ScriptProgress;
+
+/** audio/voice.report.json: how each line was spoken. */
+export interface VoiceReport {
+  lines: { line_id: string; voice: string; emotion_clip: string; duration: number; attempts: number; seed: number; plain?: boolean; problem?: string }[];
+  total_s: number;
+}
+
 export const api = {
   createProject: (path: string, title: string) => invoke<ProjectInfo>("create_project", { path, title }),
   openProject: (path: string) => invoke<ProjectInfo>("open_project", { path }),
@@ -174,6 +183,10 @@ export const api = {
   writeScript: (chapter: string) => invoke<ChapterManifest>("write_script", { chapter }),
   chapterScript: (chapter: string) => invoke<ScriptView>("chapter_script", { chapter }),
   approveScript: (chapter: string, script: unknown) => invoke<ChapterManifest>("approve_script", { chapter, script }),
+  voiceLibrary: () => invoke<Record<string, string[]>>("voice_library"),
+  importVoice: (speaker: string, emotion: string, path: string) => invoke<void>("import_voice", { speaker, emotion, path }),
+  recordVoice: (chapter: string) => invoke<ChapterManifest>("record_voice", { chapter }),
+  chapterAudio: (chapter: string) => invoke<{ audio: unknown; report: VoiceReport | null }>("chapter_audio", { chapter }),
 };
 
 /** Tauri rejects with the Rust error string; normalise anything else. */
