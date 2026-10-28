@@ -23,8 +23,12 @@ export interface BeatViewProps {
 
 /** Where each panel of the beat sits before the camera moves, unless the preset lays them out itself. */
 function layout(beat: Beat, panels: EpisodePanel[], width: number, height: number, impl: PresetImpl<PresetName>): PanelSlot[] {
-  if (impl.layout) return impl.layout(panels.map(panelSize), { width, height }, beat.preset.params as never);
   // Never larger on screen than MAX_UPSCALE times the panel's own pixels: a small scan is shown smaller, not mushy.
+  // That holds for presets with their own layout too (floating panels once showed a 300 px crop at 3.5x).
+  if (impl.layout) {
+    const slots = impl.layout(panels.map(panelSize), { width, height }, beat.preset.params as never);
+    return slots.map((slot, i) => ({ ...slot, ...capUpscale(slot, panelSize(panels[i]!)) }));
+  }
   if (panels.length === 1) return [capUpscale(fitContain(panelSize(panels[0]!), { width, height }, 0.06), panelSize(panels[0]!))];
   const orientation = beat.preset.name === "split_screen" ? beat.preset.params.orientation : "vertical";
   const inset = { left: width * 0.04, top: height * 0.06 };
