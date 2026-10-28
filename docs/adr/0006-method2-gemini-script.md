@@ -40,3 +40,19 @@ Home shows content types (Manga/Manhwa; Book Explanation and Novels say "Coming 
 with their method; a new project picks Method 1 or Method 2 once, stored in `project.toml`. A Method 2 project's
 sidebar has "Gemini script" (export the numbered PDF, copy the system instruction and prompt, paste the answer)
 in place of Method 1's Director.
+
+## Hardening (self-audit, 2026-10-28)
+- **Pack stamp:** every numbered PDF page says `ch_0003 . pack 7f3a`; the answer's first line repeats it, and the
+  app refuses an answer for another chapter or an older export (the pack id hashes the panel ids and outlines).
+- **Strict answers:** a cut-off answer (panels left unnarrated), two answers pasted together, an empty or overlong
+  line, Romanized Hindi, or a missing MEMORY block is refused with what to do. Copy-paste noise (Markdown, list
+  markers, escapes, wrapped lines, loose panel ids and ranges) is cleaned first. Gemini's line order is kept and a
+  reading-order mismatch is flagged instead of silently re-sorted.
+- **Readable labels:** pages taller than 2.2 widths become overlapping PDF pages; labels are sized for Gemini's
+  scaling to 3072 px, placed over the gutter, semi-transparent and never overlapping; the PDF stays under 40 MB.
+- **Memory chain:** memory counts once the script is approved; a chapter continues from exactly the chapter before
+  it (otherwise it waits); characters are merged over all earlier chapters; changing an approved story marks later
+  scripted chapters stale. One format for both methods (`story`, `characters`, `last_lines`, `method`).
+- **Guards:** the project's method is stored (old projects are Method 1) and fixed once a chapter has a script;
+  Method 2's Make video never runs the Director or approves on its own; approval checks the Devanagari rule before
+  any voice session is spent.
