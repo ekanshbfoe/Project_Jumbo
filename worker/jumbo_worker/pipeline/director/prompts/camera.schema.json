@@ -1,0 +1,577 @@
+{
+ "$id": "https://jumbo.local/schema/ScriptDoc.schema.json",
+ "title": "ScriptDoc",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "type": "object",
+ "properties": {
+  "schema_version": {
+   "type": "integer",
+   "const": 1
+  },
+  "chapter_id": {
+   "type": "string",
+   "pattern": "^ch_\\d{4}$"
+  },
+  "title": {
+   "type": "string",
+   "maxLength": 200
+  },
+  "lines": {
+   "minItems": 1,
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/ScriptLine"
+   }
+  }
+ },
+ "required": [
+  "schema_version",
+  "chapter_id",
+  "lines"
+ ],
+ "$defs": {
+  "ScriptLine": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^l_\\d{4}$"
+    },
+    "panel_ids": {
+     "minItems": 1,
+     "maxItems": 3,
+     "type": "array",
+     "items": {
+      "type": "string",
+      "pattern": "^p_\\d{4}$"
+     }
+    },
+    "narration": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 2000
+    },
+    "emotion": {
+     "type": "string",
+     "enum": [
+      "calm",
+      "tense",
+      "action",
+      "shock",
+      "sad",
+      "comedic",
+      "romantic",
+      "mysterious",
+      "triumphant"
+     ]
+    },
+    "voice": {
+     "default": {},
+     "$ref": "#/$defs/VoiceDirection"
+    },
+    "preset": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/HoldPreset"
+      },
+      {
+       "$ref": "#/$defs/ZoomPreset"
+      },
+      {
+       "$ref": "#/$defs/PanPreset"
+      },
+      {
+       "$ref": "#/$defs/ShakePreset"
+      },
+      {
+       "$ref": "#/$defs/ActionTiltPreset"
+      },
+      {
+       "$ref": "#/$defs/KineticJitterPreset"
+      },
+      {
+       "$ref": "#/$defs/PanoramicFadePreset"
+      },
+      {
+       "$ref": "#/$defs/SplitScreenPreset"
+      },
+      {
+       "$ref": "#/$defs/FloatingPanelsPreset"
+      },
+      {
+       "$ref": "#/$defs/HorizontalSlicesPreset"
+      },
+      {
+       "$ref": "#/$defs/HudPopupPreset"
+      }
+     ]
+    },
+    "transition_in": {
+     "default": {},
+     "$ref": "#/$defs/TransitionSpec"
+    }
+   },
+   "required": [
+    "id",
+    "panel_ids",
+    "narration",
+    "emotion",
+    "preset"
+   ]
+  },
+  "VoiceDirection": {
+   "type": "object",
+   "properties": {
+    "speaker": {
+     "default": "narrator",
+     "type": "string",
+     "pattern": "^[a-z][a-z0-9_]{0,39}$"
+    },
+    "tone": {
+     "default": "neutral",
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 40
+    },
+    "pace": {
+     "default": "normal",
+     "type": "string",
+     "enum": [
+      "slow",
+      "normal",
+      "fast"
+     ]
+    },
+    "intensity": {
+     "default": 0.5,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1
+    }
+   }
+  },
+  "HoldPreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "hold"
+    },
+    "params": {
+     "default": {},
+     "$ref": "#/$defs/HoldParams"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "description": "Static panel. Use for quiet exposition or dialogue-heavy beats."
+  },
+  "HoldParams": {
+   "type": "object",
+   "properties": {}
+  },
+  "ZoomPreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "zoom"
+    },
+    "params": {
+     "default": {},
+     "$ref": "#/$defs/ZoomParams"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "description": "Smooth push in (to > from) or pull out (to < from), optionally centred on a focus point such as a face."
+  },
+  "ZoomParams": {
+   "type": "object",
+   "properties": {
+    "from": {
+     "default": 1,
+     "type": "number",
+     "minimum": 0.5,
+     "maximum": 3
+    },
+    "to": {
+     "default": 1.15,
+     "type": "number",
+     "minimum": 0.5,
+     "maximum": 3
+    },
+    "focus": {
+     "$ref": "#/$defs/Point"
+    }
+   }
+  },
+  "Point": {
+   "type": "array",
+   "items": {
+    "type": "number",
+    "minimum": 0,
+    "maximum": 1
+   },
+   "minItems": 2,
+   "maxItems": 2
+  },
+  "PanPreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "pan"
+    },
+    "params": {
+     "default": {},
+     "$ref": "#/$defs/PanParams"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "description": "Slow camera drift across the panel. Use for establishing shots and wide panels."
+  },
+  "PanParams": {
+   "type": "object",
+   "properties": {
+    "direction": {
+     "default": "right",
+     "type": "string",
+     "enum": [
+      "left",
+      "right",
+      "up",
+      "down"
+     ]
+    },
+    "distance": {
+     "default": 0.08,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 0.5
+    }
+   }
+  },
+  "ShakePreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "shake"
+    },
+    "params": {
+     "default": {},
+     "$ref": "#/$defs/ShakeParams"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "description": "Continuous camera shake. Use for rumbling, explosions or sustained tension."
+  },
+  "ShakeParams": {
+   "type": "object",
+   "properties": {
+    "intensity": {
+     "default": 12,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 60
+    },
+    "frequency": {
+     "default": 12,
+     "type": "number",
+     "minimum": 1,
+     "maximum": 30
+    }
+   }
+  },
+  "ActionTiltPreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "action_tilt"
+    },
+    "params": {
+     "default": {},
+     "$ref": "#/$defs/ActionTiltParams"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "description": "Fast punch-in with a dutch tilt that settles. Use for hits, reveals and sudden action."
+  },
+  "ActionTiltParams": {
+   "type": "object",
+   "properties": {
+    "angle": {
+     "default": 6,
+     "type": "number",
+     "minimum": -20,
+     "maximum": 20
+    },
+    "punch": {
+     "default": 1.12,
+     "type": "number",
+     "minimum": 1,
+     "maximum": 1.5
+    }
+   }
+  },
+  "KineticJitterPreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "kinetic_jitter"
+    },
+    "params": {
+     "default": {},
+     "$ref": "#/$defs/KineticJitterParams"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "description": "Violent jitter that decays over the beat. Use for impacts, shock and screams."
+  },
+  "KineticJitterParams": {
+   "type": "object",
+   "properties": {
+    "intensity": {
+     "default": 18,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 60
+    },
+    "decay": {
+     "default": 0.35,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1
+    }
+   }
+  },
+  "PanoramicFadePreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "panoramic_fade"
+    },
+    "params": {
+     "default": {},
+     "$ref": "#/$defs/PanoramicFadeParams"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "description": "Wide pan that fades in and out. Use for scene changes, flashbacks and time skips."
+  },
+  "PanoramicFadeParams": {
+   "type": "object",
+   "properties": {
+    "direction": {
+     "default": "right",
+     "type": "string",
+     "enum": [
+      "left",
+      "right",
+      "up",
+      "down"
+     ]
+    },
+    "fade": {
+     "default": 0.2,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 0.5
+    }
+   }
+  },
+  "SplitScreenPreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "split_screen"
+    },
+    "params": {
+     "default": {},
+     "$ref": "#/$defs/SplitScreenParams"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "description": "Two or three panels share the frame and slide in one after another. Use for confrontations and parallel reactions."
+  },
+  "SplitScreenParams": {
+   "type": "object",
+   "properties": {
+    "orientation": {
+     "default": "vertical",
+     "type": "string",
+     "enum": [
+      "vertical",
+      "horizontal"
+     ]
+    },
+    "stagger": {
+     "default": 0.25,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 2
+    }
+   }
+  },
+  "FloatingPanelsPreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "floating_panels"
+    },
+    "params": {
+     "default": {},
+     "$ref": "#/$defs/FloatingPanelsParams"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "description": "Two or three tall panels float over the background like physical photos layered in 3D, with heavy shadows and a slow drift. Use for character introductions, line-ups and reflective moments."
+  },
+  "FloatingPanelsParams": {
+   "type": "object",
+   "properties": {
+    "tilt": {
+     "default": 4,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 12
+    },
+    "drift": {
+     "default": 6,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 15
+    },
+    "period": {
+     "default": 10,
+     "type": "number",
+     "minimum": 3,
+     "maximum": 30
+    }
+   }
+  },
+  "HorizontalSlicesPreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "horizontal_slices"
+    },
+    "params": {
+     "default": {},
+     "$ref": "#/$defs/HorizontalSlicesParams"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "description": "Two or three ultra-wide, short panels stacked as strips that drift slowly in opposite directions. Use for intimate close-ups, eye contact and tense stare-downs."
+  },
+  "HorizontalSlicesParams": {
+   "type": "object",
+   "properties": {
+    "drift": {
+     "default": 0.05,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 0.2
+    },
+    "lead": {
+     "default": "left",
+     "type": "string",
+     "enum": [
+      "left",
+      "right"
+     ]
+    }
+   }
+  },
+  "HudPopupPreset": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "const": "hud_popup"
+    },
+    "params": {
+     "$ref": "#/$defs/HudPopupParams"
+    }
+   },
+   "required": [
+    "name",
+    "params"
+   ],
+   "description": "Game-style info panel types onto the screen over the panel. Use for system messages, stats and level-ups."
+  },
+  "HudPopupParams": {
+   "type": "object",
+   "properties": {
+    "text": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 120
+    },
+    "position": {
+     "default": "top",
+     "type": "string",
+     "enum": [
+      "top",
+      "center",
+      "bottom"
+     ]
+    },
+    "accent": {
+     "default": "#3ad6ff",
+     "type": "string",
+     "pattern": "^#[0-9a-fA-F]{6}$"
+    }
+   },
+   "required": [
+    "text"
+   ]
+  },
+  "TransitionSpec": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "default": "cut",
+     "type": "string",
+     "enum": [
+      "cut",
+      "fade",
+      "slide",
+      "wipe"
+     ]
+    },
+    "duration": {
+     "default": 0.4,
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1.5
+    }
+   }
+  }
+ }
+}

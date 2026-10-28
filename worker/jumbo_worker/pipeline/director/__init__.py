@@ -1,1 +1,1 @@
-"""The Director stage (Step 6): Qwen writes the chapter's ScriptDoc. Only its prompts exist so far."""
+"""The Director stage: Qwen3-VL-32B writes each scene's ScriptDoc in three passes (passes.py)."""
