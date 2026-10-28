@@ -123,3 +123,110 @@ async def test_a_whole_scene_runs_through_both_passes():
     assert "चौबीस" in narration and "office" in narration
     assert res["memory_out"] == "Akira joins a harsh company."
     assert rules.script_doc(ScriptDoc.model_validate(res["doc"])) == []
+
+
+def test_a_chapter_is_cut_into_near_equal_scenes_of_at_most_15_panels():
+    from jumbo_worker.pipeline.director.stage import split_scenes
+
+    ids = [f"p_{i:04d}" for i in range(1, 33)]
+    assert [len(s) for s in split_scenes(ids)] == [11, 11, 10]
+    assert [len(s) for s in split_scenes(ids[:15])] == [15]
+    assert sum(split_scenes(ids), []) == ids and split_scenes([]) == []
+
+
+class FakeQwen:
+    """Answers Pass 1 with one line per panel and Pass 2 with a camera JSON; the first Pass 1 of `flaky` fails."""
+
+    def __init__(self, log, flaky=()):
+        self.log, self.flaky = log, set(flaky)
+
+    async def run(self, kind, payload):
+        import re
+
+        messages = payload["messages"]
+        if len(messages) == 2:
+            text = json.dumps(messages[1]["content"], ensure_ascii=False)
+            scene = re.search(r"Scene (s\d+):", text)[1]
+            self.log.append(("pass1", scene, re.search(r"Story so far: (.*?)\\n", text)[1]))
+            if scene in self.flaky:
+                self.flaky.discard(scene)
+                return {"status": 500, "error": "server busy"}
+            ids = re.findall(r"Panel (p_\d{4})\.", text)
+            body = "\n".join(f"L{i} [{pid}] (calm) Akira ऑफिस में 12 घंटे काम करता है।" for i, pid in enumerate(ids, 1))
+            return {"status": 200, "content": f"BEATS:\n- work\n\nNARRATION:\n{body}\n\nMEMORY:\nAkira finished {scene}."}
+        n = len(re.findall(r"^L\d+ \[", messages[-1]["content"], re.M))
+        self.log.append(("pass2", n))
+        line = {"preset": {"name": "zoom", "params": {}}, "emotion": "calm", "voice": {"tone": "neutral", "pace": "normal", "intensity": 0.5},
+                "transition_in": {"name": "cut", "duration": 0.2}}
+        return {"status": 200, "content": json.dumps({"notes": "steady", "lines": [{"id": f"L{i}", **line} for i in range(1, n + 1)]})}
+
+    async def memory(self):
+        return {}
+
+    async def stop(self):
+        pass
+
+    async def kill(self):
+        pass
+
+
+async def test_director_job_writes_the_chapter_scene_by_scene_and_carries_memory(tmp_path):
+    import asyncio
+
+    import cv2
+    import numpy as np
+
+    from jumbo_worker.blobs import BlobStore
+    from jumbo_worker.events import EventBus
+    from jumbo_worker.jobs import JobRunner
+    from jumbo_worker.pool.cpu import CpuPool
+    from jumbo_worker.pool.manager import ResourceManager
+    from jumbo_worker.pool.specs import PoolConfig
+
+    cfg = PoolConfig.model_validate({"chips": 0, "tick_s": 0.02, "models": {"qwen3vl_32b": {"backend": "fake", "wake_s": 0}}})
+    log = []
+
+    async def spawn(spec, chips, cpu, weights=None, gpus=()):
+        return FakeQwen(log, flaky={"s02"})
+
+    pool = ResourceManager(cfg, cpu=CpuPool(4, 16), spawn=spawn)
+    pool.start()
+    store = BlobStore(tmp_path / "store")
+    sample = json.loads((ROOT / "packages/schema/fixtures/panels-doc.sample.json").read_text())
+    base = sample["panels"][0]
+    panels, files = [], {}
+    ok, png = cv2.imencode(".png", np.full((900, 600, 3), 200, np.uint8))
+    for i in range(1, 18):
+        crop = f"chapters/ch_0001/panels/crops/p_{i:04d}.png"
+        panels.append({**base, "id": f"p_{i:04d}", "order": i, "crop": crop})
+        files[crop] = store.put(png.tobytes())
+    request = {"panels": {**sample, "panels": panels}, "files": files, "memory": "Chapter 1 so far."}
+    job = JobRunner(store, EventBus(), pool=pool).submit("director", store.put(json.dumps(request).encode()))
+    await asyncio.wait_for(job.task, 30)
+    await pool.close()
+    assert job.status == "done", job.error
+    manifest = json.loads(store.path(job.output).read_bytes())
+
+    script = manifest["script"]
+    assert [l["id"] for l in script["lines"]] == [f"l_{i:04d}" for i in range(1, 18)]
+    assert [l["panel_ids"][0] for l in script["lines"]] == [f"p_{i:04d}" for i in range(1, 18)]
+    assert "office" in script["lines"][0]["narration"] and "बारह" in script["lines"][0]["narration"]
+    # Two scenes (9 + 8 panels); s02 failed once and was tried again, with s01's memory.
+    assert [e[1:] for e in log if e[0] == "pass1"] == [("s01", "Chapter 1 so far."), ("s02", "Akira finished s01."), ("s02", "Akira finished s01.")]
+    assert [s["panels"][0] for s in manifest["report"]["scenes"]] == ["p_0001", "p_0010"]
+    assert manifest["report"]["failed"] == [] and manifest["memory"] == "Akira finished s02."
+    assert manifest["last_lines"] == [l["narration"] for l in script["lines"][-2:]]
+
+
+async def test_director_job_refuses_missing_crops(tmp_path):
+    import asyncio
+
+    from jumbo_worker.blobs import BlobStore
+    from jumbo_worker.events import EventBus
+    from jumbo_worker.jobs import JobRunner
+
+    store = BlobStore(tmp_path / "store")
+    sample = json.loads((ROOT / "packages/schema/fixtures/panels-doc.sample.json").read_text())
+    job = JobRunner(store, EventBus()).submit("director", store.put(json.dumps({"panels": sample, "files": {}}).encode()))
+    await asyncio.wait_for(job.task, 10)
+    assert job.status == "failed" and "panel crops not uploaded" in job.error

@@ -78,10 +78,11 @@ async def echo(ctx: JobContext) -> str:
 
 def default_handlers() -> dict[str, JobHandler]:
     """Every job kind the worker serves. Stages import lazily so the bridge core stays light."""
+    from .pipeline.director import stage as director
     from .pipeline.vision import stage as vision
     from .pipeline.voice import stage as voice
 
-    return {"echo": echo, "vision": vision.run, "voice": voice.run}
+    return {"echo": echo, "vision": vision.run, "director": director.run, "voice": voice.run}
 
 
 class JobRunner:
