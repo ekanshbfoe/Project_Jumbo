@@ -130,6 +130,10 @@ class JobRunner:
             job.status, job.error = "failed", f"{type(e).__name__}: {e}"
             self.bus.publish({"type": "job.failed", "job_id": job.id, "error": job.error})
 
+    def busy(self) -> bool:
+        """Whether a job is still running."""
+        return any(j.task and not j.task.done() for j in self.jobs.values())
+
     def get(self, job_id: str) -> Job | None:
         return self.jobs.get(job_id)
 

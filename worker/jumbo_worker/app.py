@@ -154,10 +154,10 @@ def create_app(
                     return
 
         async def listen() -> None:
-            # Any client frame counts as activity for the idle timer.
+            # Keep-alive frames hold the stream open but are not activity: an app left open with nothing to do
+            # must not keep the session alive until its deadline. Requests and running jobs count instead.
             while True:
                 await ws.receive_text()
-                session.last_seen = session.clock()
 
         tasks = [asyncio.create_task(pump()), asyncio.create_task(listen())]
         try:

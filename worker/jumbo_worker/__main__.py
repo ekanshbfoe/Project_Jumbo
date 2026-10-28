@@ -131,6 +131,10 @@ async def serve(args: argparse.Namespace) -> None:
 
     async def watchdog() -> None:
         while not stop.is_set():
+            if runner.busy():
+                # A running job is activity, so the app may stop polling for a while (a reconnect) without
+                # the session idling out under it.
+                session.last_seen = session.clock()
             reason = session.should_stop()
             if reason:
                 session.draining = True
