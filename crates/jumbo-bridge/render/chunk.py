@@ -35,11 +35,16 @@ def watchdog():
 def unpack_job():
     """The job dataset holds job.tar; Kaggle may or may not have unpacked it already."""
     stamp = glob.glob("/kaggle/input/**/STAMP", recursive=True)
+    archive = glob.glob("/kaggle/input/**/job.tar", recursive=True)
+    if not stamp and not archive:
+        # Kaggle mounted the dataset while a new version was still being processed: same as a stale job.
+        print("stale render job: nothing mounted yet", flush=True)
+        sys.exit(3)
     JOB.parent.mkdir(parents=True, exist_ok=True)
     if stamp:
         os.symlink(os.path.dirname(stamp[0]), JOB)
     else:
-        with tarfile.open(glob.glob("/kaggle/input/**/job.tar", recursive=True)[0]) as tar:
+        with tarfile.open(archive[0]) as tar:
             tar.extractall(JOB, filter="data")
     found = (JOB / "STAMP").read_text().strip()
     if found != STAMP:
