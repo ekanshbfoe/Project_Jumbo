@@ -37,7 +37,7 @@ Gemini 4 Argon (Google AI Pro) only to compare on hard chapters.
 
 ## UI
 Home shows content types (Manga/Manhwa; Book Explanation and Novels say "Coming soon"). Manga/Manhwa lists projects
-with their method; a new project picks Method 1 or Method 2 once, stored in `project.toml`. A Method 2 project's
+with their method; a new project picks Method 1 or Method 2 once, stored in `jumbo.project.toml`. A Method 2 project's
 sidebar has "Gemini script" (export the numbered PDF, copy the system instruction and prompt, paste the answer)
 in place of Method 1's Director.
 
