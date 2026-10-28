@@ -33,11 +33,13 @@ BEATS:
 
 NARRATION:
 L1 [p_0001, p_0002] (calm) {pan} …Hindi narration…
+
 L2 [p_0003] (tense) {zoom} …Hindi narration…
 
 MEMORY:
 STORY SO FAR: four to six English sentences covering everything up to the end of this chapter, including what is still unresolved.
-CHARACTERS: one line per named character: Latin name | role | he/she | one visual tag
+CHARACTERS:
+- one line per named character: Latin name | role | he/she | one visual tag
 
 Narrate every labelled panel, from the first to the last; never stop early, and keep BEATS short so the narration and MEMORY fit.
-Rules for each L line: it stays on one line; the brackets list the panels on screen while it is spoken (one panel, or two to three that form one moment); the word in parentheses is one of calm, tense, action, shock, sad, comedic, romantic, mysterious, triumphant; the word in braces is one camera move from the list, matching the number of panels.
+Rules for each L line: it stays on one line, with an empty line before the next one; the brackets list the panels on screen while it is spoken (one panel, or two to three that form one moment); the word in parentheses is one of calm, tense, action, shock, sad, comedic, romantic, mysterious, triumphant; the word in braces is one camera move from the list, matching the number of panels.

@@ -61,6 +61,28 @@ const PACK_RE = /^PACK\s*:?\s*(ch_\d{4})\W*(?:pack\W*)?([0-9a-f]{4})\b/i;
 const STORY_RE = /^STORY SO FAR\s*:?\s*/i;
 const CHARACTERS_RE = /^CHARACTERS\s*:?\s*/i;
 
+const MARKER_RE = /\s+(?=(?:PACK|BEATS|NARRATION|MEMORY|STORY SO FAR|CHARACTERS)\s*:|L\s*\d+\s*[:.\-–]?\s*\[)/g;
+const PRONOUN_RE = /^(?:he|she|they|it)(?:\s*\/\s*\w+)?$/i;
+
+/**
+ * The answer one item per line, however it was copied. AI Studio's Markdown view can join the whole answer into
+ * hard-wrapped paragraphs ("NARRATION: L1 […] … L2 […] …"), wrapping even inside a line's panel brackets, so every
+ * heading and L-tag starts its own line again.
+ */
+function itemLines(text: string): string[] {
+  const cleaned = text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map(cleanLine)
+    .join("\n")
+    .replace(/\[[^\]\n]*(?:\n[^\]\n]*)+\]/g, (m) => m.replace(/\s*\n\s*/g, " "));
+  return cleaned
+    .replace(MARKER_RE, "\n")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+}
+
 const panelId = (n: number) => `p_${String(n).padStart(4, "0")}`;
 
 /** Panel ids in a line's brackets, however Gemini wrote them: p_0007, P_7, p0007, and ranges p_0003-p_0005. */
@@ -82,9 +104,7 @@ export function parseTagged(text: string): TaggedScript {
   let answers = 0;
   let pack: TaggedScript["pack"] = null;
   const lines: TaggedLine[] = [];
-  for (const raw of text.replace(/\r\n/g, "\n").split("\n")) {
-    const line = cleanLine(raw);
-    if (!line) continue;
+  for (const line of itemLines(text)) {
     const packMatch = PACK_RE.exec(line);
     if (packMatch) {
       pack ??= { chapter: packMatch[1]!.toLowerCase(), id: packMatch[2]!.toLowerCase() };
@@ -142,7 +162,31 @@ function readMemory(lines: string[]): StoryMemory {
       into?.push(line);
     }
   }
-  return { story: story.join(" ").trim(), characters };
+  return { story: story.join(" ").trim(), characters: characterEntries(characters) };
+}
+
+/**
+ * "Name | role | he/she | look" entries. Lines that already hold one entry each are kept; otherwise (entries
+ * wrapped over lines or glued into one paragraph) the fields are re-cut around the pronoun field, and the
+ * capitalised words that end a look start the next entry's name.
+ */
+function characterEntries(lines: string[]): string[] {
+  if (lines.every((l) => (l.match(/\|/g) ?? []).length === 3)) return lines;
+  const fields = lines.join(" ").split("|").map((f) => f.trim());
+  const pronouns = fields.flatMap((f, i) => (PRONOUN_RE.test(f) ? [i] : []));
+  if (pronouns.length < 2 || pronouns.some((p, k) => p !== 2 + 3 * k)) return lines;
+  const entries: string[] = [];
+  let name = fields[0]!;
+  pronouns.forEach((p, k) => {
+    const lastEntry = k === pronouns.length - 1;
+    const words = lastEntry ? [] : (fields[p + 1] ?? "").split(/\s+/);
+    let cut = words.length;
+    while (cut > 0 && words.length - cut < 3 && /^\p{Lu}/u.test(words[cut - 1]!)) cut--;
+    const look = lastEntry ? fields.slice(p + 1).join(" | ") : words.slice(0, cut).join(" ");
+    entries.push([name, fields[p - 1]!, fields[p]!, look].join(" | "));
+    name = words.slice(cut).join(" ");
+  });
+  return entries.every((e) => !e.startsWith(" |")) ? entries : lines;
 }
 
 /**

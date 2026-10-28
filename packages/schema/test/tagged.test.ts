@@ -55,6 +55,34 @@ describe("reading a pasted Gemini answer", () => {
     expect(readGeminiAnswer(wrapped, PACK).doc!.lines[1]!.narration).toBe("उसका phone बजता है और Sylvie उसे उठाती है।");
   });
 
+  it("reads an answer AI Studio joined into hard-wrapped paragraphs", () => {
+    const joined = `PACK: ch_0001 7f3a
+
+BEATS:
+
+  - Sylvie gets a call from the
+    CEO's office
+
+NARRATION: L1 [p_0001, p_0002] (calm) {pan} एक ऊँची इमारत पर The Financier का
+नाम चमकता है। L2 [p_0003] (tense) {zoom} उसका फोन बजता है। L3 [p_0004,
+p_0005] (shock) {split_screen} उधर से आवाज़ कहती है कि interview टल गया है।
+
+MEMORY: STORY SO FAR: Sylvie Jaine, a reporter, learns her interview is postponed. CHARACTERS: Sylvie Jaine | Reporter
+at The Financier | she | long dark hair, white
+coat Luke Chase | CEO's assistant | he | unseen caller Stephan Yard
+| CEO of Everbank | he | tall businessman`;
+    const r = readGeminiAnswer(joined, PACK);
+    expect(r.errors).toEqual([]);
+    expect(r.doc!.lines.map((l) => l.panel_ids)).toEqual([["p_0001", "p_0002"], ["p_0003"], ["p_0004", "p_0005"]]);
+    expect(r.doc!.lines[0]!.narration).toBe("एक ऊँची इमारत पर The Financier का नाम चमकता है।");
+    expect(r.memory.story).toBe("Sylvie Jaine, a reporter, learns her interview is postponed.");
+    expect(r.memory.characters).toEqual([
+      "Sylvie Jaine | Reporter at The Financier | she | long dark hair, white coat",
+      "Luke Chase | CEO's assistant | he | unseen caller",
+      "Stephan Yard | CEO of Everbank | he | tall businessman",
+    ]);
+  });
+
   it("refuses an answer that was cut off and says where it stops", () => {
     const cut = ANSWER.split("L3 ")[0]!;
     const r = readGeminiAnswer(cut, PACK);
