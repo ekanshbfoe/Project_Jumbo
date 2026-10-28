@@ -20,6 +20,7 @@ def sh(cmd):
 
 def unpack_job():
     stamp = glob.glob("/kaggle/input/**/STAMP", recursive=True)
+    JOB.parent.mkdir(parents=True, exist_ok=True)
     if stamp:
         os.symlink(os.path.dirname(stamp[0]), JOB)
     else:
