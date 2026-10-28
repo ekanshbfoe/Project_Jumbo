@@ -4,6 +4,7 @@
 mod bridge;
 mod commands;
 mod credentials;
+mod gemini;
 mod memory;
 mod recent;
 mod render;
@@ -40,6 +41,7 @@ fn main() {
             commands::book_overview,
             commands::verify_book,
             commands::chapter_preview,
+            commands::set_project_method,
             bridge::bridge_settings,
             bridge::save_bridge_settings,
             bridge::credential_status,
@@ -55,6 +57,8 @@ fn main() {
             script::write_script,
             script::chapter_script,
             script::approve_script,
+            gemini::gemini_pack,
+            gemini::save_gemini_script,
             voice::voice_library,
             voice::import_voice,
             voice::record_voice,

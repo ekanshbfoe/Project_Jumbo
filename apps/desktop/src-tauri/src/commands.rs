@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use jumbo_core::{ChapterId, ChapterManifest, Project, chapter};
+use jumbo_core::{ChapterId, ChapterManifest, Method, Project, chapter};
 use jumbo_ledger::{Entity, LockState, ReceiptBook, SnapshotManifest, VerifyReport};
 use serde::Serialize;
 use serde_json::Value;
@@ -32,6 +32,7 @@ pub struct ProjectInfo {
     title: String,
     language: String,
     created_at: String,
+    method: Method,
 }
 
 impl ProjectInfo {
@@ -43,6 +44,7 @@ impl ProjectInfo {
             title: m.title.clone(),
             language: m.language.clone(),
             created_at: m.created_at.format(&Rfc3339).unwrap_or_default(),
+            method: m.method,
         }
     }
 }
@@ -82,9 +84,34 @@ fn install(app: &AppHandle, state: &State<AppState>, project: Project) -> CmdRes
 }
 
 #[tauri::command]
-pub fn create_project(app: AppHandle, state: State<AppState>, path: String, title: String) -> CmdResult<ProjectInfo> {
-    let project = Project::create(&path, &title).map_err(msg)?;
+pub fn create_project(
+    app: AppHandle,
+    state: State<AppState>,
+    path: String,
+    title: String,
+    method: Option<Method>,
+) -> CmdResult<ProjectInfo> {
+    let mut project = Project::create(&path, &title).map_err(msg)?;
+    if let Some(method) = method {
+        project.set_method(method).map_err(msg)?;
+    }
     install(&app, &state, project)
+}
+
+/// Switches the open project's method, while none of its chapters has a script or story memory yet.
+fn switch_method(project: &mut Project, method: Method) -> CmdResult<()> {
+    if project.manifest().method != method && crate::memory::any_script(project)? {
+        return Err("a chapter already has a script; the method can only change before the first script".into());
+    }
+    project.set_method(method).map_err(msg)
+}
+
+#[tauri::command]
+pub fn set_project_method(state: State<AppState>, method: Method) -> CmdResult<ProjectInfo> {
+    let mut guard = state.project.lock().map_err(msg)?;
+    let project = guard.as_mut().ok_or("no project is open")?;
+    switch_method(project, method)?;
+    Ok(ProjectInfo::of(project))
 }
 
 #[tauri::command]

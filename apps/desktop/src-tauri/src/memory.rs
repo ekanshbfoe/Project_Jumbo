@@ -125,6 +125,17 @@ pub fn mark_later_stale(project: &Project, id: ChapterId) -> CmdResult<Vec<Chapt
     Ok(marked)
 }
 
+/// True when any chapter has a script or a memory, which fixes the project's method.
+pub fn any_script(project: &Project) -> CmdResult<bool> {
+    for c in chapter::list_chapters(project).map_err(msg)? {
+        let dir = chapter::chapter_dir(project, c.id).join("script");
+        if std::fs::read_dir(&dir).map(|mut d| d.next().is_some()).unwrap_or(false) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
