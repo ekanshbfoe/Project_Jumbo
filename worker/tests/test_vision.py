@@ -138,6 +138,15 @@ def test_slivers_and_nested_boxes_are_not_shots():
     assert keep_shots([sliver], 1000) == [sliver], "an image with only a sliver keeps it"
 
 
+def test_a_white_strip_with_a_leaf_at_its_edge_is_empty_but_a_drawn_panel_is_not():
+    from jumbo_worker.pipeline.vision.textonly import is_empty
+    strip_image = np.full((370, 228, 3), 255, np.uint8)
+    cv2.circle(strip_image, (228, 200), 22, (230, 190, 60), -1)  # a flower poking in at the edge
+    assert is_empty(strip_image, (0, 0, 228, 370), [], 0)
+    assert not is_empty(art(370, 228, seed=8), (0, 0, 228, 370), [], 0)
+    assert not is_empty(strip_image, (0, 0, 228, 370), [], 1), "a character makes it a shot"
+
+
 def test_a_credits_page_is_recognised_by_its_texts():
     from jumbo_worker.pipeline.vision.stage import is_credits
     box = [(0, 0), (10, 0), (10, 10), (0, 10)]

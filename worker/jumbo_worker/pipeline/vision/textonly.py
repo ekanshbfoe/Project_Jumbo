@@ -70,11 +70,25 @@ EMPTY_DETAIL = 0.008
 EMPTY_TONE = 0.03
 
 
+# Or: this share of the box is blank white page and what is left has little drawing (a white strip with a leaf
+# or a flower poking in at the edge, left over between two shots).
+BLANK_SHARE = 0.9
+BLANK_DETAIL = 0.03
+BLANK_LEVEL = 235
+
+
 def is_empty(image: np.ndarray, box: Box, text_boxes: list[Box], characters: int) -> bool:
     if characters:
         return False
     detail, tone = measure(image, box, text_boxes)
-    return detail < EMPTY_DETAIL and tone < EMPTY_TONE
+    if detail < EMPTY_DETAIL and tone < EMPTY_TONE:
+        return True
+    x0, y0, x1, y1 = (int(round(v)) for v in box)
+    crop = image[max(0, y0) : y1, max(0, x0) : x1]
+    if crop.size == 0:
+        return False
+    blank = float((cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY) > BLANK_LEVEL).mean())
+    return blank >= BLANK_SHARE and detail < BLANK_DETAIL
 
 
 def is_text_only(image: np.ndarray, box: Box, text_boxes: list[Box], characters: int) -> bool:
