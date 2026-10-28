@@ -38,8 +38,18 @@ describe("preset registry", () => {
 });
 
 describe("preset behaviour", () => {
-  it("hold never moves", () => {
-    expect(evaluateCamera(PresetSpec.parse({ name: "hold" }), ctx(45))).toEqual(IDENTITY_CAMERA);
+  it("hold pushes in slowly, 3% a second, and nothing else", () => {
+    expect(evaluateCamera(PresetSpec.parse({ name: "hold" }), ctx(0))).toEqual(IDENTITY_CAMERA);
+    expect(evaluateCamera(PresetSpec.parse({ name: "hold" }), ctx(45))).toEqual({ ...IDENTITY_CAMERA, scale: 1.045 });
+  });
+
+  it("impact presets are capped however strong the script asks", () => {
+    const tilt = evaluateCamera(PresetSpec.parse({ name: "action_tilt", params: { angle: -20, punch: 1.5 } }), ctx(60));
+    expect(Math.abs(tilt.rotate)).toBeLessThanOrEqual(5.01);
+    expect(tilt.scale).toBeLessThanOrEqual(1.1 + 0.03);
+    const strong = PresetSpec.parse({ name: "shake", params: { intensity: 60, frequency: 30 } });
+    const capped = PresetSpec.parse({ name: "shake", params: { intensity: 10, frequency: 12 } });
+    expect(evaluateCamera(strong, ctx(17))).toEqual(evaluateCamera(capped, ctx(17)));
   });
 
   it("zoom runs from `from` to `to` around the focus point", () => {

@@ -43,7 +43,12 @@ function shakeOffset(ctx: PresetContext, amplitude: number, frequency: number) {
   };
 }
 
-export const hold = (): CameraTransform => cam({});
+/** Push in this much per second on a "hold", so no panel ever sits frozen (keepInFrame eases it into the frame's edge). */
+const HOLD_PUSH_PER_SECOND = 0.03;
+/** Most an impact preset may do: a hit reads as a hit, not as the panel being thrown about (video test 2 audit). */
+export const IMPACT_CAPS = { shake: 10, shakeFrequency: 12, jitter: 14, jitterDecay: 0.35, tiltAngle: 5, punch: 1.1 } as const;
+
+export const hold = (ctx: PresetContext): CameraTransform => cam({ scale: 1 + HOLD_PUSH_PER_SECOND * seconds(ctx) });
 
 export function zoom(ctx: PresetContext, p: PresetParams<"zoom">): CameraTransform {
   const [fx, fy] = p.focus ?? [0.5, 0.5];
@@ -60,21 +65,24 @@ export function pan(ctx: PresetContext, p: PresetParams<"pan">): CameraTransform
 }
 
 export function shake(ctx: PresetContext, p: PresetParams<"shake">): CameraTransform {
-  return cam({ ...shakeOffset(ctx, p.intensity * unit(ctx), p.frequency), scale: 1.03 });
+  const intensity = Math.min(p.intensity, IMPACT_CAPS.shake);
+  return cam({ ...shakeOffset(ctx, intensity * unit(ctx), Math.min(p.frequency, IMPACT_CAPS.shakeFrequency)), scale: 1.03 });
 }
 
 export function actionTilt(ctx: PresetContext, p: PresetParams<"action_tilt">): CameraTransform {
   const hit = spring({ frame: ctx.frame, fps: ctx.fps, config: { damping: 11, stiffness: 190, mass: 0.6 } });
+  const angle = Math.max(-IMPACT_CAPS.tiltAngle, Math.min(IMPACT_CAPS.tiltAngle, p.angle));
   return cam({
-    scale: 1 + (p.punch - 1) * hit + 0.02 * progress(ctx),
-    rotate: p.angle * hit,
+    scale: 1 + (Math.min(p.punch, IMPACT_CAPS.punch) - 1) * hit + 0.02 * progress(ctx),
+    rotate: angle * hit,
   });
 }
 
 export function kineticJitter(ctx: PresetContext, p: PresetParams<"kinetic_jitter">): CameraTransform {
   // decay is the fraction left after one second; 0 kills the jitter after the first frame.
-  const envelope = p.decay === 0 ? (ctx.frame === 0 ? 1 : 0) : Math.pow(p.decay, seconds(ctx));
-  const jitter = shakeOffset(ctx, p.intensity * unit(ctx) * envelope, 18);
+  const decay = Math.min(p.decay, IMPACT_CAPS.jitterDecay);
+  const envelope = decay === 0 ? (ctx.frame === 0 ? 1 : 0) : Math.pow(decay, seconds(ctx));
+  const jitter = shakeOffset(ctx, Math.min(p.intensity, IMPACT_CAPS.jitter) * unit(ctx) * envelope, 18);
   return cam({ ...jitter, rotate: jitter.rotate * 2, scale: 1.02 + 0.06 * envelope });
 }
 

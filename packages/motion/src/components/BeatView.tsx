@@ -3,6 +3,7 @@ import { AbsoluteFill, Html5Audio, Img, useCurrentFrame, useVideoConfig } from "
 import { AmbientLayer } from "../ambient/AmbientLayer";
 import { useAssetResolver } from "../assets";
 import { fitContain, panelSize, splitFrame } from "../geometry";
+import { capUpscale, keepInFrame } from "../framing";
 import { PRESETS } from "../presets/registry";
 import type { PanelSlot, PresetContext, PresetImpl } from "../presets/types";
 import { Camera } from "./Camera";
@@ -23,12 +24,13 @@ export interface BeatViewProps {
 /** Where each panel of the beat sits before the camera moves, unless the preset lays them out itself. */
 function layout(beat: Beat, panels: EpisodePanel[], width: number, height: number, impl: PresetImpl<PresetName>): PanelSlot[] {
   if (impl.layout) return impl.layout(panels.map(panelSize), { width, height }, beat.preset.params as never);
-  if (panels.length === 1) return [fitContain(panelSize(panels[0]!), { width, height }, 0.06)];
+  // Never larger on screen than MAX_UPSCALE times the panel's own pixels: a small scan is shown smaller, not mushy.
+  if (panels.length === 1) return [capUpscale(fitContain(panelSize(panels[0]!), { width, height }, 0.06), panelSize(panels[0]!))];
   const orientation = beat.preset.name === "split_screen" ? beat.preset.params.orientation : "vertical";
   const inset = { left: width * 0.04, top: height * 0.06 };
   const slots = splitFrame({ width: width * 0.92, height: height * 0.88 }, panels.length, orientation, height * 0.025);
   return slots.map((slot, i) => {
-    const fit = fitContain(panelSize(panels[i]!), slot, 0.02);
+    const fit = capUpscale(fitContain(panelSize(panels[i]!), slot, 0.02), panelSize(panels[i]!));
     return { ...fit, left: inset.left + slot.left + fit.left, top: inset.top + slot.top + fit.top };
   });
 }
@@ -79,7 +81,16 @@ export function BeatView({
       ) : null}
       <AmbientLayer effect={ambientEffect} frame={startFrame + frame} fps={fps} width={width} height={height} />
       {panels.map((panel, i) => (
-        <Camera key={panel.id} transform={impl.camera(ctx(i), beat.preset.params as never)} {...rects[i]!}>
+        <Camera
+          key={panel.id}
+          // A single panel's move is kept inside the frame: the panel is never cropped (multi-panel presets slide in by design).
+          transform={
+            panels.length === 1
+              ? keepInFrame(impl.camera(ctx(i), beat.preset.params as never), rects[i]!, { width, height }, panelSize(panel))
+              : impl.camera(ctx(i), beat.preset.params as never)
+          }
+          {...rects[i]!}
+        >
           <PolygonPanel
             panel={panel}
             width={rects[i]!.width}
