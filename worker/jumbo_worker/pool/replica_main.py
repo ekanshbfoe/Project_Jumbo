@@ -146,7 +146,13 @@ def _drama3(spec: ModelSpec) -> Runner:
     return Drama3Runner(spec)
 
 
-MODEL_RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {"magi_v2": _magi, "drama3": _drama3}
+def _qwen3vl(spec: ModelSpec) -> Runner:
+    from ..models.qwen3vl import Qwen3VLRunner
+
+    return Qwen3VLRunner(spec)
+
+
+MODEL_RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {"magi_v2": _magi, "drama3": _drama3, "qwen3vl_32b": _qwen3vl}
 
 
 def make_runner(spec: ModelSpec) -> Runner:
