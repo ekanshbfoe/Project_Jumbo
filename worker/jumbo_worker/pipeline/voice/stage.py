@@ -6,7 +6,8 @@ Input blob (JSON):
      "voices": {"narrator": {"design": "deep, calm Indian male narrator voice",  # used once, to create it
                              "prompts": {"neutral": "<blob>", "sad": "<blob>"}}},  # voice files
      "seed": 7,                                                                  # optional
-     "pacing": true, "tempo": 1.1}                                               # optional (defaults shown)
+     "pacing": true, "tempo": 1.1,                                               # optional (defaults shown)
+     "delivery": "energetic"}                                                    # or "as_directed"
 
 A voice with no prompts yet is created on first use: the model speaks the voice's first line in a voice
 it invents from the description, and that take becomes the voice's neutral reference. The new prompt comes back in
@@ -65,6 +66,7 @@ async def run(ctx: JobContext) -> str:
     seed = int(request.get("seed", DEFAULT_SEED))
     pacing = bool(request.get("pacing", True))
     speed = float(request.get("tempo", takes.TEMPO))
+    energetic = request.get("delivery", "energetic") == "energetic"
     store = ctx.store
     work = Path(tempfile.mkdtemp(prefix="voice-", dir=store.root))
     try:
@@ -97,6 +99,8 @@ async def run(ctx: JobContext) -> str:
             direction = line.voice
             payload = {"text": line.narration, "voice": prompt, "emotion": line.emotion,
                        "tone": direction.tone if direction else None, "pace": direction.pace if direction else None}
+            if energetic:
+                payload.update(_energetic(line.emotion, payload["tone"]))
             async with gate:
                 take = await _best_take(ctx, work, line_id, payload, seed)
             tightened = 0.0
@@ -140,6 +144,12 @@ async def run(ctx: JobContext) -> str:
         return store.put(json.dumps(manifest).encode())
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _energetic(emotion: str | None, tone: str | None) -> dict:
+    """The recap delivery chosen in the voice A/B (2026-10-28): every line energetic and fast, a sad one at normal pace."""
+    tone = "energetic" if tone in (None, "", "neutral") else f"energetic, {tone}"
+    return {"tone": tone, "pace": "normal" if emotion == "sad" else "fast"}
 
 
 def _pace(pcm, rate: int, speed: float):

@@ -234,6 +234,9 @@ async def test_voice_job_creates_voices_once_retries_bad_takes_and_trims(tmp_pat
     # jinwoo's sad line used his sad recording, with the emotion passed on for the cue.
     last = [p for p in spoken if Path(p["out"]).name.startswith(lines[-1]["id"])]
     assert Path(last[0]["voice"]) == store.path(sad) and last[0]["emotion"] == "sad"
+    # The energetic recap delivery: fast, except the sad line, which keeps a normal pace.
+    assert last[0]["pace"] == "normal" and last[0]["tone"].startswith("energetic")
+    assert all(p["pace"] == "fast" and p["tone"].startswith("energetic") for p in spoken if p not in last)
 
     # Seed 7 stalls, so every line took a second take with seed 8, which passed.
     report = {r["line_id"]: r for r in manifest["report"]["lines"]}
