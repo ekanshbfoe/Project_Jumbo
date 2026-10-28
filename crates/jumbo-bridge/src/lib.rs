@@ -7,6 +7,7 @@ pub mod http;
 pub mod kaggle;
 pub mod launcher;
 pub mod protocol;
+pub mod render;
 pub mod rendezvous;
 pub mod secrets;
 pub mod worker;

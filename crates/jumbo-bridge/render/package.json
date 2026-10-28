@@ -1,0 +1,18 @@
+{
+  "name": "jumbo-render-kit",
+  "private": true,
+  "type": "module",
+  "description": "What a Kaggle CPU machine installs to render one chunk of an episode: the repo's schema and motion sources plus these pinned packages.",
+  "dependencies": {
+    "@jumbo/schema": "file:./schema",
+    "@remotion/bundler": "4.0.532",
+    "@remotion/google-fonts": "4.0.532",
+    "@remotion/renderer": "4.0.532",
+    "@remotion/transitions": "4.0.532",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.532",
+    "tsx": "4.23.15",
+    "zod": "4.5.4"
+  }
+}
