@@ -4,6 +4,7 @@
 mod bridge;
 mod commands;
 mod credentials;
+mod memory;
 mod recent;
 mod render;
 mod script;
