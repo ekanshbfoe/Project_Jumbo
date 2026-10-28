@@ -15,7 +15,7 @@ fn main() {
         files.insert(name.to_owned(), read(&worker.join(name)));
     }
     let mut sources = Vec::new();
-    collect_py(&package, &mut sources);
+    collect(&package, &mut sources);
     sources.sort();
     for path in sources {
         println!("cargo:rerun-if-changed={}", path.display());
@@ -26,15 +26,18 @@ fn main() {
     std::fs::write(out, serde_json::to_string(&files).expect("serialize bundle")).expect("write bundle");
 }
 
-/// Every `.py` file under `dir`, including subpackages, skipping bytecode caches.
-fn collect_py(dir: &Path, out: &mut Vec<PathBuf>) {
+/// Files the worker reads at run time: sources plus the prompts and schemas next to them.
+const SHIPPED: [&str; 3] = ["py", "md", "json"];
+
+/// Every shipped file under `dir`, including subpackages, skipping bytecode caches.
+fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir).expect("worker/jumbo_worker exists") {
         let path = entry.expect("dir entry").path();
         if path.is_dir() {
             if path.file_name().is_some_and(|n| n != "__pycache__") {
-                collect_py(&path, out);
+                collect(&path, out);
             }
-        } else if path.extension().is_some_and(|e| e == "py") {
+        } else if path.extension().is_some_and(|e| SHIPPED.iter().any(|s| e == *s)) {
             out.push(path);
         }
     }

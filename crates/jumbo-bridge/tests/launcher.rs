@@ -25,7 +25,8 @@ fn bundle_carries_the_whole_worker_package() {
     assert!(!bundle.as_object().expect("object").keys().any(|k| k.contains("test")));
 }
 
-/// Subpackages (pool/, pipeline/ …) must ship too, or the kernel would fail to import them.
+/// Subpackages (pool/, pipeline/ …) and the prompt files beside them must ship too, or the kernel would
+/// fail to import or read them.
 #[test]
 fn bundle_matches_every_worker_source_file_on_disk() {
     fn walk(dir: &std::path::Path, base: &std::path::Path, out: &mut Vec<String>) {
@@ -35,7 +36,7 @@ fn bundle_matches_every_worker_source_file_on_disk() {
                 if path.file_name().is_some_and(|n| n != "__pycache__") {
                     walk(&path, base, out);
                 }
-            } else if path.extension().is_some_and(|e| e == "py") {
+            } else if path.extension().is_some_and(|e| ["py", "md", "json"].iter().any(|s| e == *s)) {
                 out.push(path.strip_prefix(base).expect("prefix").to_string_lossy().replace('\\', "/"));
             }
         }
