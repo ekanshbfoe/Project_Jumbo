@@ -73,4 +73,7 @@ p = subprocess.run(f"cd {KIT} && ./node_modules/.bin/tsx render-episode.mts {JOB
                    shell=True, env=env, text=True, capture_output=True)
 print("\n".join(l for l in (p.stdout + p.stderr).splitlines() if not l.strip().startswith("at "))[-6000:], flush=True)
 log(f"render exit {p.returncode} after {time.time() - t:.0f}s")
+if p.returncode == 0:
+    # The join machine checks this, so it never stitches a chunk left over from an older render.
+    Path(f"{W}/chunk{CHUNK}.stamp").write_text(STAMP)
 sys.exit(p.returncode)

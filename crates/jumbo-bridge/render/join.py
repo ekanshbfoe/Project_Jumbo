@@ -79,6 +79,11 @@ for i in range(1, CHUNKS + 1):
     found = glob.glob(f"/kaggle/input/**/chunk{i}.mp4", recursive=True)
     if not found:
         raise SystemExit(f"chunk {i} is missing from the kernel sources")
+    stamp = Path(found[0]).with_suffix(".stamp")
+    if not stamp.is_file() or stamp.read_text().strip() != STAMP:
+        # Kaggle mounted an older run of that chunk machine: same as a stale job, the app pushes again.
+        print(f"stale render job: chunk {i} is from another render", flush=True)
+        sys.exit(3)
     chunks.append(found[0])
 (W / "chunks.txt").write_text("".join(f"file '{c}'\n" for c in chunks))
 spec = json.loads((JOB / "episode.json").read_text())
