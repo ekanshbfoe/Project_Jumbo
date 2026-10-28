@@ -32,7 +32,7 @@ import numpy as np
 from ...models.magi import FINGERPRINT_MODEL
 from .slicer import INK_TOLERANCE, split_tall
 from .stitch import background_level, gray
-from .textonly import is_text_only
+from .textonly import is_empty, is_text_only
 from .tiling import dedupe, merge_panels, tile_spans
 
 Point = tuple[float, float]
@@ -158,12 +158,43 @@ def _tile_clusters(result: dict, tile: int) -> dict:
     }
 
 
+# A box whose shorter side is under this share of the image width is a sliver, not a shot.
+MIN_SHOT_SIDE = 0.18
+# A box lying this much inside a bigger one is part of it (Magi boxing a figure inside its panel).
+NESTED = 0.8
+
+
+def _area(b: tuple[float, float, float, float]) -> float:
+    return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+
+
+def keep_shots(boxes: list[tuple[float, float, float, float]], width: int) -> list[tuple[float, float, float, float]]:
+    """Panel boxes without slivers and boxes nested in a bigger one. An image whose only boxes are slivers
+    keeps them: something must carry its texts."""
+    def nested(b):
+        for o in boxes:
+            if o is b or _area(o) <= _area(b):
+                continue
+            ix = max(0.0, min(b[2], o[2]) - max(b[0], o[0]))
+            iy = max(0.0, min(b[3], o[3]) - max(b[1], o[1]))
+            if ix * iy >= NESTED * _area(b):
+                return True
+        return False
+
+    kept = [b for b in boxes if min(b[2] - b[0], b[3] - b[1]) >= MIN_SHOT_SIDE * width and not nested(b)]
+    return kept or boxes
+
+
 class MagiDetector:
     """Magi v2 through the model pool. `call` is `JobContext.call`.
 
     Images taller than a page are detected in overlapping tiles (see tiling.py); the tile images are
     written next to `path` for the replica to read, and all tiles are sent at once so the pool can
-    spread them over replicas. A panel left far taller than wide is cut at its quietest rows (slicer.split_tall). Boxes around a lone bubble or caption are folded (see textonly.py).
+    spread them over replicas. A panel left far taller than wide is cut at its quietest rows (slicer.split_tall).
+
+    Boxes that are not shots are dropped, their texts going to the nearest real panel: slivers (a thin edge of
+    a drawing), boxes lying inside a bigger one, boxes around a lone bubble or caption (see textonly.py), and
+    near-empty boxes (a white or flat strip with nothing drawn).
     """
 
     name = "magi"
@@ -172,7 +203,7 @@ class MagiDetector:
     def __init__(self, call: Callable[[str, str, dict], Awaitable[object]], model: str = "magi_v2") -> None:
         self.call = call
         self.model = model
-        # Text-only boxes folded into real panels, for the stage report.
+        # Boxes that were not shots, dropped with their texts moved into real panels, for the stage report.
         self.folded = 0
 
     async def _detect_file(self, path: Path) -> dict:
@@ -202,7 +233,7 @@ class MagiDetector:
             [[_poly_box(_shift(p["polygon"], top)) for p in r["panels"] if len(p.get("polygon", [])) >= 3] for top, r in results],
             [(top, top + (spans[n][1] - spans[n][0])) for n, (top, _) in enumerate(results)],
         )
-        boxes = [piece for b in boxes for piece in split_tall(image, b)]
+        boxes = keep_shots([piece for b in boxes for piece in split_tall(image, b)], image.shape[1])
         panels = [Detection([(b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3])]) for b in boxes]
         texts = dedupe([{**t, "polygon": _shift(t["polygon"], top)} for top, r in results for t in r.get("texts", [])], lambda t: _poly_box(t["polygon"]))
         chars = dedupe(
@@ -224,9 +255,13 @@ class MagiDetector:
         return self._fold_text_only(image, panels)
 
     def _fold_text_only(self, image: np.ndarray, panels: list[Detection]) -> list[Detection]:
-        """Moves the texts of text-only boxes into the nearest real panel and drops the boxes. Only
-        text data moves: the real panels' boxes are left exactly as detected."""
-        text_only = [is_text_only(image, d.box, [_poly_box(b["polygon"]) for b in d.bubbles], len(d.characters)) for d in panels]
+        """Moves the texts of text-only and empty boxes into the nearest real panel and drops the boxes.
+        Only text data moves: the real panels' boxes are left exactly as detected."""
+        text_only = [
+            is_text_only(image, d.box, [_poly_box(b["polygon"]) for b in d.bubbles], len(d.characters))
+            or is_empty(image, d.box, [_poly_box(b["polygon"]) for b in d.bubbles], len(d.characters))
+            for d in panels
+        ]
         real = [d for d, t in zip(panels, text_only) if not t]
         if not real or len(real) == len(panels):
             return panels

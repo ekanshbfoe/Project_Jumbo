@@ -131,6 +131,13 @@ def test_a_panel_far_taller_than_wide_is_cut_at_its_quietest_rows():
     assert split_tall(image, (0, 0, width, 1400)) == [(0, 0, width, 1400)]
 
 
+def test_slivers_and_nested_boxes_are_not_shots():
+    from jumbo_worker.pipeline.vision.detect import keep_shots
+    panel, inner, sliver = (0, 0, 1000, 800), (100, 100, 600, 700), (0, 820, 1000, 860)
+    assert keep_shots([panel, inner, sliver], 1000) == [panel]
+    assert keep_shots([sliver], 1000) == [sliver], "an image with only a sliver keeps it"
+
+
 def test_reading_order_rows_then_columns():
     boxes = [(500, 0, 900, 400), (0, 10, 450, 400), (0, 450, 900, 800)]
     assert reading_order(boxes) == [1, 0, 2]

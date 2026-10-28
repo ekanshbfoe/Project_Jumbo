@@ -65,6 +65,18 @@ def measure(image: np.ndarray, box: Box, text_boxes: list[Box]) -> tuple[float, 
     return float((edge & free).sum()) / area, float((tone & free).sum()) / area
 
 
+# An "empty" box: almost no drawing at all, texts or not (a white page, a flat gradient strip, a lone leaf).
+EMPTY_DETAIL = 0.008
+EMPTY_TONE = 0.03
+
+
+def is_empty(image: np.ndarray, box: Box, text_boxes: list[Box], characters: int) -> bool:
+    if characters:
+        return False
+    detail, tone = measure(image, box, text_boxes)
+    return detail < EMPTY_DETAIL and tone < EMPTY_TONE
+
+
 def is_text_only(image: np.ndarray, box: Box, text_boxes: list[Box], characters: int) -> bool:
     if characters or not text_boxes:
         return False
