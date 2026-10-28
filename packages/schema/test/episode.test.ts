@@ -49,10 +49,11 @@ const audio = AudioManifest.parse({
 describe("buildEpisodeSpec", () => {
   it("sizes voiced beats from audio and unvoiced beats from word count", () => {
     const spec = buildEpisodeSpec(script, panels, audio);
-    // 4.2 s of audio + 0.35 s pause + the 0.5 s fade into the next beat, rounded up to a frame.
-    expect(spec.beats[0]?.duration).toBeCloseTo(5.0667, 3);
+    // 4.2 s of audio + 0.12 s pause + the next beat's 0.5 s fade cut to 0.3 s, rounded up to a frame.
+    expect(spec.beats[0]?.duration).toBeCloseTo(4.6333, 3);
+    expect(spec.beats[1]?.transition_in.duration).toBe(0.3);
     expect(spec.beats[0]?.audio).toEqual({ src: "chapters/ch_0001/audio/l_0001.wav", duration: 4.2 });
-    // 2 words / 2.6 wps + 0.35 padding is under the 1.5 s floor.
+    // 2 words / 2.6 wps + 0.12 padding is under the 1.5 s floor.
     expect(spec.beats[1]?.duration).toBe(1.5);
     expect(spec.beats[1]?.audio).toBeNull();
   });
@@ -60,7 +61,7 @@ describe("buildEpisodeSpec", () => {
   it("never lets the next beat's audio start before this one's narration ends", () => {
     const spec = buildEpisodeSpec(script, panels, audio);
     const [first, second] = spec.beats;
-    expect(first!.duration - second!.transition_in.duration).toBeGreaterThanOrEqual(first!.audio!.duration + 0.35);
+    expect(first!.duration - second!.transition_in.duration).toBeGreaterThanOrEqual(first!.audio!.duration + 0.12);
     expect(Number.isInteger(Math.round(first!.duration * 30 * 1e6) / 1e6)).toBe(true);
   });
 
@@ -89,7 +90,7 @@ describe("EpisodeSpec", () => {
 
   it("rejects a transition that starts under the previous narration", () => {
     const spec = base();
-    spec.beats[0].duration = 4.5;
+    spec.beats[0].duration = 4.4;
     expect(EpisodeSpec.safeParse(spec).error?.issues[0]?.message).toBe("transition starts before the previous narration ends");
   });
 

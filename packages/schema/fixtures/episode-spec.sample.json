@@ -178,13 +178,13 @@
       },
       "transition_in": {
         "name": "cut",
-        "duration": 0.4
+        "duration": 0.3
       },
       "audio": {
         "src": "chapters/ch_0001/audio/l_0001.wav",
         "duration": 3.4
       },
-      "duration": 4.266666666666667
+      "duration": 3.8333333333333335
     },
     {
       "line_id": "l_0002",
@@ -203,13 +203,13 @@
       },
       "transition_in": {
         "name": "fade",
-        "duration": 0.5
+        "duration": 0.3
       },
       "audio": {
         "src": "chapters/ch_0001/audio/l_0002.wav",
         "duration": 2.1
       },
-      "duration": 2.466666666666667
+      "duration": 2.2333333333333334
     },
     {
       "line_id": "l_0003",
@@ -228,10 +228,10 @@
       },
       "transition_in": {
         "name": "cut",
-        "duration": 0.4
+        "duration": 0.3
       },
       "audio": null,
-      "duration": 2.6666666666666665
+      "duration": 2.433333333333333
     }
   ]
 }

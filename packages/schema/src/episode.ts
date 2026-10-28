@@ -122,6 +122,8 @@ export interface BuildEpisodeOptions {
   video?: Partial<VideoFormat>;
   /** Silence after each narration clip, in seconds, before the next beat's transition begins. */
   padding?: number;
+  /** Longest a transition between beats may be, in seconds: quick cuts keep a recap moving. */
+  maxTransition?: number;
   /** Shortest a beat may be, in seconds. */
   minBeat?: number;
   /** Speaking rate used to size beats that have no audio yet (preview before voicing). */
@@ -139,7 +141,9 @@ export function buildEpisodeSpec(
   audio?: AudioManifest,
   options: BuildEpisodeOptions = {},
 ): EpisodeSpec {
-  const { padding = 0.35, minBeat = 1.5, wordsPerSecond = 2.6 } = options;
+  const { padding = 0.12, maxTransition = 0.3, minBeat = 1.5, wordsPerSecond = 2.6 } = options;
+  const transition = (line?: ScriptDoc["lines"][number]) =>
+    line && { ...line.transition_in, duration: Math.min(line.transition_in.duration, maxTransition) };
   const clips = new Map(audio?.clips.map((c) => [c.line_id, c]));
   const { fps } = VideoFormat.parse(options.video ?? {});
   const used = new Set(script.lines.flatMap((l) => l.panel_ids));
@@ -160,17 +164,17 @@ export function buildEpisodeSpec(
         narration: line.narration,
         emotion: line.emotion,
         preset: line.preset,
-        transition_in: line.transition_in,
+        transition_in: transition(line),
         audio: clip ? { src: clip.src, duration: clip.duration } : null,
-        duration: beatLength(Math.max(minBeat, spoken + padding + overlapOf(script.lines[i + 1])), fps),
+        duration: beatLength(Math.max(minBeat, spoken + padding + overlapOf(transition(script.lines[i + 1]))), fps),
       };
     }),
   });
 }
 
-/** How far a line's transition reaches back into the beat before it, in seconds. */
-function overlapOf(line?: ScriptDoc["lines"][number]): number {
-  return !line || line.transition_in.name === "cut" ? 0 : line.transition_in.duration;
+/** How far a transition reaches back into the beat before it, in seconds. */
+function overlapOf(t?: { name: string; duration: number }): number {
+  return !t || t.name === "cut" ? 0 : t.duration;
 }
 
 /** Seconds rounded up to a whole frame, so the timeline's frame rounding never cuts the end of a clip. */
