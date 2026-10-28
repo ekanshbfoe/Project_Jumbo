@@ -88,3 +88,20 @@ with its memory tiers, and the TPU window holds several scenes or a much larger 
   vllm-torchtpu if the first fails, while Drama 3 Q8_0 runs on 96 host cores at the same time. The Director uses
   spike 7d's six scenes, prompt and strict per-scene schema; it measures load time, tokens/s, context ceiling and
   compile time. Then the 60-minute keep-alive.
+
+## First TPU run (2026-10-28) and what the next one does differently
+The blank-slate runner worked: it woke after about 22 h in the queue, fetched the job from the gist, and was released
+the moment the job ended. The job produced nothing:
+- `vllm-tpu` 0.32.0 took 22 minutes to install; the 66.7 GB of weights reached `/dev/shm` in 83 s.
+- `vllm serve` never became ready: XLA precompiles every (tokens, requests) bucket at about 19 s each, and for a 64K
+  context with 6 concurrent requests that ran past the 40-minute wait. The fallback engine's install then timed out.
+- Drama 3 on the host CPUs failed at once: the TPU image has no `cmake` and no `soundfile`.
+
+The next commanded TPU run uses: vLLM wheels pre-downloaded into a private dataset (no resolve, no download); the XLA
+compile cache restored from and saved to a private dataset (`oceanhave/jumbo-xla-cache` holds the first run's partial
+cache); a 16K context (a scene is about 6K tokens) with 1-2 concurrent requests, compiled once and kept up for every
+scene; and a pre-built CPU speech.cpp binary instead of a source build.
+
+## TPU sessions run only on the project lead's command (2026-10-28)
+The job card is `await_command`: a waking runner runs nothing, posts `woke` and listens; the project lead decides the
+job, and with no command for 60 minutes the session ends itself. A session is released as soon as its job is done.
