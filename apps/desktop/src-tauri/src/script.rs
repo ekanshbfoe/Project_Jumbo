@@ -7,7 +7,6 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use jumbo_bridge::worker::WorkerClient;
 use jumbo_contracts::panels_doc::PanelsDoc;
 use jumbo_contracts::script_doc::ScriptDoc;
 use jumbo_core::chapter;
@@ -16,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter, State};
 
-use crate::bridge::{BridgeState, current_client};
+use crate::bridge::{BridgeState, current_client, download, upload, with_worker};
 use crate::commands::{AppState, CmdResult, msg, with_project};
 use crate::memory::{self, StoryMemory};
 
@@ -42,17 +41,22 @@ struct Progress<'a> {
     message: String,
 }
 
-/// Submits a job and waits for it, reporting its progress. Returns the output blob's hash.
+/// Submits a job and waits for it, reporting its progress. Returns the output blob's hash. A poll that fails is
+/// retried (see `with_worker`), so a tunnel hiccup does not abandon a job that is still running on the worker.
 pub(crate) async fn run_job(
-    client: &WorkerClient,
+    bridge: &BridgeState,
     kind: &str,
     input: &str,
     params: Value,
     mut report: impl FnMut(f64, String),
 ) -> CmdResult<String> {
-    let job_id = client.submit_job(kind, input, params).await.map_err(msg)?;
+    let job_id = current_client(bridge).await?.submit_job(kind, input, params).await.map_err(msg)?;
     loop {
-        let job = client.job(&job_id).await.map_err(msg)?;
+        let job = with_worker(bridge, |c| {
+            let job_id = job_id.clone();
+            async move { c.job(&job_id).await.map_err(msg) }
+        })
+        .await?;
         match job.status.as_str() {
             "done" => return job.output.ok_or_else(|| format!("{kind} finished without output")),
             "failed" => return Err(job.error.unwrap_or_else(|| format!("{kind} failed"))),
@@ -127,7 +131,7 @@ pub async fn write_script(
         Ok((p.paths().root().to_path_buf(), dir, panels, memory::context_before(p, id)?))
     })?;
     let doc: PanelsDoc = serde_json::from_value(panels.clone()).map_err(|e| format!("panels.json is invalid: {e}"))?;
-    let client = current_client(&bridge).await?;
+    current_client(&bridge).await?;
     let report = |progress: f64, message: String| {
         let _ = app.emit("script://progress", Progress { chapter: &chapter, progress, message });
     };
@@ -137,19 +141,19 @@ pub async fn write_script(
     for (n, panel) in doc.panels.iter().enumerate() {
         let crop = panel.crop.as_ref().ok_or_else(|| format!("{} has no crop; re-analyze the chapter", *panel.id))?;
         report(0.05 * n as f64 / total as f64, format!("uploading panel {}/{total}", n + 1));
-        let hash = client.upload_file(&root.join(crop.as_str()), |_, _| {}).await.map_err(msg)?;
+        let hash = upload(&bridge, &root.join(crop.as_str())).await?;
         files.insert(crop.to_string(), Value::String(hash));
     }
     let story = (!context.story.is_empty()).then_some(context.story);
     let request = json!({ "panels": panels, "files": files, "memory": story, "last_lines": context.last_lines });
     let request_path = dir.join(".director.request.json");
     fsx::atomic_write_json(&request_path, &request).map_err(msg)?;
-    let input = client.upload_file(&request_path, |_, _| {}).await.map_err(msg);
+    let input = upload(&bridge, &request_path).await;
     let _ = std::fs::remove_file(&request_path);
-    let output = run_job(&client, "director", &input?, json!({}), |p, m| report(0.05 + p * 0.93, m)).await?;
+    let output = run_job(&bridge, "director", &input?, json!({}), |p, m| report(0.05 + p * 0.93, m)).await?;
 
     let manifest_path = dir.join(".director.manifest.json");
-    client.download(&output, &manifest_path).await.map_err(msg)?;
+    download(&bridge, &output, &manifest_path).await?;
     let manifest: Result<DirectorManifest, String> =
         std::fs::read(&manifest_path).map_err(msg).and_then(|bytes| serde_json::from_slice(&bytes).map_err(msg));
     let _ = std::fs::remove_file(&manifest_path);

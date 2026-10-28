@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter, State};
 
-use crate::bridge::{BridgeState, current_client};
+use crate::bridge::{BridgeState, current_client, download, upload};
 use crate::commands::{AppState, CmdResult, config_dir, msg, with_project};
 use crate::script::run_job;
 
@@ -161,7 +161,7 @@ pub async fn record_voice(
         let script: Value = serde_json::from_str(&text).map_err(|e| format!("approved.json: {e}"))?;
         Ok((dir, script, library(shared.as_deref(), p)))
     })?;
-    let client = current_client(&bridge).await?;
+    current_client(&bridge).await?;
     let report = |progress: f64, message: String| {
         let _ = app.emit("voice://progress", Progress { chapter: &chapter, progress, message });
     };
@@ -171,19 +171,19 @@ pub async fn record_voice(
     for (speaker, emotions) in &voices {
         let mut prompts = Map::new();
         for (emotion, path) in emotions {
-            prompts.insert(emotion.clone(), Value::String(client.upload_file(path, |_, _| {}).await.map_err(msg)?));
+            prompts.insert(emotion.clone(), Value::String(upload(&bridge, path).await?));
         }
         specs.insert(speaker.clone(), json!({ "prompts": prompts }));
     }
     let request_path = dir.join(".voice.request.json");
     fsx::atomic_write_json(&request_path, &json!({ "script": script, "voices": specs })).map_err(msg)?;
-    let input = client.upload_file(&request_path, |_, _| {}).await.map_err(msg);
+    let input = upload(&bridge, &request_path).await;
     let _ = std::fs::remove_file(&request_path);
-    let output = run_job(&client, "voice", &input?, json!({}), |p, m| report(0.02 + p * 0.88, m)).await?;
+    let output = run_job(&bridge, "voice", &input?, json!({}), |p, m| report(0.02 + p * 0.88, m)).await?;
 
     report(0.9, "downloading clips".into());
     let manifest_path = dir.join(".voice.manifest.json");
-    client.download(&output, &manifest_path).await.map_err(msg)?;
+    download(&bridge, &output, &manifest_path).await?;
     let manifest: Result<VoiceManifest, String> =
         std::fs::read(&manifest_path).map_err(msg).and_then(|bytes| serde_json::from_slice(&bytes).map_err(msg));
     let _ = std::fs::remove_file(&manifest_path);
@@ -196,13 +196,13 @@ pub async fn record_voice(
     for (rel, hash) in &manifest.files {
         let dest = staged.join(safe_audio(rel)?);
         std::fs::create_dir_all(dest.parent().ok_or("bad path")?).map_err(msg)?;
-        client.download(hash, &dest).await.map_err(msg)?;
+        download(&bridge, hash, &dest).await?;
     }
     for (speaker, emotions) in &manifest.voices {
         for (emotion, hash) in emotions {
             let dest = with_project(&state, |p| voice_path(p, speaker, emotion))?;
             std::fs::create_dir_all(dest.parent().ok_or("bad path")?).map_err(msg)?;
-            client.download(hash, &dest).await.map_err(msg)?;
+            download(&bridge, hash, &dest).await?;
         }
     }
     let done = with_project(&state, |p| install(p, id, &staged, &manifest));

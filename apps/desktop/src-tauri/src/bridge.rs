@@ -399,6 +399,50 @@ pub(crate) async fn current_client(state: &BridgeState) -> CmdResult<Arc<WorkerC
     state.client.lock().await.clone().ok_or_else(|| "no worker is connected".to_owned())
 }
 
+/// How long a stage keeps trying to reach the worker before it gives up: long enough for a tunnel hiccup or a
+/// move to a new tunnel (reconnecting takes up to three minutes), short of the worker's 30-minute idle limit.
+pub(crate) const WORKER_GRACE: std::time::Duration = std::time::Duration::from_secs(300);
+const WORKER_RETRY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Whether the session has ended for good, so retrying cannot help.
+fn session_over(state: &BridgeState) -> bool {
+    state.view.lock().map_or(true, |v| matches!(*v, SessionView::Failed { .. } | SessionView::Stopped | SessionView::Idle))
+}
+
+/// Runs `call` on the connected worker, retrying through dropped requests and reconnects. Every try takes the
+/// current client, so after the tunnel moves the retries go to its new address. Only for calls that are safe
+/// to repeat (polls, content-addressed uploads and downloads), never for submitting a job.
+pub(crate) async fn with_worker<T, F, Fut>(state: &BridgeState, mut call: F) -> CmdResult<T>
+where
+    F: FnMut(Arc<WorkerClient>) -> Fut,
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    let deadline = Instant::now() + WORKER_GRACE;
+    loop {
+        let error = match current_client(state).await {
+            Ok(client) => match call(client).await {
+                Ok(value) => return Ok(value),
+                Err(e) => e,
+            },
+            Err(e) => e,
+        };
+        if session_over(state) || Instant::now() >= deadline {
+            return Err(error);
+        }
+        tokio::time::sleep(WORKER_RETRY).await;
+    }
+}
+
+/// Uploads a file to the connected worker (resuming), retrying like `with_worker`. Returns the blob's hash.
+pub(crate) async fn upload(state: &BridgeState, path: &std::path::Path) -> CmdResult<String> {
+    with_worker(state, |c| async move { c.upload_file(path, |_, _| {}).await.map_err(|e| e.to_string()) }).await
+}
+
+/// Downloads a blob from the connected worker (resuming), retrying like `with_worker`.
+pub(crate) async fn download(state: &BridgeState, hash: &str, dest: &std::path::Path) -> CmdResult<()> {
+    with_worker(state, |c| async move { c.download(hash, dest).await.map_err(|e| e.to_string()) }).await
+}
+
 /// Round-trips 8 MiB through the worker (upload, echo job, download) and verifies it byte for byte.
 #[tauri::command]
 pub async fn run_bridge_test(state: State<'_, BridgeState>) -> CmdResult<BridgeTestReport> {

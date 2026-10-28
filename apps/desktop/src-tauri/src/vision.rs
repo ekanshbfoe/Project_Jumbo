@@ -5,7 +5,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Component, Path, PathBuf};
-use std::time::Duration;
 
 use jumbo_contracts::panels_doc::PanelsDoc;
 use jumbo_core::chapter::{self, Layout};
@@ -14,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, State};
 
-use crate::bridge::{BridgeState, current_client};
+use crate::bridge::{BridgeState, current_client, download, upload};
+use crate::script::run_job;
 use crate::commands::{AppState, CmdResult, msg, with_project};
 
 /// What the worker's vision job returns (worker/jumbo_worker/pipeline/vision/stage.py).
@@ -118,40 +118,26 @@ pub async fn analyze_chapter(
         let dir = chapter::chapter_dir(p, id);
         Ok((dir.clone(), dir.join("source").join("original.pdf")))
     })?;
-    let client = current_client(&bridge).await?;
+    current_client(&bridge).await?;
     let report = |progress: f64, message: String| {
         let _ = app.emit("vision://progress", Progress { chapter: &chapter, progress, message });
     };
 
     report(0.0, "uploading the PDF".into());
-    let input = client.upload_file(&pdf, |_, _| {}).await.map_err(msg)?;
-    let job_id = client
-        .submit_job("vision", &input, json!({ "chapter_id": chapter, "detector": detector }))
-        .await
-        .map_err(msg)?;
-    let output = loop {
-        let job = client.job(&job_id).await.map_err(msg)?;
-        match job.status.as_str() {
-            "done" => break job.output.ok_or("vision finished without output")?,
-            "failed" => return Err(job.error.unwrap_or_else(|| "vision failed".into())),
-            _ => {
-                report(job.progress * 0.9, format!("{} on the worker", job.status));
-                tokio::time::sleep(Duration::from_millis(500)).await;
-            }
-        }
-    };
+    let input = upload(&bridge, &pdf).await?;
+    let params = json!({ "chapter_id": chapter, "detector": detector });
+    let output = run_job(&bridge, "vision", &input, params, |p, m| report(p * 0.9, m)).await?;
 
     report(0.9, "downloading pages and crops".into());
     let manifest_path = dir.join(".vision.manifest.json");
-    client.download(&output, &manifest_path).await.map_err(msg)?;
+    download(&bridge, &output, &manifest_path).await?;
     let manifest: VisionManifest = serde_json::from_slice(&std::fs::read(&manifest_path).map_err(msg)?).map_err(msg)?;
     let _ = std::fs::remove_file(&manifest_path);
     if manifest.chapter_id != chapter {
         return Err(format!("worker answered for {} instead of {chapter}", manifest.chapter_id));
     }
-    let client = &client;
-    let layout =
-        install(&dir, &manifest, |hash, dest| async move { client.download(&hash, &dest).await.map_err(msg) }).await?;
+    let bridge = &*bridge;
+    let layout = install(&dir, &manifest, |hash, dest| async move { download(bridge, &hash, &dest).await }).await?;
     report(1.0, format!("{} panels", manifest.panels["panels"].as_array().map_or(0, Vec::len)));
     with_project(&state, |p| mark_analyzed(p, id, layout))
 }
