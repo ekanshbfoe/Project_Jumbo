@@ -50,7 +50,13 @@ pub(crate) async fn run_job(
     params: Value,
     mut report: impl FnMut(f64, String),
 ) -> CmdResult<String> {
-    let job_id = current_client(bridge).await?.submit_job(kind, input, params).await.map_err(msg)?;
+    // The worker names a job after its kind, input and params and answers a repeat with the same job, so a
+    // submit whose answer was lost can be sent again without starting the work twice.
+    let job_id = with_worker(bridge, |c| {
+        let params = params.clone();
+        async move { c.submit_job(kind, input, params).await.map_err(msg) }
+    })
+    .await?;
     loop {
         let job = with_worker(bridge, |c| {
             let job_id = job_id.clone();
