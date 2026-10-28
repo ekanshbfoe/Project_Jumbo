@@ -69,6 +69,12 @@ fn main() {
             render::chapter_render,
             bridge::stop_session,
         ])
-        .run(tauri::generate_context!())
-        .unwrap_or_else(|e| panic!("failed to start Jumbo: {e}"));
+        .build(tauri::generate_context!())
+        .unwrap_or_else(|e| panic!("failed to start Jumbo: {e}"))
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                // Quitting must not leave a Kaggle session running with nobody connected to it.
+                tauri::async_runtime::block_on(bridge::stop_on_exit(app));
+            }
+        });
 }

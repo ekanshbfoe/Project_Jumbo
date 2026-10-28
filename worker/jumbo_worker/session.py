@@ -26,6 +26,8 @@ class SessionTicket:
     app_pk: PublicKey
     deadline_s: int = 30_600
     idle_s: int = 1_800
+    # A session the app never reaches (it gave up on the boot, or quit) stops this soon after starting.
+    first_contact_s: int = 900
 
     @classmethod
     def from_dict(cls, raw: dict) -> "SessionTicket":
@@ -39,6 +41,7 @@ class SessionTicket:
             app_pk=PublicKey(base64.b64decode(raw["app_pk"])),
             deadline_s=int(raw.get("deadline_s", 30_600)),
             idle_s=int(raw.get("idle_s", 1_800)),
+            first_contact_s=int(raw.get("first_contact_s", 900)),
         )
 
 
@@ -56,6 +59,7 @@ class Session:
         self.key = derive_session_key(self.worker_sk, self.ticket.app_pk, self.ticket.session_id)
         self.started_at = self.clock()
         self.last_seen = self.started_at
+        self.contacted = False
 
     @property
     def worker_pk_b64(self) -> str:
@@ -75,6 +79,7 @@ class Session:
         if not verify_request(self.key, method, path_and_query, ts, body, sig):
             raise AuthError("bad signature")
         self.last_seen = self.clock()
+        self.contacted = True
 
     def idle_for(self) -> float:
         return self.clock() - self.last_seen
@@ -84,6 +89,8 @@ class Session:
         now = self.clock()
         if now - self.started_at >= self.ticket.deadline_s:
             return "deadline reached"
+        if not self.contacted and now - self.started_at >= self.ticket.first_contact_s:
+            return "the app never connected"
         if now - self.last_seen >= self.ticket.idle_s:
             return "no authenticated requests within the idle limit"
         return None

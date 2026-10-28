@@ -492,6 +492,18 @@ pub async fn pool_status(state: State<'_, BridgeState>) -> CmdResult<Value> {
     current_client(&state).await?.pool().await.map_err(msg)
 }
 
+/// Asks a connected worker to stop as the app quits, waiting a few seconds at most. A session that is still
+/// booting has no worker to ask; it stops itself when the app never connects (worker `first_contact_s`).
+pub async fn stop_on_exit(app: &AppHandle) {
+    let Some(state) = app.try_state::<BridgeState>() else { return };
+    if let Some(client) = state.client.lock().await.take() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(8), client.stop()).await;
+    }
+    if let Ok(Some(mut child)) = state.local_worker.lock().map(|mut c| c.take()) {
+        let _ = child.kill();
+    }
+}
+
 /// Asks the worker to drain and exit (ending the Kaggle session), then resets the session.
 #[tauri::command]
 pub async fn stop_session(app: AppHandle, state: State<'_, BridgeState>) -> CmdResult<()> {
