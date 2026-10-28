@@ -112,7 +112,7 @@ pub async fn analyze_chapter(
         let manifest = chapter::load_chapter(p, id).map_err(msg)?;
         if manifest.state > ChapterState::Analyzed {
             return Err(format!(
-                "{chapter} is already {}; send it back to Analyzed before re-running vision",
+                "{chapter} is already {}; send it back to Analyzed (Chapters, Send back) before re-running vision",
                 manifest.state.as_str()
             ));
         }

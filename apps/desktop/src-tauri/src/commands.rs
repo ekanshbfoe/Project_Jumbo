@@ -52,8 +52,8 @@ pub(crate) fn begin_job<'a>(state: &'a AppState, lane: Lane, label: String) -> C
     Ok(JobGuard { state, label })
 }
 
-/// Refuses to change the open project while a job would write its results into it.
-fn ensure_idle(state: &AppState) -> CmdResult<()> {
+/// Refuses to change the open project (or send a chapter back) while a job would write its results into it.
+pub(crate) fn ensure_idle(state: &AppState) -> CmdResult<()> {
     match state.jobs.lock().map_err(msg)?.first() {
         Some((_, running)) => {
             Err(format!("{running} is still running in this project; wait for it to finish before switching project"))

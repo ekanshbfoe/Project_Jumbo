@@ -57,6 +57,7 @@ fn main() {
             script::write_script,
             script::chapter_script,
             script::approve_script,
+            script::rewind_chapter,
             gemini::gemini_pack,
             gemini::save_gemini_script,
             gemini::export_numbered_pdf,

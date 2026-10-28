@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
-import { api, bridgeApi, CHAPTER_STATES, errorText, type ChapterManifest, type Detector } from "../api";
+import { api, bridgeApi, CHAPTER_STATES, errorText, type ChapterManifest, type ChapterState, type Detector } from "../api";
 import type { ScreenProps } from "../hub/modules";
 import type { MakeVideoStage } from "../makeVideo";
 import { startAnalyze, startMakeVideo, useRuns } from "../runs";
@@ -25,6 +25,13 @@ const STAGE_LABEL: Record<MakeVideoStage, string> = {
   voice: "recording the voice",
   render: "rendering on Kaggle CPUs",
 };
+
+/** Where a chapter can be sent back to, and what that lets the person do again. */
+const SEND_BACK: { to: ChapterState; label: string }[] = [
+  { to: "approved", label: "to Approved: record the voice again" },
+  { to: "directed", label: "to Directed: edit the script or paste a new Gemini answer" },
+  { to: "analyzed", label: "to Analyzed: write the script again or find the panels again" },
+];
 
 const DETECTORS: { id: Detector; label: string }[] = [
   { id: "magi", label: "Magi v2 (Kaggle)" },
@@ -57,6 +64,19 @@ export function ChaptersScreen({ project }: ScreenProps) {
   const make = (chapter: string) => {
     setImportError(undefined);
     void startMakeVideo(chapter, project.method, chapters.reload);
+  };
+
+  const sendBack = async (chapter: ChapterManifest, to: ChapterState) => {
+    const later = to === "analyzed" ? " The approved script becomes a draft." : to === "directed" ? " The approved script becomes a draft to edit and approve again." : "";
+    if (!window.confirm(`Send ${chapter.id} back ${to}?${later} Its later stages run again.`)) return;
+    setImportError(undefined);
+    try {
+      await api.rewindChapter(chapter.id, to);
+    } catch (e) {
+      setImportError(`${chapter.id}: ${errorText(e)}`);
+    } finally {
+      chapters.reload();
+    }
   };
 
   const importPdfs = async () => {
@@ -154,6 +174,21 @@ export function ChaptersScreen({ project }: ScreenProps) {
                       >
                         Make video
                       </button>
+                    )}{" "}
+                    {runs[c.id] || CHAPTER_STATES.indexOf(c.state) <= CHAPTER_STATES.indexOf("analyzed") ? null : (
+                      <select
+                        value=""
+                        disabled={Object.keys(runs).length > 0}
+                        title="Run a stage again"
+                        onChange={(e) => e.target.value && sendBack(c, e.target.value as ChapterState)}
+                      >
+                        <option value="">Send back…</option>
+                        {SEND_BACK.filter((b) => CHAPTER_STATES.indexOf(b.to) < CHAPTER_STATES.indexOf(c.state)).map((b) => (
+                          <option key={b.to} value={b.to}>
+                            {b.label}
+                          </option>
+                        ))}
+                      </select>
                     )}
                   </td>
                 </tr>

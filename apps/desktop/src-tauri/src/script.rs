@@ -16,7 +16,7 @@ use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::bridge::{BridgeState, current_client, download, upload, with_worker};
-use crate::commands::{AppState, CmdResult, Lane, begin_job, msg, with_project};
+use crate::commands::{AppState, CmdResult, Lane, begin_job, ensure_idle, msg, with_project};
 use crate::memory::{self, StoryMemory};
 
 /// What the worker's director job returns (worker/jumbo_worker/pipeline/director/stage.py).
@@ -244,6 +244,38 @@ fn approve(project: &Project, id: ChapterId, script: &Value) -> CmdResult<Chapte
     Ok(manifest)
 }
 
+/// Sends a chapter back so a stage runs again: to Approved to record the voice again, to Directed to edit and
+/// re-approve its script (or paste a new Gemini answer), to Analyzed to write the script again or re-run vision.
+/// Before Approved the approved script becomes the newest draft, so it no longer wins over the next one, and the
+/// approved memory becomes the draft again so approving without a new answer keeps the story.
+fn rewind(project: &Project, id: ChapterId, to: ChapterState) -> CmdResult<ChapterManifest> {
+    if !matches!(to, ChapterState::Analyzed | ChapterState::Directed | ChapterState::Approved) {
+        return Err(format!("a chapter can be sent back to analyzed, directed or approved, not {}", to.as_str()));
+    }
+    let current = chapter::load_chapter(project, id).map_err(msg)?;
+    if to >= current.state {
+        return Err(format!("{id} is {}; it can only be sent back to an earlier stage", current.state.as_str()));
+    }
+    if to < ChapterState::Approved {
+        let dir = chapter::chapter_dir(project, id).join("script");
+        let approved = dir.join("approved.json");
+        if approved.is_file() {
+            std::fs::rename(&approved, next_draft(&dir)).map_err(msg)?;
+        }
+        let memory = dir.join(memory::APPROVED);
+        if memory.is_file() && !dir.join(memory::DRAFT).exists() {
+            std::fs::copy(&memory, dir.join(memory::DRAFT)).map_err(msg)?;
+        }
+    }
+    chapter::rewind(project, id, to).map_err(msg)
+}
+
+#[tauri::command]
+pub fn rewind_chapter(state: State<AppState>, chapter: String, to: ChapterState) -> CmdResult<ChapterManifest> {
+    ensure_idle(&state)?;
+    with_project(&state, |p| rewind(p, chapter.parse().map_err(msg)?, to))
+}
+
 #[tauri::command]
 pub fn approve_script(state: State<AppState>, chapter: String, script: Value) -> CmdResult<ChapterManifest> {
     with_project(&state, |p| approve(p, chapter.parse().map_err(msg)?, &script))
@@ -342,5 +374,25 @@ mod tests {
         // Editing again after approval overwrites the approved script.
         approve(&project, id, &sample_script(id)).expect("re-approve");
         assert!(approve(&project, id, &json!({ "lines": [] })).expect_err("bad").contains("invalid"));
+    }
+
+    #[test]
+    fn sending_back_retires_the_approved_script_and_keeps_the_memory() {
+        let (_tmp, project, id) = project_with_chapter();
+        install(&project, id, &manifest(id, "the story")).expect("install");
+        approve(&project, id, &sample_script(id)).expect("approve");
+        let dir = chapter::chapter_dir(&project, id).join("script");
+        assert!(
+            rewind(&project, id, ChapterState::Voiced).is_err()
+                && rewind(&project, id, ChapterState::Rasterized).is_err()
+        );
+        let state = rewind(&project, id, ChapterState::Directed).expect("rewind");
+        assert_eq!(state.state, ChapterState::Directed);
+        assert!(!dir.join("approved.json").exists());
+        assert_eq!(crate::commands::script_file(&dir).as_deref(), Some("draft.v2.json"));
+        assert!(dir.join(memory::DRAFT).is_file());
+        // Approving again works without a new answer and keeps the same story.
+        assert_eq!(approve(&project, id, &sample_script(id)).expect("re-approve").state, ChapterState::Approved);
+        assert_eq!(memory::context_before(&project, id).map(|_| ()), Ok(()));
     }
 }

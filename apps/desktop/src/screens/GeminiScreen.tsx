@@ -202,6 +202,11 @@ export function GeminiScreen(_: ScreenProps) {
               <textarea value={characters} onChange={(e) => setCharacters(e.target.value)} rows={4} />
             </label>
             <div className="row" style={{ justifyContent: "flex-end" }}>
+              {current && !editable ? (
+                <span className="muted">
+                  {chapter} is {current.state}. To paste a new answer, send it back to Directed on the Chapters screen first.
+                </span>
+              ) : null}
               {saved ? <span className="badge ok">{saved}</span> : null}
               <button className="primary" disabled={!canSave} onClick={saveScript} title={editable ? "" : `${chapter} is ${current?.state}; a pasted script goes onto an analyzed chapter`}>
                 Save script
