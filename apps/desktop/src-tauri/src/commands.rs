@@ -183,7 +183,7 @@ fn read_json(path: &std::path::Path) -> CmdResult<Option<Value>> {
 }
 
 /// `approved.json` if the script was approved, else the highest-numbered draft.
-fn script_file(dir: &std::path::Path) -> Option<String> {
+pub(crate) fn script_file(dir: &std::path::Path) -> Option<String> {
     if dir.join("approved.json").is_file() {
         return Some("approved.json".to_owned());
     }
