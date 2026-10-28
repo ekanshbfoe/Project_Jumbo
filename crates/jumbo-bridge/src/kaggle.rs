@@ -55,6 +55,8 @@ pub struct KernelPush {
     pub machine_shape: Option<String>,
     pub dataset_sources: Vec<String>,
     pub model_sources: Vec<String>,
+    /// `owner/kernel-slug` of kernels whose latest output this one reads under /kaggle/input.
+    pub kernel_sources: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -92,6 +94,14 @@ impl KernelStatus {
     pub fn is_finished(&self) -> bool {
         matches!(self.status.as_str(), "COMPLETE" | "ERROR" | "CANCEL_ACKNOWLEDGED")
     }
+}
+
+/// A file the kernel's latest run wrote to /kaggle/working, at a pre-signed download URL.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputFile {
+    pub file_name: String,
+    pub url: String,
 }
 
 /// One file of a dataset version.
@@ -170,7 +180,7 @@ impl KaggleClient {
             "dockerImagePinningType": shape.starts_with("Tpu").then_some("latest"),
             "enableInternet": true,
             "datasetDataSources": kernel.dataset_sources,
-            "kernelDataSources": [],
+            "kernelDataSources": kernel.kernel_sources,
             "competitionDataSources": [],
             "modelDataSources": kernel.model_sources,
             "categoryIds": [],
@@ -273,6 +283,53 @@ impl KaggleClient {
             .call(KERNELS, "ListKernelSessionOutput", json!({ "userName": owner, "kernelSlug": kernel, "pageSize": 1 }))
             .await?;
         Ok(plain_log(value["log"].as_str().unwrap_or_default()))
+    }
+}
+
+impl KaggleClient {
+    /// The files the kernel's latest run left in /kaggle/working.
+    pub async fn output_files(&self, slug: &str) -> Result<Vec<OutputFile>> {
+        let (owner, kernel) = split_slug(slug)?;
+        let mut files = Vec::new();
+        let mut page: Option<String> = None;
+        loop {
+            let mut body = json!({ "userName": owner, "kernelSlug": kernel, "pageSize": 100 });
+            if let Some(token) = &page {
+                body["pageToken"] = json!(token);
+            }
+            let value = self.call(KERNELS, "ListKernelSessionOutput", body).await?;
+            files.extend(serde_json::from_value::<Vec<OutputFile>>(value["files"].clone()).unwrap_or_default());
+            match value["nextPageToken"].as_str().filter(|t| !t.is_empty()) {
+                Some(token) => page = Some(token.to_owned()),
+                None => return Ok(files),
+            }
+        }
+    }
+
+    /// Streams one output file to `dest`, through `dest.partial` so a broken download never looks finished.
+    pub async fn download_output(&self, file: &OutputFile, dest: &std::path::Path) -> Result<()> {
+        use futures_util::StreamExt;
+        use tokio::io::AsyncWriteExt;
+
+        // The URL is pre-signed: it carries its own authorization.
+        let resp = self.http.get(&file.url).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            return Err(BridgeError::Status {
+                service: "Kaggle download",
+                status,
+                body: resp.text().await.unwrap_or_default(),
+            });
+        }
+        let partial = dest.with_extension("partial");
+        let mut out = tokio::fs::File::create(&partial).await.map_err(|e| BridgeError::io(&partial, e))?;
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            out.write_all(&chunk?).await.map_err(|e| BridgeError::io(&partial, e))?;
+        }
+        out.sync_all().await.map_err(|e| BridgeError::io(&partial, e))?;
+        drop(out);
+        tokio::fs::rename(&partial, dest).await.map_err(|e| BridgeError::io(dest, e))
     }
 }
 

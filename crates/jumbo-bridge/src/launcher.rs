@@ -43,5 +43,6 @@ pub fn kernel_push(config: &LaunchConfig, ticket: &SessionTicket) -> Result<Kern
         machine_shape: config.machine_shape.clone(),
         dataset_sources: config.dataset_sources.clone(),
         model_sources: config.model_sources.clone(),
+        kernel_sources: vec![],
     })
 }
