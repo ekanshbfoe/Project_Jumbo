@@ -208,9 +208,34 @@ pub fn import_chapters(state: State<AppState>, paths: Vec<String>) -> CmdResult<
     with_project(&state, |p| {
         paths
             .iter()
-            .map(|path| chapter::import_chapter(p, path.as_ref(), None).map_err(|e| format!("{path}: {e}")))
+            .map(|path| {
+                if let Some(id) = already_imported(p, path.as_ref())? {
+                    return Err(format!("{path} is already imported as {id}"));
+                }
+                chapter::import_chapter(p, path.as_ref(), None).map_err(|e| format!("{path}: {e}"))
+            })
             .collect()
     })
+}
+
+/// The chapter whose source PDF has exactly these bytes, if any: the same file imported twice would be narrated
+/// twice and break the story order.
+fn already_imported(project: &Project, pdf: &std::path::Path) -> CmdResult<Option<ChapterId>> {
+    let size = std::fs::metadata(pdf).map_err(|e| format!("{}: {e}", pdf.display()))?.len();
+    let mut bytes = None;
+    for c in chapter::list_chapters(project).map_err(msg)? {
+        let source = chapter::chapter_dir(project, c.id).join("source").join("original.pdf");
+        if std::fs::metadata(&source).is_ok_and(|m| m.len() == size) {
+            let ours = match &bytes {
+                Some(b) => b,
+                None => bytes.insert(std::fs::read(pdf).map_err(msg)?),
+            };
+            if std::fs::read(&source).is_ok_and(|theirs| &theirs == ours) {
+                return Ok(Some(c.id));
+            }
+        }
+    }
+    Ok(None)
 }
 
 #[tauri::command]
@@ -310,6 +335,19 @@ mod tests {
         assert_eq!(script_file(dir.path()).as_deref(), Some("draft.v10.json"));
         std::fs::write(dir.path().join("approved.json"), "{}").expect("write");
         assert_eq!(script_file(dir.path()).as_deref(), Some("approved.json"));
+    }
+
+    #[test]
+    fn the_same_pdf_is_not_imported_twice() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let project = Project::create(dir.path().join("p"), "Test").expect("project");
+        let (a, b) = (dir.path().join("a.pdf"), dir.path().join("b.pdf"));
+        std::fs::write(&a, b"%PDF-1.4\none\n").expect("a");
+        std::fs::write(&b, b"%PDF-1.4\ntwo\n").expect("b");
+        assert_eq!(already_imported(&project, &a).expect("check"), None);
+        let id = chapter::import_chapter(&project, &a, None).expect("import").id;
+        assert_eq!(already_imported(&project, &a).expect("check"), Some(id));
+        assert_eq!(already_imported(&project, &b).expect("check"), None, "same size, other bytes");
     }
 
     #[test]

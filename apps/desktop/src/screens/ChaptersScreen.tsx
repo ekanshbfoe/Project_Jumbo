@@ -196,7 +196,9 @@ export function ChaptersScreen({ project }: ScreenProps) {
             </tbody>
           </table>
         ) : (
-          <div className="empty">{chapters.loading ? "Loading…" : "No chapters yet. Import chapter PDFs to begin."}</div>
+          <div className="empty">
+            {chapters.loading ? "Loading…" : "No chapters yet. Import chapter PDFs to begin, in story order: each chapter's script continues the one before it."}
+          </div>
         )}
       </div>
     </div>
