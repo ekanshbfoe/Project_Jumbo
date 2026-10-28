@@ -35,6 +35,7 @@ def watchdog():
 def unpack_job():
     """The job dataset holds job.tar; Kaggle may or may not have unpacked it already."""
     stamp = glob.glob("/kaggle/input/**/STAMP", recursive=True)
+    JOB.parent.mkdir(parents=True, exist_ok=True)
     if stamp:
         os.symlink(os.path.dirname(stamp[0]), JOB)
     else:
