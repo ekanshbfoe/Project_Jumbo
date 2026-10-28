@@ -99,7 +99,9 @@ export function VoiceScreen({ project }: ScreenProps) {
         <div className="card stack">
           <div className="row">
             <strong>Voices</strong>
-            <button onClick={importVoice}>Import narrator voice…</button>
+            <button onClick={importVoice} title="Saved for every project, not only this one">
+              Import narrator voice…
+            </button>
           </div>
           {voices.length ? (
             voices.map(([speaker, emotions]) => (
@@ -113,7 +115,9 @@ export function VoiceScreen({ project }: ScreenProps) {
               </span>
             ))
           ) : (
-            <span className="muted">No voice files yet: the worker invents the narrator from its description and keeps that voice here.</span>
+            <span className="muted">
+              No voice files yet. Import a narrator voice once and every project uses it; otherwise the worker invents the narrator from its description and keeps that voice in this project.
+            </span>
           )}
         </div>
         {data.data?.report ? (

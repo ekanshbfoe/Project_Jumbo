@@ -1,9 +1,10 @@
 //! The voice stage on the app side: send a chapter's approved script and the project's voice files to the
 //! worker's `voice` job, install the clips under `audio/`, and keep any voice it created in the library.
 //!
-//! The library is `voices/<speaker>/<emotion>.voice.gguf` in the project, so a voice sounds the same in every
-//! chapter. A speaker without a file is invented by the worker from its description on the first line, and
-//! the take it clones comes back here.
+//! The library is `voices/<speaker>/<emotion>.voice.gguf`, in two places: the app's config folder, shared by
+//! every project (an imported voice goes there, so it is saved once and every new project has it), and the
+//! project, which wins for a speaker and emotion both have. A speaker without a file is invented by the worker
+//! from its description on the first line, and the take it clones comes back into the project.
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -16,7 +17,7 @@ use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::bridge::{BridgeState, current_client};
-use crate::commands::{AppState, CmdResult, msg, with_project};
+use crate::commands::{AppState, CmdResult, config_dir, msg, with_project};
 use crate::script::run_job;
 
 const VOICE_EXT: &str = ".voice.gguf";
@@ -49,10 +50,23 @@ fn safe_name(name: &str) -> CmdResult<&str> {
     if ok { Ok(name) } else { Err(format!("not a usable voice name: {name:?}")) }
 }
 
-/// Every voice file in the library: speaker -> emotion -> path.
-fn library(project: &Project) -> BTreeMap<String, BTreeMap<String, PathBuf>> {
+/// The app-wide voice folder, shared by every project.
+fn shared_voices(app: &AppHandle) -> CmdResult<PathBuf> {
+    Ok(config_dir(app)?.join("voices"))
+}
+
+/// Every voice file in the library: speaker -> emotion -> path; the project's files override the shared ones.
+fn library(shared: Option<&Path>, project: &Project) -> BTreeMap<String, BTreeMap<String, PathBuf>> {
     let mut out: BTreeMap<String, BTreeMap<String, PathBuf>> = BTreeMap::new();
-    for speaker in std::fs::read_dir(project.paths().voices()).into_iter().flatten().flatten() {
+    let project_dir = project.paths().voices();
+    for root in shared.into_iter().chain([project_dir.as_path()]) {
+        add_voices(root, &mut out);
+    }
+    out
+}
+
+fn add_voices(root: &Path, out: &mut BTreeMap<String, BTreeMap<String, PathBuf>>) {
+    for speaker in std::fs::read_dir(root).into_iter().flatten().flatten() {
         let Some(name) = speaker.file_name().to_str().map(str::to_owned) else { continue };
         for file in std::fs::read_dir(speaker.path()).into_iter().flatten().flatten() {
             let file_name = file.file_name().to_string_lossy().into_owned();
@@ -61,32 +75,37 @@ fn library(project: &Project) -> BTreeMap<String, BTreeMap<String, PathBuf>> {
             }
         }
     }
-    out
+}
+
+fn voice_file(root: &Path, speaker: &str, emotion: &str) -> CmdResult<PathBuf> {
+    Ok(root.join(safe_name(speaker)?).join(format!("{}{VOICE_EXT}", safe_name(emotion)?)))
 }
 
 fn voice_path(project: &Project, speaker: &str, emotion: &str) -> CmdResult<PathBuf> {
-    Ok(project.paths().voices().join(safe_name(speaker)?).join(format!("{}{VOICE_EXT}", safe_name(emotion)?)))
+    voice_file(&project.paths().voices(), speaker, emotion)
 }
 
 /// The voice library for the Voice screen: speaker -> emotions with a file.
 #[tauri::command]
-pub fn voice_library(state: State<AppState>) -> CmdResult<BTreeMap<String, Vec<String>>> {
-    with_project(&state, |p| Ok(library(p).into_iter().map(|(s, e)| (s, e.into_keys().collect())).collect()))
+pub fn voice_library(app: AppHandle, state: State<AppState>) -> CmdResult<BTreeMap<String, Vec<String>>> {
+    let shared = shared_voices(&app).ok();
+    with_project(&state, |p| {
+        Ok(library(shared.as_deref(), p).into_iter().map(|(s, e)| (s, e.into_keys().collect())).collect())
+    })
 }
 
-/// Copies a `.voice.gguf` file into the library as the given speaker's voice for one emotion.
+/// Copies a `.voice.gguf` file into the shared library as the given speaker's voice for one emotion, so every
+/// project has it from now on.
 #[tauri::command]
-pub fn import_voice(state: State<AppState>, speaker: String, emotion: String, path: String) -> CmdResult<()> {
-    with_project(&state, |p| {
-        if !path.ends_with(VOICE_EXT) {
-            return Err(format!("pick a {VOICE_EXT} file"));
-        }
-        let dest = voice_path(p, &speaker, &emotion)?;
-        std::fs::create_dir_all(dest.parent().ok_or("bad path")?).map_err(msg)?;
-        let staged = dest.with_extension("partial");
-        std::fs::copy(&path, &staged).map_err(|e| format!("{path}: {e}"))?;
-        std::fs::rename(&staged, &dest).map_err(msg)
-    })
+pub fn import_voice(app: AppHandle, speaker: String, emotion: String, path: String) -> CmdResult<()> {
+    if !path.ends_with(VOICE_EXT) {
+        return Err(format!("pick a {VOICE_EXT} file"));
+    }
+    let dest = voice_file(&shared_voices(&app)?, &speaker, &emotion)?;
+    std::fs::create_dir_all(dest.parent().ok_or("bad path")?).map_err(msg)?;
+    let staged = dest.with_extension("partial");
+    std::fs::copy(&path, &staged).map_err(|e| format!("{path}: {e}"))?;
+    std::fs::rename(&staged, &dest).map_err(msg)
 }
 
 /// A clip path from the worker is only ever written under the chapter's `audio/`.
@@ -130,6 +149,7 @@ pub async fn record_voice(
     chapter: String,
 ) -> CmdResult<ChapterManifest> {
     let id: ChapterId = chapter.parse().map_err(msg)?;
+    let shared = shared_voices(&app).ok();
     let (dir, script, voices) = with_project(&state, |p| {
         let manifest = chapter::load_chapter(p, id).map_err(msg)?;
         if !matches!(manifest.state, ChapterState::Approved | ChapterState::Voiced) {
@@ -139,7 +159,7 @@ pub async fn record_voice(
         let text = std::fs::read_to_string(dir.join("script").join("approved.json"))
             .map_err(|e| format!("approved.json: {e}"))?;
         let script: Value = serde_json::from_str(&text).map_err(|e| format!("approved.json: {e}"))?;
-        Ok((dir, script, library(p)))
+        Ok((dir, script, library(shared.as_deref(), p)))
     })?;
     let client = current_client(&bridge).await?;
     let report = |progress: f64, message: String| {
@@ -253,10 +273,28 @@ mod tests {
             std::fs::write(path, b"gguf").expect("voice");
         }
         std::fs::write(project.paths().voices().join("narrator").join("notes.txt"), b"x").expect("other file");
-        let lib = library(&project);
+        let lib = library(None, &project);
         assert_eq!(lib["narrator"].keys().collect::<Vec<_>>(), ["neutral", "sad"]);
         assert_eq!(lib["akira"].keys().collect::<Vec<_>>(), ["neutral"]);
         assert!(voice_path(&project, "../x", "neutral").is_err() && voice_path(&project, "a", "b/c").is_err());
+    }
+
+    #[test]
+    fn shared_voices_reach_every_project_and_the_project_wins() {
+        let (tmp, project, _) = project_with_approved_chapter();
+        let shared = tmp.path().join("shared-voices");
+        for (root, speaker, emotion, body) in [
+            (shared.clone(), "narrator", "neutral", b"shared".as_slice()),
+            (shared.clone(), "narrator", "sad", b"shared"),
+            (project.paths().voices(), "narrator", "neutral", b"project"),
+        ] {
+            let path = voice_file(&root, speaker, emotion).expect("path");
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("dir");
+            std::fs::write(path, body).expect("voice");
+        }
+        let lib = library(Some(&shared), &project);
+        assert_eq!(std::fs::read(&lib["narrator"]["neutral"]).expect("read"), b"project");
+        assert_eq!(std::fs::read(&lib["narrator"]["sad"]).expect("read"), b"shared");
     }
 
     #[test]

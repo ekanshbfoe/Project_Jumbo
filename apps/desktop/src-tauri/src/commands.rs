@@ -67,7 +67,7 @@ pub(crate) fn with_project<T>(state: &State<AppState>, f: impl FnOnce(&Project) 
     f(project)
 }
 
-fn config_dir(app: &AppHandle) -> CmdResult<PathBuf> {
+pub(crate) fn config_dir(app: &AppHandle) -> CmdResult<PathBuf> {
     app.path().app_config_dir().map_err(msg)
 }
 
