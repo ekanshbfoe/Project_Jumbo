@@ -268,13 +268,18 @@ fn spawn_local_worker(ticket: &SessionTicket, rendezvous: &std::path::Path) -> C
         .map_err(|e| format!("could not start the local worker: {e}"))
 }
 
-/// Starts a session in the background; progress arrives as `bridge://state` events.
+/// Engine builds a GPU session mounts, so llama.cpp and speech.cpp are never compiled during a session (ADR 0005).
+const GPU_ENGINES: [&str; 2] = ["jumbo-llamacpp-cuda75", "jumbo-speechcpp-cuda75"];
+
+/// Starts a session in the background; progress arrives as `bridge://state` events. `mode` overrides the saved
+/// mode for this session only (Make Video always runs its GPU stages on the T4s).
 #[tauri::command]
-pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> CmdResult<()> {
+pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>, mode: Option<BridgeMode>) -> CmdResult<()> {
     if matches!(*state.view.lock().map_err(msg)?, SessionView::Booting { .. } | SessionView::Ready { .. }) {
         return Err("a session is already running".into());
     }
-    let settings = load_settings(&app)?;
+    let mut settings = load_settings(&app)?;
+    settings.mode = mode.unwrap_or(settings.mode);
     let keys = AppKeys::generate().map_err(msg)?;
     let gist_id =
         if settings.mode == BridgeMode::Local { "local".to_owned() } else { settings.gist_id.trim().to_owned() };
@@ -311,7 +316,14 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>) -> Cmd
                 },
                 model_sources: vec![],
                 // The worker reads its gist token from here (Kaggle's API cannot attach Kaggle Secrets).
-                dataset_sources: vec![secrets_slug(&owner)],
+                dataset_sources: std::iter::once(secrets_slug(&owner))
+                    .chain(
+                        GPU_ENGINES
+                            .iter()
+                            .filter(|_| settings.mode == BridgeMode::KaggleGpu)
+                            .map(|name| format!("{owner}/{name}")),
+                    )
+                    .collect(),
                 kernel_slug,
             };
             let reader = RendezvousReader::Gist(GistReader::new(http.clone(), &gist_id, &token));
