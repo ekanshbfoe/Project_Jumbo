@@ -56,14 +56,15 @@ class Watchdog:
             level = "ok"
         return Verdict(replica, level, worst_chip, worst)
 
-    def judge_card(self, card: int, used_gb: dict[str, float], profile_gb: dict[str, float]) -> CardVerdict:
-        """One shared card: `used_gb` is each replica's own usage on it, `profile_gb` its reservation."""
+    def judge_card(self, card: int, used_gb: dict[str, float], profile_gb: dict[str, float], hard: float | None = None) -> CardVerdict:
+        """One shared card: `used_gb` is each replica's own usage on it, `profile_gb` its reservation.
+        `hard` replaces the ceiling on a card held by a replica that runs alone; such a card is never throttled."""
         fraction = sum(used_gb.values()) / self.chip_hbm_gb
         self.peaks[card] = max(self.peaks.get(card, 0.0), fraction)
         over = {r: used - profile_gb.get(r, 0.0) for r, used in used_gb.items()}
-        if used_gb and fraction > self.hard + 1e-9:
+        if used_gb and fraction > (hard or self.hard) + 1e-9:
             return CardVerdict(card, fraction, kill=max(used_gb, key=lambda r: (over[r], used_gb[r])), throttle=frozenset())
-        if fraction >= self.soft:
+        if hard is None and fraction >= self.soft:
             return CardVerdict(card, fraction, kill=None, throttle=frozenset(r for r, o in over.items() if o > 1e-9))
         return CardVerdict(card, fraction, kill=None, throttle=frozenset())
 

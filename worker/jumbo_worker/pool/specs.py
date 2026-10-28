@@ -65,6 +65,9 @@ class ModelSpec(BaseModel):
     # Extra pip requirements: the replica then runs in an isolated env of its own (pool/envs.py),
     # for models whose dependencies clash with the worker's (e.g. a newer transformers than Magi's).
     pip: list[str] = Field(default_factory=list)
+    # Runs alone on its cards and may fill them past the ceiling, up to its profiled footprint: it gets only
+    # cards nobody else holds, and nothing is placed beside it (project lead's exception for the T4 Director).
+    exclusive: bool = False
     # Model-specific settings its runner reads, e.g. {"quant": "q6_k"} for Drama 3.
     options: dict[str, str] = Field(default_factory=dict)
     notes: str = ""
@@ -116,7 +119,9 @@ class PoolConfig(BaseModel):
     def _admission(self) -> PoolConfig:
         # Layer 1 of the ceiling: a model that cannot fit under it on every chip is never placed.
         for spec in self.models.values():
-            if spec.on_tpu and spec.hbm_gb_per_chip > self.chip_budget_gb:
+            if spec.on_tpu and spec.exclusive and spec.hbm_gb_per_chip > self.chip_hbm_gb:
+                raise ValueError(f"{spec.name}: {spec.hbm_gb_per_chip} GB/chip is more than a chip has ({self.chip_hbm_gb} GB)")
+            if spec.on_tpu and not spec.exclusive and spec.hbm_gb_per_chip > self.chip_budget_gb:
                 raise ValueError(
                     f"{spec.name}: {spec.hbm_gb_per_chip} GB/chip exceeds the {self.chip_budget_gb:.1f} GB budget "
                     f"({self.hbm_ceiling:.0%} of {self.chip_hbm_gb} GB)"

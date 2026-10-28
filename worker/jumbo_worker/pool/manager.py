@@ -25,6 +25,9 @@ from .weights import WeightCache, compile_cache_env
 
 log = logging.getLogger(__name__)
 
+# Room above its profiled footprint a replica running alone on its cards gets before it is killed.
+ALONE_MARGIN = 0.02
+
 
 class Handle(Protocol):
     async def run(self, kind: str, payload: dict) -> object: ...
@@ -92,7 +95,7 @@ class ResourceManager:
         self.extra_env = {**(compile_cache_env(compile_cache) if compile_cache else {}), **(extra_env or {})}
         self.weights = weights
         self.watchdog = Watchdog(config.chip_hbm_gb, config.soft_limit, config.hbm_ceiling)
-        self.gpus = GpuLedger(config.gpus, config.gpu_budget_gb)
+        self.gpus = GpuLedger(config.gpus, config.gpu_budget_gb, config.gpu_hbm_gb)
         self.gpu_watchdog = Watchdog(config.gpu_hbm_gb, config.soft_limit, config.hbm_ceiling)
         self.slots: dict[str, Slot] = {}
         self.queued: dict[str, int] = defaultdict(int)
@@ -236,7 +239,7 @@ class ResourceManager:
         gpus: tuple[int, ...] = ()
         if chips is None and spec.on_tpu and self.config.gpus:
             try:
-                gpus = self.gpus.lease(slot_id, spec.hbm_gb_per_chip, spec.gpus)
+                gpus = self.gpus.lease(slot_id, spec.hbm_gb_per_chip, spec.gpus, alone=spec.exclusive)
             except LeaseError:
                 return
         try:
@@ -311,7 +314,10 @@ class ResourceManager:
     async def judge_card(self, card: int) -> None:
         """Layer 3 on a shared GPU: the sum of what every replica on the card reports."""
         on_card = {s.id: s for s in self.slots.values() if card in s.gpus and s.state == "ready"}
-        verdict = self.gpu_watchdog.judge_card(card, {i: s.gpu_used_gb.get(card, 0.0) for i, s in on_card.items()}, {i: s.spec.hbm_gb_per_chip for i, s in on_card.items()})
+        alone = self.slots.get(self.gpus.alone_on(card) or "")
+        # A replica running alone is held to its own profiled footprint (plus a little room), not the ceiling.
+        hard = max(self.config.hbm_ceiling, alone.spec.hbm_gb_per_chip / self.config.gpu_hbm_gb + ALONE_MARGIN) if alone else None
+        verdict = self.gpu_watchdog.judge_card(card, {i: s.gpu_used_gb.get(card, 0.0) for i, s in on_card.items()}, {i: s.spec.hbm_gb_per_chip for i, s in on_card.items()}, hard)
         if verdict.kill:
             slot = on_card[verdict.kill]
             self.kills += 1

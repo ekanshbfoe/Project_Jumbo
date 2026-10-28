@@ -78,12 +78,17 @@ class ChipLedger:
 class GpuLedger:
     """CUDA cards on a GPU host. Unlike TPU chips they are shared: every replica holds a reservation of
     its profiled footprint on each card it spans, and a card never has more reserved than its budget
-    (the ceiling's share of its memory). New replicas go to the cards with the most room left."""
+    (the ceiling's share of its memory). New replicas go to the cards with the most room left.
 
-    def __init__(self, gpus: int, budget_gb: float) -> None:
+    An `alone` replica takes only empty cards, may reserve up to the whole card (`card_gb`), and keeps
+    every other replica off its cards while it holds them."""
+
+    def __init__(self, gpus: int, budget_gb: float, card_gb: float | None = None) -> None:
         self.size = gpus
         self.budget_gb = budget_gb
+        self.card_gb = card_gb or budget_gb
         self._held: dict[str, tuple[tuple[int, ...], float]] = {}
+        self._alone: set[str] = set()
 
     def reserved(self) -> list[float]:
         out = [0.0] * self.size
@@ -92,23 +97,36 @@ class GpuLedger:
                 out[card] += gb
         return out
 
-    def _choose(self, gb: float, n: int) -> tuple[int, ...] | None:
+    def _choose(self, gb: float, n: int, alone: bool = False) -> tuple[int, ...] | None:
         reserved = self.reserved()
-        fits = sorted((c for c in range(self.size) if reserved[c] + gb <= self.budget_gb + 1e-9), key=lambda c: (reserved[c], c))
+        if alone:
+            fits = [c for c in range(self.size) if reserved[c] == 0 and gb <= self.card_gb + 1e-9]
+        else:
+            taken = {c for owner in self._alone for c in self._held[owner][0]}
+            fits = [c for c in range(self.size) if c not in taken and reserved[c] + gb <= self.budget_gb + 1e-9]
+        fits.sort(key=lambda c: (reserved[c], c))
         return tuple(sorted(fits[:n])) if len(fits) >= n else None
 
-    def can_place(self, gb: float, n: int = 1) -> bool:
-        return self._choose(gb, n) is not None
+    def can_place(self, gb: float, n: int = 1, alone: bool = False) -> bool:
+        return self._choose(gb, n, alone) is not None
 
-    def lease(self, owner: str, gb: float, n: int = 1) -> tuple[int, ...]:
-        cards = self._choose(gb, n)
+    def lease(self, owner: str, gb: float, n: int = 1, alone: bool = False) -> tuple[int, ...]:
+        cards = self._choose(gb, n, alone)
         if cards is None:
-            raise LeaseError(f"no {n} GPU(s) with {gb} GB left under the {self.budget_gb:.1f} GB budget")
+            room = f"{n} empty GPU(s) for {gb} GB" if alone else f"{n} GPU(s) with {gb} GB left under the {self.budget_gb:.1f} GB budget"
+            raise LeaseError(f"no {room}")
         self._held[owner] = (cards, gb)
+        if alone:
+            self._alone.add(owner)
         return cards
+
+    def alone_on(self, card: int) -> str | None:
+        """The replica holding this card alone, if any."""
+        return next((o for o in self._alone if card in self._held[o][0]), None)
 
     def release(self, owner: str) -> None:
         self._held.pop(owner, None)
+        self._alone.discard(owner)
 
     def cards_of(self, owner: str) -> tuple[int, ...]:
         held = self._held.get(owner)

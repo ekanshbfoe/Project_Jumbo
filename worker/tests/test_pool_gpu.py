@@ -182,3 +182,52 @@ def test_drama3_takes_both_t4s_of_the_kaggle_gpu_host():
     assert cards.lease("voice", drama.hbm_gb_per_chip, drama.gpus) == (0, 1)
     cores = CpuPool(4 - 1, 31.3 - 4)
     cores.lease("voice", cfg.replica_cores(drama, False), drama.host_ram_gb)
+
+
+def test_a_replica_running_alone_takes_empty_cards_past_the_budget_and_keeps_others_off():
+    cards = GpuLedger(2, 12.0, card_gb=15.0)
+    assert cards.lease("magi", 5) == (0,)
+    # The Director's 14.4 GB per card needs both cards empty.
+    assert not cards.can_place(14.4, 2, alone=True)
+    cards.release("magi")
+    assert cards.lease("director", 14.4, 2, alone=True) == (0, 1)
+    assert cards.alone_on(1) == "director" and not cards.can_place(1)
+    assert not cards.can_place(15.5, 1, alone=True)
+    cards.release("director")
+    assert cards.alone_on(0) is None and cards.can_place(5)
+
+
+def test_a_card_held_alone_is_judged_against_its_own_footprint():
+    dog = Watchdog(15.0, soft=0.76, hard=0.80)
+    ok = dog.judge_card(0, {"d": 14.4}, {"d": 14.4}, hard=0.98)
+    assert ok.kill is None and not ok.throttle
+    assert dog.judge_card(0, {"d": 14.9}, {"d": 14.4}, hard=0.98).kill == "d"
+
+
+def test_only_a_model_marked_exclusive_may_pass_the_budget():
+    try:
+        gpu_config(gpus=2, hbm_gb_per_chip=14.4)
+        raise AssertionError("accepted")
+    except ValueError as e:
+        assert "exceeds the 12.8 GB budget" in str(e)
+    gpu_config(gpus=2, hbm_gb_per_chip=14.4, exclusive=True)
+
+
+async def test_an_exclusive_replica_is_placed_alone_and_survives_past_the_ceiling():
+    cfg = gpu_config(gpus=2, hbm_gb_per_chip=14.4, max_replicas=1, exclusive=True)
+    placed, events = [], []
+
+    class Full(FakeGpu):
+        async def memory(self):
+            return {0: 14.4, 1: 14.4}
+
+    async def spawn(spec, chips, cpu, weights=None, gpus=()):
+        placed.append(gpus)
+        return Full(gpus, [])
+
+    pool = ResourceManager(cfg, cpu=CpuPool(8, 64), spawn=spawn, sample_s=0.01, publish=events.append)
+    pool.start()
+    await pool.run("det", "x", {"sleep_s": 0.2})
+    await pool.close()
+    assert placed == [(0, 1)] and pool.kills == 0
+    assert not any(e["type"] in ("pool.hbm_kill", "pool.hbm_soft") for e in events)
