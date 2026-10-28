@@ -48,7 +48,8 @@ export async function makeVideo(chapter: string, method: Method, onStage: (stage
     if ((view.phase === "ready" || view.phase === "booting") && view.mode !== "kaggle_gpu") {
       throw new Error("A session that is not on the T4s is running: stop it on the Session screen, then press Make video again.");
     }
-    if (view.phase !== "ready" && view.phase !== "booting") await bridgeApi.start("kaggle_gpu");
+    // A session that is booting or finding its worker again is used as it is, never started twice.
+    if (view.phase !== "ready" && view.phase !== "booting" && view.phase !== "reconnecting") await bridgeApi.start("kaggle_gpu");
     try {
       await waitForWorker();
       if (!at(current.state, "analyzed")) {

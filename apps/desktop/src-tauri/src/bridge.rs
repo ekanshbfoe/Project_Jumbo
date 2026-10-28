@@ -275,8 +275,12 @@ const GPU_ENGINES: [&str; 2] = ["jumbo-llamacpp-cuda75", "jumbo-speechcpp-cuda75
 /// mode for this session only (Make Video always runs its GPU stages on the T4s).
 #[tauri::command]
 pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>, mode: Option<BridgeMode>) -> CmdResult<()> {
-    if matches!(*state.view.lock().map_err(msg)?, SessionView::Booting { .. } | SessionView::Ready { .. }) {
-        return Err("a session is already running".into());
+    match *state.view.lock().map_err(msg)? {
+        SessionView::Booting { .. } | SessionView::Ready { .. } => return Err("a session is already running".into()),
+        SessionView::Reconnecting { .. } => {
+            return Err("the session is reconnecting to the worker; wait for it, or stop it first".into());
+        }
+        _ => {}
     }
     let mut settings = load_settings(&app)?;
     settings.mode = mode.unwrap_or(settings.mode);
@@ -391,7 +395,10 @@ pub async fn start_session(app: AppHandle, state: State<'_, BridgeState>, mode: 
                 };
         }
     });
-    *state.task.lock().map_err(msg)? = Some(task);
+    // An older task (a session that failed or stopped) must not later overwrite this session's client or view.
+    if let Some(old) = state.task.lock().map_err(msg)?.replace(task) {
+        old.abort();
+    }
     Ok(())
 }
 
