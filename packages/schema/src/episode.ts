@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { AssetPath, ChapterId, HexColor, LineId, PanelId, SchemaVersion } from "./common";
+import { AssetPath, ChapterId, HexColor, LineId, PanelId, Point, SchemaVersion } from "./common";
 import { Panel, type PanelsDoc } from "./panels";
 import { MULTI_PANEL_PRESETS, PresetSpec, TransitionSpec } from "./presets";
 import { SocialPromoSettings } from "./promo";
 import { Emotion, type ScriptDoc } from "./script";
+import { focusPoints, planShots, type ShotOptions } from "./shots";
 
 export const AudioClip = z.object({
   line_id: LineId,
@@ -56,6 +57,16 @@ export const EpisodePanel = Panel.pick({
   bubbles: true,
 }).meta({ id: "EpisodePanel" });
 
+/** A framing the camera cuts to partway through a single-panel beat, on top of the beat's preset. */
+export const Shot = z.object({
+  /** Seconds into the beat. */
+  at: z.number().min(0),
+  /** Centre of the framing, as fractions of the panel. */
+  focus: Point,
+  /** How much closer than the preset's own framing. */
+  zoom: z.number().min(1).max(2.5),
+}).meta({ id: "Shot" });
+
 export const Beat = z.object({
   line_id: LineId,
   panel_ids: z.array(PanelId).min(1).max(3),
@@ -66,6 +77,8 @@ export const Beat = z.object({
   audio: AudioClip.omit({ line_id: true }).nullable(),
   /** Time on screen in seconds. Never shorter than the narration audio. */
   duration: z.number().positive(),
+  /** Cuts to closer framings during the beat, in order; empty keeps the preset's framing throughout. */
+  shots: z.array(Shot).default([]),
 }).meta({ id: "Beat" });
 
 /** Everything Remotion needs to render one chapter. Consumed directly as composition input props. */
@@ -115,6 +128,7 @@ export type WatermarkSettings = z.infer<typeof WatermarkSettings>;
 export type VideoFormat = z.infer<typeof VideoFormat>;
 export type EpisodePanel = z.infer<typeof EpisodePanel>;
 export type Beat = z.infer<typeof Beat>;
+export type Shot = z.infer<typeof Shot>;
 export type EpisodeSpec = z.infer<typeof EpisodeSpec>;
 
 export interface BuildEpisodeOptions {
@@ -129,6 +143,8 @@ export interface BuildEpisodeOptions {
   /** Speaking rate used to size beats that have no audio yet (preview before voicing). */
   wordsPerSecond?: number;
   hideBubbles?: boolean;
+  /** Camera cuts within single-panel beats (planShots); false keeps each beat on one framing. */
+  shots?: ShotOptions | false;
 }
 
 /**
@@ -147,6 +163,7 @@ export function buildEpisodeSpec(
   const clips = new Map(audio?.clips.map((c) => [c.line_id, c]));
   const { fps } = VideoFormat.parse(options.video ?? {});
   const used = new Set(script.lines.flatMap((l) => l.panel_ids));
+  const byId = new Map(panelsDoc.panels.map((p) => [p.id, p]));
 
   return EpisodeSpec.parse({
     schema_version: 1,
@@ -158,6 +175,9 @@ export function buildEpisodeSpec(
     beats: script.lines.map((line, i) => {
       const clip = clips.get(line.id);
       const spoken = clip ? clip.duration : line.narration.split(/\s+/).length / wordsPerSecond;
+      const duration = beatLength(Math.max(minBeat, spoken + padding + overlapOf(transition(script.lines[i + 1]))), fps);
+      const panel = line.panel_ids.length === 1 ? byId.get(line.panel_ids[0]!) : undefined;
+      const shots = panel && options.shots !== false ? planShots(line.narration, spoken, duration, focusPoints(panel.bbox, panel.characters), options.shots) : [];
       return {
         line_id: line.id,
         panel_ids: line.panel_ids,
@@ -166,7 +186,8 @@ export function buildEpisodeSpec(
         preset: line.preset,
         transition_in: transition(line),
         audio: clip ? { src: clip.src, duration: clip.duration } : null,
-        duration: beatLength(Math.max(minBeat, spoken + padding + overlapOf(transition(script.lines[i + 1]))), fps),
+        duration,
+        shots,
       };
     }),
   });

@@ -4,6 +4,7 @@ import { AmbientLayer } from "../ambient/AmbientLayer";
 import { useAssetResolver } from "../assets";
 import { fitContain, panelSize, splitFrame } from "../geometry";
 import { PRESETS } from "../presets/registry";
+import { framingAt, framingStyle } from "../shots";
 import type { PanelSlot, PresetContext, PresetImpl } from "../presets/types";
 import { Camera } from "./Camera";
 import { PolygonPanel } from "./PolygonPanel";
@@ -59,6 +60,8 @@ export function BeatView({
     count: panels.length,
   });
   const backdrop = panels[0] && (panels[0].clean ?? panels[0].crop ?? panels[0].page);
+  // Cuts to closer framings within the beat, on top of the preset's own move (single-panel beats only).
+  const framing = panels.length === 1 && beat.shots.length ? framingStyle(framingAt(beat.shots, frame, fps)) : null;
 
   return (
     <AbsoluteFill>
@@ -78,13 +81,15 @@ export function BeatView({
       <AmbientLayer effect={ambientEffect} frame={startFrame + frame} fps={fps} width={width} height={height} />
       {panels.map((panel, i) => (
         <Camera key={panel.id} transform={impl.camera(ctx(i), beat.preset.params as never)} {...rects[i]!}>
-          <PolygonPanel
-            panel={panel}
-            width={rects[i]!.width}
-            height={rects[i]!.height}
-            hideBubbles={hideBubbles}
-            shadow={shadow}
-          />
+          <div style={{ width: "100%", height: "100%", ...framing }}>
+            <PolygonPanel
+              panel={panel}
+              width={rects[i]!.width}
+              height={rects[i]!.height}
+              hideBubbles={hideBubbles}
+              shadow={shadow}
+            />
+          </div>
         </Camera>
       ))}
       {impl.Overlay ? <impl.Overlay ctx={ctx(0)} params={beat.preset.params as never} /> : null}

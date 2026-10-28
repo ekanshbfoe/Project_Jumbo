@@ -129,6 +129,12 @@ class TransitionSpec(BaseModel):
     duration: Annotated[float | None, Field(ge=0.0, le=1.5)] = 0.4
 
 
+class Shot(BaseModel):
+    at: Annotated[float, Field(ge=0.0)]
+    focus: tuple[PointItem, PointItem]
+    zoom: Annotated[float, Field(ge=1.0, le=2.5)]
+
+
 class Bubble(BaseModel):
     id: Annotated[str, Field(pattern="^b_\\d{4}$")]
     kind: Literal["speech", "thought", "narration", "sfx"]
@@ -256,6 +262,7 @@ class Beat(BaseModel):
     transition_in: Annotated[TransitionSpec | None, Field(validate_default=True)] = {}
     audio: Audio | None
     duration: Annotated[float, Field(gt=0.0)]
+    shots: Annotated[list[Shot] | None, Field(validate_default=True)] = []
 
 
 class EpisodeSpec(BaseModel):

@@ -5,6 +5,7 @@ export * from "./promo";
 export * from "./hinglish";
 export * from "./script";
 export * from "./episode";
+export * from "./shots";
 export * from "./memory";
 export * from "./ledger";
 export * from "./bridge";

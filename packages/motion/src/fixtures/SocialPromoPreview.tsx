@@ -26,6 +26,7 @@ export function SocialPromoPreview(settings: SocialPromoSettings) {
     transition_in: { name: "cut", duration: 0 },
     audio: null,
     duration: PROMO_PREVIEW_SECONDS,
+    shots: [],
   };
 
   return (
