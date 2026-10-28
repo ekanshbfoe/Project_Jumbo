@@ -125,7 +125,7 @@ export function ScriptScreen({ project }: ScreenProps) {
               </option>
             ))}
           </select>
-          {progress ? (
+          {project.method === "method2" ? null : progress ? (
             <span className="muted">
               {Math.round(progress.progress * 100)}% {progress.message}
             </span>

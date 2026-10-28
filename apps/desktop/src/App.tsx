@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, type ProjectInfo } from "./api";
-import { MODULES } from "./hub/modules";
-import { ProjectsScreen } from "./screens/ProjectsScreen";
+import { MODULES, screensFor } from "./hub/modules";
+import { HomeScreen } from "./screens/HomeScreen";
+import { methodLabel, ProjectsScreen } from "./screens/ProjectsScreen";
 
 const firstScreen = () => {
   const module = MODULES[0]!;
@@ -13,6 +14,8 @@ export function App() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [ready, setReady] = useState(false);
   const [active, setActive] = useState(firstScreen);
+  // With no project open: the content-type cards, then the manga and manhwa projects.
+  const [home, setHome] = useState<"content" | "manga">("content");
 
   useEffect(() => {
     api
@@ -23,8 +26,10 @@ export function App() {
 
   if (!ready) return null;
   if (!project) {
+    if (home === "content") return <HomeScreen onManga={() => setHome("manga")} />;
     return (
       <ProjectsScreen
+        onBack={() => setHome("content")}
         onOpened={(p) => {
           setProject(p);
           setActive(firstScreen());
@@ -34,14 +39,16 @@ export function App() {
   }
 
   const module = MODULES.find((m) => m.id === active.module);
-  const screen = module?.screens.find((s) => s.id === active.screen);
+  const screen = module && screensFor(module, project.method).find((s) => s.id === active.screen);
 
   return (
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">Jumbo</div>
         <div className="project-chip">
-          <div className="title">{project.title}</div>
+          <div className="title">
+            {project.title} <span className="badge">{methodLabel(project.method)}</span>
+          </div>
           <div className="path mono" title={project.root}>
             {project.root}
           </div>
@@ -55,7 +62,7 @@ export function App() {
         {MODULES.map((m) => (
           <nav key={m.id} className="nav-group">
             <h4>{m.title}</h4>
-            {m.screens.map((s) => (
+            {screensFor(m, project.method).map((s) => (
               <button
                 key={s.id}
                 className={`nav-item ${active.module === m.id && active.screen === s.id ? "active" : ""}`}

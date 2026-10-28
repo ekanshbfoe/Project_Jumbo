@@ -18,6 +18,7 @@ export interface RecentProject {
   path: string;
   title: string;
   opened_at: number;
+  method: Method;
 }
 
 export const CHAPTER_STATES = [
@@ -223,6 +224,7 @@ export const api = {
   chapterScript: (chapter: string) => invoke<ScriptView>("chapter_script", { chapter }),
   approveScript: (chapter: string, script: unknown) => invoke<ChapterManifest>("approve_script", { chapter, script }),
   geminiPack: (chapter: string) => invoke<GeminiView>("gemini_pack", { chapter }),
+  exportNumberedPdf: (chapter: string, dest: string) => invoke<void>("export_numbered_pdf", { chapter, dest }),
   saveGeminiScript: (chapter: string, pack: string, script: unknown, memory: { story: string; characters: string[] }) =>
     invoke<ChapterManifest>("save_gemini_script", { chapter, pack, script, memory }),
   voiceLibrary: () => invoke<Record<string, string[]>>("voice_library"),

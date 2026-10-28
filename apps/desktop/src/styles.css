@@ -433,3 +433,87 @@ th {
   border-radius: 6px;
   background: #000;
 }
+
+.content-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.content-card,
+.method-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  padding: 20px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.content-card {
+  min-height: 150px;
+}
+
+.content-card strong {
+  font-size: 18px;
+}
+
+.content-card:hover:not(.soon),
+.method-card:hover {
+  border-color: var(--accent);
+}
+
+.content-card.soon {
+  opacity: 0.6;
+}
+
+.content-card.shake {
+  animation: shake 0.4s;
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-8px);
+  }
+  40%,
+  80% {
+    transform: translateX(8px);
+  }
+}
+
+.method-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.method-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+}
+
+textarea.answer {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  resize: vertical;
+}
+
+ul.issues {
+  margin: 0;
+  padding-left: 18px;
+}

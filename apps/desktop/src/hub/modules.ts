@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
-import type { ProjectInfo } from "../api";
+import type { Method, ProjectInfo } from "../api";
 import { ChaptersScreen } from "../screens/ChaptersScreen";
+import { GeminiScreen } from "../screens/GeminiScreen";
 import { PanelsScreen } from "../screens/PanelsScreen";
 import { PreviewScreen } from "../screens/PreviewScreen";
 import { ReceiptBookScreen } from "../screens/ReceiptBookScreen";
@@ -17,6 +18,8 @@ export interface HubScreen {
   id: string;
   label: string;
   Component: ComponentType<ScreenProps>;
+  /** Only projects of these methods show the screen; all do when unset. */
+  methods?: Method[];
 }
 
 /**
@@ -36,6 +39,7 @@ export const MODULES: HubModule[] = [
     screens: [
       { id: "chapters", label: "Chapters", Component: ChaptersScreen },
       { id: "panels", label: "Panels", Component: PanelsScreen },
+      { id: "gemini", label: "Gemini script", Component: GeminiScreen, methods: ["method2"] },
       { id: "script", label: "Script", Component: ScriptScreen },
       { id: "voice", label: "Voice", Component: VoiceScreen },
       { id: "render", label: "Render", Component: RenderScreen },
@@ -45,3 +49,8 @@ export const MODULES: HubModule[] = [
     ],
   },
 ];
+
+/** The screens a project of `method` shows in `module`. */
+export function screensFor(module: HubModule, method: Method): HubScreen[] {
+  return module.screens.filter((s) => !s.methods || s.methods.includes(method));
+}
