@@ -21,10 +21,12 @@ function Report({ report }: { report: DirectorReport }) {
           Scenes {report.failed.join(", ")} failed twice and are missing from the script: write it again before approving.
         </span>
       ) : null}
-      {report.problems.length ? <span className="error">{report.problems.join(" · ")}</span> : null}
     </div>
   );
 }
+
+// The report's own `problems` are a snapshot from when the script was written; the live check below the
+// report covers the same rules for the draft as it is now, so a fixed line stops being flagged.
 
 /** The Director's script for a chapter: write it on the worker, read and edit each line beside its panels, approve. */
 export function ScriptScreen({ project }: ScreenProps) {
