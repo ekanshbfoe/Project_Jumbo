@@ -89,8 +89,7 @@ def test_episode_spec_rules():
         d["beats"][1]["panel_ids"] = ["p_0002"]
         d["beats"][2]["duration"] = 1.0  # no audio, so only the transition rule applies
         d["beats"][2]["transition_in"] = {"name": "wipe", "duration": 1.2}
-        d["social_promo"]["start_at"] = 0.9
-        d["social_promo"]["end_at"] = 0.1
+        d["social_promo"]["platforms"] = ["x", "x"]
 
     assert problems(EpisodeSpec.model_validate(broken("episode-spec.sample.json", wreck))) == [
         "beats.0.panel_ids: unknown panel p_0009",
@@ -99,7 +98,7 @@ def test_episode_spec_rules():
         "beats.1.transition_in: transition starts before the previous narration ends",
         "beats.2.transition_in: transition is longer than the beats it joins",
         "beats.2.transition_in: transition starts before the previous narration ends",
-        "social_promo: start_at must come before end_at",
+        "social_promo: platforms must not repeat",
     ]
 
 

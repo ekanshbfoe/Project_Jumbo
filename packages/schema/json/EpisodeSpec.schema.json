@@ -162,17 +162,22 @@
             "center"
           ]
         },
-        "start_at": {
-          "default": 0.05,
+        "start_s": {
+          "default": 20,
           "type": "number",
-          "minimum": 0,
-          "maximum": 1
+          "minimum": 0
         },
-        "end_at": {
-          "default": 0.95,
+        "duration_s": {
+          "default": 8,
+          "type": "number",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "outro_s": {
+          "default": 6,
           "type": "number",
           "minimum": 0,
-          "maximum": 1
+          "maximum": 60
         }
       }
     },

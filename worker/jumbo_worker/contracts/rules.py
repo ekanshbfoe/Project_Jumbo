@@ -56,8 +56,6 @@ def _promo(where: str, promo: Any) -> list[str]:
     out = []
     if promo.platforms and len(set(promo.platforms)) != len(promo.platforms):
         out.append(f"{where}: platforms must not repeat")
-    if promo.start_at is not None and promo.end_at is not None and promo.start_at >= promo.end_at:
-        out.append(f"{where}: start_at must come before end_at")
     return out
 
 

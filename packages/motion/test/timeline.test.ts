@@ -1,6 +1,6 @@
 import type { EpisodeSpec } from "@jumbo/schema";
 import { describe, expect, it } from "vitest";
-import { episodeTimeline, overlayWindow } from "../src/timeline";
+import { episodeTimeline, promoWindows } from "../src/timeline";
 
 type Transition = EpisodeSpec["beats"][number]["transition_in"];
 
@@ -31,17 +31,20 @@ describe("episodeTimeline", () => {
   });
 });
 
-describe("overlayWindow", () => {
-  it("spans 5% to 95% of any runtime", () => {
-    // 10, 8 and 50 minute episodes at 30 fps.
-    expect(overlayWindow(18_000, 0.05, 0.95, 60)).toEqual({ from: 900, durationInFrames: 16_200 });
-    expect(overlayWindow(14_400, 0.05, 0.95, 60)).toEqual({ from: 720, durationInFrames: 12_960 });
-    expect(overlayWindow(90_000, 0.05, 0.95, 60)).toEqual({ from: 4_500, durationInFrames: 81_000 });
+describe("promoWindows", () => {
+  const promo = { start_s: 20, duration_s: 8, outro_s: 6 };
+
+  it("shows the card for 8 s from 0:20 and for the last 6 s, whatever the runtime", () => {
+    // 3 and 50 minute episodes at 30 fps.
+    expect(promoWindows(5_622, 30, promo, 60)).toEqual([{ from: 600, durationInFrames: 240 }, { from: 5_442, durationInFrames: 180 }]);
+    expect(promoWindows(90_000, 30, promo, 60)).toEqual([{ from: 600, durationInFrames: 240 }, { from: 89_820, durationInFrames: 180 }]);
   });
 
-  it("is absent only when the window cannot fit the overlay's animation", () => {
-    // 70 frames * 0.9 = 63 frames available.
-    expect(overlayWindow(70, 0.05, 0.95, 64)).toBeNull();
-    expect(overlayWindow(70, 0.05, 0.95, 63)).toEqual({ from: 4, durationInFrames: 63 });
+  it("drops the outro when it is off, and the early card when the episode ends before it can finish", () => {
+    expect(promoWindows(5_622, 30, { ...promo, outro_s: 0 }, 60)).toEqual([{ from: 600, durationInFrames: 240 }]);
+    // 25 s: the early card would run into the outro (from 0:19), so only the outro is left.
+    expect(promoWindows(750, 30, promo, 60)).toEqual([{ from: 570, durationInFrames: 180 }]);
+    // Too short for the card's own animation: nothing.
+    expect(promoWindows(40, 30, promo, 60)).toEqual([]);
   });
 });

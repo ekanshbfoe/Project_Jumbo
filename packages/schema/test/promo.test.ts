@@ -2,15 +2,16 @@ import { describe, expect, it } from "vitest";
 import { SocialPromoSettings } from "../src";
 
 describe("SocialPromoSettings", () => {
-  it("defaults to Project_Jumbo on all three platforms, from 5% to 95% of the episode", () => {
+  it("defaults to Project_Jumbo on all three platforms, 8 s from 0:20 and a 6 s outro", () => {
     expect(SocialPromoSettings.parse({})).toEqual({
       enabled: true,
       username: "Project_Jumbo",
       headline: "Follow for more recaps",
       platforms: ["x", "youtube", "instagram"],
       position: "bottom-right",
-      start_at: 0.05,
-      end_at: 0.95,
+      start_s: 20,
+      duration_s: 8,
+      outro_s: 6,
     });
   });
 
@@ -22,9 +23,10 @@ describe("SocialPromoSettings", () => {
 });
 
 describe("SocialPromoSettings timing", () => {
-  it("takes fractions of the episode and requires start before end", () => {
-    expect(SocialPromoSettings.safeParse({ start_at: 0.1, end_at: 0.9 }).success).toBe(true);
-    expect(SocialPromoSettings.safeParse({ start_at: 0.9, end_at: 0.1 }).success).toBe(false);
-    expect(SocialPromoSettings.safeParse({ start_at: 300 }).success).toBe(false);
+  it("is in seconds; the outro can be turned off", () => {
+    expect(SocialPromoSettings.safeParse({ start_s: 45, duration_s: 10, outro_s: 0 }).success).toBe(true);
+    expect(SocialPromoSettings.safeParse({ start_s: -1 }).success).toBe(false);
+    expect(SocialPromoSettings.safeParse({ duration_s: 0.5 }).success).toBe(false);
+    expect(SocialPromoSettings.safeParse({ outro_s: 90 }).success).toBe(false);
   });
 });

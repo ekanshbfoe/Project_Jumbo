@@ -25,8 +25,9 @@
       "instagram"
     ],
     "position": "bottom-right",
-    "start_at": 0.05,
-    "end_at": 0.95
+    "start_s": 20,
+    "duration_s": 8,
+    "outro_s": 6
   },
   "panels": [
     {

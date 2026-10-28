@@ -8,7 +8,7 @@ import { AbsoluteFill, Sequence, useVideoConfig, type CalculateMetadataFunction 
 import { BeatView } from "../components/BeatView";
 import { ChannelWatermark, WATERMARK_RESERVED_HEIGHT } from "../components/ChannelWatermark";
 import { PROMO_ENTRY_SECONDS, PROMO_EXIT_SECONDS, SocialPromo } from "../components/SocialPromo";
-import { episodeTimeline, overlayWindow } from "../timeline";
+import { episodeTimeline, promoWindows } from "../timeline";
 
 function presentation(name: Exclude<TransitionSpec["name"], "cut">): TransitionPresentation<Record<string, unknown>> {
   switch (name) {
@@ -56,31 +56,26 @@ export function Episode(spec: EpisodeSpec) {
     );
   });
 
-  // Scheduled against the rendered composition's length so it scales with any runtime.
+  // In seconds, so the card shows for the same few seconds in a 3 minute scene as in an hour-long chapter.
   const promo = spec.social_promo;
-  const promoWindow = promo.enabled
-    ? overlayWindow(
-        durationInFrames,
-        promo.start_at,
-        promo.end_at,
-        Math.ceil((PROMO_ENTRY_SECONDS + PROMO_EXIT_SECONDS) * fps),
-      )
-    : null;
+  const windows = promo.enabled
+    ? promoWindows(durationInFrames, fps, promo, Math.ceil((PROMO_ENTRY_SECONDS + PROMO_EXIT_SECONDS) * fps))
+    : [];
 
   return (
     <AbsoluteFill style={{ backgroundColor: spec.video.background }}>
       <TransitionSeries>{children}</TransitionSeries>
       {spec.watermark.enabled ? <ChannelWatermark text={spec.watermark.text} opacity={spec.watermark.opacity} /> : null}
-      {promoWindow ? (
-        <Sequence from={promoWindow.from} durationInFrames={promoWindow.durationInFrames} name="SocialPromo">
+      {windows.map((w, i) => (
+        <Sequence key={w.from} from={w.from} durationInFrames={w.durationInFrames} name={i === windows.length - 1 && i > 0 ? "SocialPromo · outro" : "SocialPromo"}>
           <SocialPromo
             settings={promo}
-            durationInFrames={promoWindow.durationInFrames}
+            durationInFrames={w.durationInFrames}
             // Stack above the watermark rather than covering it when both sit bottom-right.
             bottomClearance={spec.watermark.enabled && promo.position === "bottom-right" ? WATERMARK_RESERVED_HEIGHT : 0}
           />
         </Sequence>
-      ) : null}
+      ))}
     </AbsoluteFill>
   );
 }

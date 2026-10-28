@@ -37,8 +37,9 @@ class SocialPromoSettings(BaseModel):
     position: (
         Literal["bottom-right", "bottom-left", "top-right", "top-left", "center"] | None
     ) = "bottom-right"
-    start_at: Annotated[float | None, Field(ge=0.0, le=1.0)] = 0.05
-    end_at: Annotated[float | None, Field(ge=0.0, le=1.0)] = 0.95
+    start_s: Annotated[float | None, Field(ge=0.0)] = 20
+    duration_s: Annotated[float | None, Field(ge=1.0, le=60.0)] = 8
+    outro_s: Annotated[float | None, Field(ge=0.0, le=60.0)] = 6
 
 
 class ImageSize(BaseModel):

@@ -39,17 +39,22 @@ export interface FrameWindow {
 }
 
 /**
- * Frames an overlay occupies between two fractions of the episode's length, so it scales with any
- * runtime: `startAt` 0.05 and `endAt` 0.95 of a 10 minute episode is 0:30 to 9:30. Returns null when
- * the window is shorter than `minFrames`, i.e. too short to play the overlay's own animation.
+ * When the follow card is on screen: once from `startS` for `durationS` seconds, and again for the last `outroS`
+ * seconds of the episode. A showing shorter than `minFrames` (too short for the card's own animation) is dropped,
+ * and so is the early one when the episode is too short for it to end before the outro begins.
  */
-export function overlayWindow(
+export function promoWindows(
   totalFrames: number,
-  startAt: number,
-  endAt: number,
+  fps: number,
+  promo: { start_s: number; duration_s: number; outro_s: number },
   minFrames: number,
-): FrameWindow | null {
-  const from = Math.round(totalFrames * startAt);
-  const durationInFrames = Math.round(totalFrames * endAt) - from;
-  return durationInFrames >= minFrames ? { from, durationInFrames } : null;
+): FrameWindow[] {
+  const windows: FrameWindow[] = [];
+  const outro = Math.min(totalFrames, Math.round(promo.outro_s * fps));
+  const outroFrom = totalFrames - outro;
+  const from = Math.round(promo.start_s * fps);
+  const end = Math.min(from + Math.round(promo.duration_s * fps), outro >= minFrames ? outroFrom : totalFrames);
+  if (end - from >= minFrames) windows.push({ from, durationInFrames: end - from });
+  if (outro >= minFrames) windows.push({ from: outroFrom, durationInFrames: outro });
+  return windows;
 }
