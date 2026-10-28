@@ -4,7 +4,8 @@
 //! only approved stories carry on. A chapter's script continues from exactly the chapter before it: if that one has
 //! no approved memory yet, the next chapter waits instead of silently skipping a chapter of story. When an approved
 //! memory changes, every later chapter that already has a script is marked stale. Characters are merged over all
-//! earlier chapters, first spelling kept, so a name Gemini forgot to repeat is not lost.
+//! earlier chapters (a name keeps its first spelling, the rest of its line is the latest), so a name Gemini forgot
+//! to repeat is not lost.
 
 use jumbo_core::chapter;
 use jumbo_core::{ChapterId, ChapterManifest, ChapterState, Method, Project, fsx};
@@ -67,12 +68,21 @@ fn character_key(line: &str) -> String {
     line.split('|').next().unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }
 
-/// Adds `more` to `into`, keeping the first spelling of each character.
+/// Adds `more` (a later chapter's characters) to `into`. A character already there keeps its first spelling of the
+/// name but takes the later role, pronoun and look, so a correction made in a later chapter is what comes next.
 pub fn merge_characters(into: &mut Vec<String>, more: &[String]) {
     for line in more {
         let key = character_key(line);
-        if !key.is_empty() && !into.iter().any(|c| character_key(c) == key) {
-            into.push(line.trim().to_owned());
+        if key.is_empty() {
+            continue;
+        }
+        match into.iter_mut().find(|c| character_key(c) == key) {
+            Some(known) => {
+                let name = known.split('|').next().unwrap_or("").trim().to_owned();
+                let rest: Vec<&str> = line.split('|').skip(1).map(str::trim).collect();
+                *known = if rest.is_empty() { name } else { format!("{name} | {}", rest.join(" | ")) };
+            }
+            None => into.push(line.trim().to_owned()),
         }
     }
 }
@@ -182,7 +192,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn characters_are_merged_over_every_earlier_chapter_first_spelling_kept() {
+    fn characters_are_merged_over_every_earlier_chapter_first_name_spelling_latest_details() {
         let (_tmp, project, ids) = project_with_chapters(3);
         write_draft(&project, ids[0], &memory("A.", &["Ana | hero | she | red coat", "Bo | rival | he | scar"]))
             .expect("1");
@@ -194,7 +204,7 @@ pub(crate) mod tests {
         assert_eq!(ctx.story, "B.");
         assert_eq!(
             ctx.characters,
-            ["Ana | hero | she | red coat", "Bo | rival | he | scar", "Cy | mentor | he | cane"]
+            ["Ana | heroine | she | red coat", "Bo | rival | he | scar", "Cy | mentor | he | cane"]
         );
     }
 

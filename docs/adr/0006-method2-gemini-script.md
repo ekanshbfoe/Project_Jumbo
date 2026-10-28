@@ -51,7 +51,7 @@ in place of Method 1's Director.
 - **Readable labels:** pages taller than 2.2 widths become overlapping PDF pages; labels are sized for Gemini's
   scaling to 3072 px, placed over the gutter, semi-transparent and never overlapping; the PDF stays under 40 MB.
 - **Memory chain:** memory counts once the script is approved; a chapter continues from exactly the chapter before
-  it (otherwise it waits); characters are merged over all earlier chapters; changing an approved story marks later
+  it (otherwise it waits); characters are merged over all earlier chapters (first spelling of a name, latest role and look); changing an approved story marks later
   scripted chapters stale. One format for both methods (`story`, `characters`, `last_lines`, `method`).
 - **Guards:** the project's method is stored (old projects are Method 1) and fixed once a chapter has a script;
   Method 2's Make video never runs the Director or approves on its own; approval checks the Devanagari rule before
