@@ -130,6 +130,9 @@ pub async fn render_chapter(app: AppHandle, state: State<'_, AppState>, chapter:
         .await
         .map_err(msg)?;
     let waited = std::time::Instant::now();
+    // Right after an upload Kaggle can still report the previous version as ready, so give it a moment first.
+    report(0.06, "Kaggle is processing the render job".into());
+    tokio::time::sleep(Duration::from_secs(60)).await;
     while !client.dataset_status(&dataset).await.map_err(msg)?.is_some_and(|s| s.is_ready()) {
         if waited.elapsed().as_secs() > DATASET_WAIT_S {
             return Err(format!("Kaggle did not finish processing {dataset}"));
