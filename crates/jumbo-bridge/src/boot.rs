@@ -101,6 +101,16 @@ fn why(status: KernelStatus) -> String {
     }
 }
 
+/// A poll's answer, with a transient failure (a dropped request, a 5xx) read as "nothing yet": the boot and
+/// reconnect loops try again on their next round, and their own timeouts still bound the wait.
+fn soft<T>(result: Result<T>) -> Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(e) if e.is_transient() => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// Opens the newest record at or above `min_epoch` and checks the worker answers through it.
 async fn try_connect(
     http: &reqwest::Client,
@@ -130,8 +140,8 @@ async fn wait_warm(client: &WorkerClient, timings: &BootTimings, on_state: &mut 
     let deadline = Instant::now() + timings.warm;
     let mut announced = false;
     loop {
-        let info = client.session().await?;
-        if !info["warming"].as_bool().unwrap_or(false) {
+        let warming = soft(client.session().await)?.is_none_or(|info| info["warming"].as_bool().unwrap_or(false));
+        if !warming {
             return Ok(());
         }
         if !announced {
@@ -178,10 +188,10 @@ pub async fn boot(
         {
             let slug = config.kernel_slug.as_str();
             next_status = Instant::now() + timings.poll_status;
-            let status = client.status(slug).await?;
-            if status.is_finished() {
+            let status = soft(client.status(slug).await)?;
+            if let Some(status) = status.as_ref().filter(|s| s.is_finished()) {
                 let crashed = status.status == "ERROR";
-                let message = format!("Kaggle kernel stopped before the worker came up: {}", why(status));
+                let message = format!("Kaggle kernel stopped before the worker came up: {}", why(status.clone()));
                 if crashed && !retried {
                     retried = true;
                     on_state(BootState::Retrying { reason: message });
@@ -196,7 +206,7 @@ pub async fn boot(
                 }
                 return Err(BridgeError::KernelFailed { message, log: kernel_log(client, slug).await });
             }
-            if status.status == "RUNNING" && running_since.is_none() {
+            if status.is_some_and(|s| s.status == "RUNNING") && running_since.is_none() {
                 running_since = Some(Instant::now());
                 on_state(BootState::Running);
                 on_state(BootState::AwaitingRendezvous);
@@ -204,7 +214,7 @@ pub async fn boot(
         }
 
         if running_since.is_some()
-            && let Some(client) = try_connect(http, reader, keys, ticket, 1, &mut on_state).await?
+            && let Some(client) = soft(try_connect(http, reader, keys, ticket, 1, &mut on_state).await)?.flatten()
         {
             wait_warm(&client, timings, &mut on_state).await?;
             let endpoint = client.endpoint();
@@ -258,13 +268,15 @@ pub async fn reconnect(
             && Instant::now() >= next_status
         {
             next_status = Instant::now() + timings.poll_status;
-            let status = client.status(slug).await?;
-            if status.is_finished() {
+            if let Some(status) = soft(client.status(slug).await)?
+                && status.is_finished()
+            {
                 let log = kernel_log(client, slug).await;
                 return Err(BridgeError::SessionLost(format!("the Kaggle kernel ended: {}\n{log}", why(status))));
             }
         }
-        if let Some(client) = try_connect(http, reader, keys, ticket, from_epoch, &mut on_state).await? {
+        if let Some(client) = soft(try_connect(http, reader, keys, ticket, from_epoch, &mut on_state).await)?.flatten()
+        {
             wait_warm(&client, timings, &mut on_state).await?;
             let endpoint = client.endpoint();
             on_state(BootState::Ready { epoch: endpoint.epoch, boot: endpoint.boot.clone() });
