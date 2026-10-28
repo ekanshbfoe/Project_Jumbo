@@ -391,7 +391,8 @@ export function readGeminiAnswer(text: string, pack: GeminiPack): GeminiResult {
       emotion: l.emotion ?? "calm",
       voice: { speaker: "narrator", tone: "neutral", pace: "normal", intensity: 0.5 },
       preset: presetFor(l.move, l.panel_ids.length, (msg) => notes.push(`L${l.n}: ${msg}`)),
-      transition_in: { name: "cut", duration: 0.3 },
+      // A short fade between lines: 59 hard cuts in five minutes play like a slideshow.
+      transition_in: { name: i === 0 ? "cut" : "fade", duration: 0.3 },
     })),
   });
   if (!built.success) {
