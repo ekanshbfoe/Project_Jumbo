@@ -227,7 +227,7 @@ impl KaggleClient {
             .await?,
         )?;
         // A pre-signed upload URL: it carries its own authorization.
-        let resp = self.http.put(&start.create_url).body(file.bytes.clone()).send().await?;
+        let resp = crate::http::upload_client().put(&start.create_url).body(file.bytes.clone()).send().await?;
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             return Err(BridgeError::Status {

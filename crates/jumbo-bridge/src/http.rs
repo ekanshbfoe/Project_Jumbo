@@ -18,9 +18,21 @@ pub fn client() -> reqwest::Client {
     init_tls();
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(20))
-        // A half-open connection (a tunnel that dropped mid-request) fails after a minute without data instead of
-        // hanging forever; it is the time between reads, so long uploads and downloads are not cut short.
-        .read_timeout(Duration::from_secs(60))
+        // A half-open connection (a tunnel that dropped mid-request) fails instead of hanging forever. The timer
+        // runs from sending until the answer starts, then between reads, so it must cover sending one 16 MiB
+        // worker upload chunk on a slow line.
+        .read_timeout(Duration::from_secs(300))
+        .user_agent(concat!("jumbo-desktop/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .expect("static reqwest configuration is valid")
+}
+
+/// HTTP client for one large upload (a render job of hundreds of MB to a pre-signed URL), where sending alone can
+/// take longer than `client`'s read timeout.
+pub fn upload_client() -> reqwest::Client {
+    init_tls();
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(20))
         .user_agent(concat!("jumbo-desktop/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("static reqwest configuration is valid")
