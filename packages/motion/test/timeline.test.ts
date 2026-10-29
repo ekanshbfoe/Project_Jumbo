@@ -25,13 +25,6 @@ describe("episodeTimeline", () => {
     expect(t.durationInFrames).toBe(129);
   });
 
-  it("starts the first beat after the opening card", () => {
-    const t = episodeTimeline({ ...spec([[2, "cut", 0], [1, "fade", 0.5]]), opening: { title: "Chapter 1", subtitle: "", seconds: 2.5 } });
-    expect(t.openingFrames).toBe(75);
-    expect(t.beats.map((b) => b.from)).toEqual([75, 120]);
-    expect(t.durationInFrames).toBe(150);
-  });
-
   it("caps transitions below the length of either neighbour", () => {
     const t = episodeTimeline(spec([[0.5, "cut", 0], [1, "wipe", 0.5]]));
     expect(t.beats[1]?.transitionInFrames).toBe(14);

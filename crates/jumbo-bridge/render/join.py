@@ -3,8 +3,7 @@ with the episode's soundtrack laid under them. Output: /kaggle/working/__NAME__.
 __NAME__.wav (an episode's local assembly joins the parts' soundtracks, never their AAC tracks).
 
 The soundtrack puts each beat's clip at the beat's first frame, as the Episode composition plays it
-(packages/motion/src/timeline.ts: the beats start after the opening card, and a transition overlaps the previous
-beat, so a beat starts that much earlier)."""
+(packages/motion/src/timeline.ts: a transition overlaps the previous beat, so a beat starts that much earlier)."""
 import glob, json, os, shutil, subprocess, sys, tarfile, wave
 from pathlib import Path
 
@@ -61,8 +60,7 @@ def read_clip(path):
 
 def soundtrack(spec, public, out):
     fps = spec["video"]["fps"]
-    opening = spec.get("opening")
-    cursor, starts, prev = (round(opening["seconds"] * fps) if opening else 0), [], None
+    cursor, starts, prev = 0, [], None
     for i, b in enumerate(spec["beats"]):
         dur = max(1, round(b["duration"] * fps))
         want = 0 if i == 0 or b["transition_in"]["name"] == "cut" else round(b["transition_in"]["duration"] * fps)

@@ -9,18 +9,15 @@ export interface BeatTiming {
 }
 
 export interface EpisodeTimeline {
-  /** Frames of the opening card; the first beat starts here. */
-  openingFrames: number;
   beats: BeatTiming[];
   durationInFrames: number;
 }
 
 /** Frame layout of an episode. Transitions overlap neighbouring beats, so they shorten the total. */
-export function episodeTimeline(spec: Pick<EpisodeSpec, "beats" | "video"> & { opening?: EpisodeSpec["opening"] }): EpisodeTimeline {
+export function episodeTimeline(spec: Pick<EpisodeSpec, "beats" | "video">): EpisodeTimeline {
   const { fps } = spec.video;
   const beats: BeatTiming[] = [];
-  const openingFrames = spec.opening ? Math.round(spec.opening.seconds * fps) : 0;
-  let cursor = openingFrames;
+  let cursor = 0;
 
   spec.beats.forEach((beat, i) => {
     const durationInFrames = Math.max(1, Math.round(beat.duration * fps));
@@ -33,7 +30,7 @@ export function episodeTimeline(spec: Pick<EpisodeSpec, "beats" | "video"> & { o
     cursor = from + durationInFrames;
   });
 
-  return { openingFrames, beats, durationInFrames: Math.max(1, cursor) };
+  return { beats, durationInFrames: Math.max(1, cursor) };
 }
 
 export interface FrameWindow {

@@ -107,12 +107,10 @@ describe("buildEpisodeSpec", () => {
     expect(spec.panels.map((p) => p.id)).toEqual(["p_0001", "p_0002"]);
     expect(spec.video).toEqual({ width: 1920, height: 1080, fps: 30, background: "#0b0b10" });
     expect(spec.title).toBe("Pehla Darwaza");
-    expect(spec.opening).toBeNull();
   });
 
-  it("opens an episode part with its chapter title and passes the follow card's part settings", () => {
-    const spec = buildEpisodeSpec(script, panels, audio, { opening: { title: "Pehla Darwaza" }, promo: { early: false, outro_s: 0 } });
-    expect(spec.opening).toEqual({ title: "Pehla Darwaza", subtitle: "", seconds: 2.5 });
+  it("passes an episode part's follow-card settings", () => {
+    const spec = buildEpisodeSpec(script, panels, audio, { promo: { early: false, outro_s: 0 } });
     expect(spec.social_promo).toMatchObject({ early: false, outro_s: 0, start_s: 20 });
   });
 });
