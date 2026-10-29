@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, bridgeApi, errorText, type ProjectInfo } from "./api";
 import { MODULES, screensFor } from "./hub/modules";
+import { useEpisodeRuns } from "./episodeRuns";
 import { useRuns } from "./runs";
 import { HomeScreen } from "./screens/HomeScreen";
 import { methodLabel, ProjectsScreen } from "./screens/ProjectsScreen";
@@ -18,7 +19,8 @@ export function App() {
   // With no project open: the content-type cards, then the manga and manhwa projects.
   const [home, setHome] = useState<"content" | "manga">("content");
   const [switchError, setSwitchError] = useState<string>();
-  const running = Object.keys(useRuns().runs);
+  const episodeRun = useEpisodeRuns().run;
+  const running = [...Object.keys(useRuns().runs), ...(episodeRun ? [episodeRun.episode] : [])];
 
   useEffect(() => {
     api

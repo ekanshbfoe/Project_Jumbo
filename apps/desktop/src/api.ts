@@ -180,6 +180,32 @@ export interface RenderProgress {
   machines: string[];
 }
 
+/** episodes/<id>/episode.json, with the assembled video once there is one (ADR 0007). */
+export interface EpisodeView {
+  id: string;
+  title: string;
+  chapters: string[];
+  created_at: string;
+  /** Project-relative path of the assembled video. */
+  video: string | null;
+}
+
+/** Whether a chapter's rendered part is the one the app would render now. */
+export type PartState = "missing" | "outdated" | "ready";
+
+/** The app-wide brand music under every episode. */
+export interface BrandSettings {
+  music: string | null;
+  music_db: number;
+}
+
+/** `assembly://progress` events while an episode is joined on this PC. */
+export interface AssemblyProgress {
+  episode: string;
+  progress: number;
+  message: string;
+}
+
 /** panels/numbered.json: the export a pasted Gemini answer must match. */
 export interface NumberedPack {
   chapter: string;
@@ -235,6 +261,16 @@ export const api = {
   renderChapter: (chapter: string) => invoke<ChapterManifest>("render_chapter", { chapter }),
   chapterRender: (chapter: string) => invoke<{ episode: boolean; video: string | null }>("chapter_render", { chapter }),
   chapterAudio: (chapter: string) => invoke<{ audio: unknown; report: VoiceReport | null }>("chapter_audio", { chapter }),
+  renderPart: (episode: string, chapter: string, spec: unknown) => invoke<ChapterManifest>("render_part", { episode, chapter, spec }),
+  listEpisodes: () => invoke<EpisodeView[]>("list_episodes"),
+  createEpisode: (title: string, chapters: string[]) => invoke<EpisodeView>("create_episode", { title, chapters }),
+  deleteEpisode: (episode: string) => invoke<void>("delete_episode", { episode }),
+  episodeParts: (episode: string, specs: Record<string, unknown>) => invoke<[string, PartState][]>("episode_parts", { episode, specs }),
+  assembleEpisode: (episode: string, specs: Record<string, unknown>) => invoke<string>("assemble_episode", { episode, specs }),
+  brandSettings: () => invoke<BrandSettings>("brand_settings"),
+  setBrandMusic: (path: string) => invoke<BrandSettings>("set_brand_music", { path }),
+  setBrandVolume: (musicDb: number) => invoke<BrandSettings>("set_brand_volume", { musicDb }),
+  clearBrandMusic: () => invoke<BrandSettings>("clear_brand_music"),
 };
 
 /** Tauri rejects with the Rust error string; normalise anything else. */

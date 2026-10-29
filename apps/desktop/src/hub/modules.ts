@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { Method, ProjectInfo } from "../api";
 import { ChaptersScreen } from "../screens/ChaptersScreen";
+import { EpisodesScreen } from "../screens/EpisodesScreen";
 import { GeminiScreen } from "../screens/GeminiScreen";
 import { PanelsScreen } from "../screens/PanelsScreen";
 import { PreviewScreen } from "../screens/PreviewScreen";
@@ -43,6 +44,7 @@ export const MODULES: HubModule[] = [
       { id: "script", label: "Script", Component: ScriptScreen },
       { id: "voice", label: "Voice", Component: VoiceScreen },
       { id: "render", label: "Render", Component: RenderScreen },
+      { id: "episodes", label: "Episodes", Component: EpisodesScreen },
       { id: "preview", label: "Preview", Component: PreviewScreen },
       { id: "receipt-book", label: "Receipt Book", Component: ReceiptBookScreen },
       { id: "session", label: "Session", Component: SessionScreen },
