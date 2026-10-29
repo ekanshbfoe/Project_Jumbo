@@ -1,5 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { planEpisode } from "@jumbo/schema";
 import { useEffect, useMemo, useState } from "react";
 import { api, CHAPTER_STATES, errorText, type ChapterManifest, type EpisodeView, type PartState } from "../api";
 import { chapterTitle } from "../episode";
@@ -77,8 +78,63 @@ function BrandMusic() {
   );
 }
 
+/**
+ * How the episode opens and ends (ADR 0008), picked from its chapters' hooks: the cold open, the bridge back to the
+ * start, the recap, the next chapter's tease and the signature. Shown as text until the opening is voiced.
+ */
+function EpisodePlanCard({ episode, chapters, index }: { episode: EpisodeView; chapters: ChapterManifest[]; index: number }) {
+  const last = chapters.findIndex((c) => c.id === episode.chapters[episode.chapters.length - 1]);
+  const next = last >= 0 ? chapters[last + 1] : undefined;
+  const hooks = useAsync(() => api.chapterHooks([...episode.chapters, ...(next ? [next.id] : [])]), [episode.chapters.join(), next?.id]);
+  if (!hooks.data) return hooks.error ? <p className="error">{hooks.error}</p> : null;
+  const plan = planEpisode({
+    chapters: episode.chapters.map((id) => ({ id, hooks: hooks.data![id] ?? null })),
+    index,
+    startsStory: chapters[0]?.id === episode.chapters[0],
+    next: next && hooks.data[next.id] ? { id: next.id, hooks: hooks.data[next.id]! } : null,
+  });
+  return (
+    <div className="stack">
+      <strong>Opening and ending</strong>
+      {plan.cold ? (
+        <span>
+          <span className="badge">cold open</span>{" "}
+          <span className="muted mono">
+            {plan.cold.chapter} {plan.cold.hook.id} · {plan.cold.hook.kind} · strength {plan.cold.hook.strength} · {plan.cold.hook.panel_ids.join(", ")}
+          </span>{" "}
+          {plan.cold.hook.cold}
+        </span>
+      ) : null}
+      {plan.bridge ? (
+        <span>
+          <span className="badge">bridge</span> {plan.bridge}
+        </span>
+      ) : null}
+      {plan.recap ? (
+        <span>
+          <span className="badge">recap</span> {plan.recap}
+        </span>
+      ) : null}
+      {plan.tease ? (
+        <span>
+          <span className="badge">tease</span> <span className="muted mono">{plan.tease.chapter}</span> {plan.tease.hook.tease}
+        </span>
+      ) : null}
+      <span>
+        <span className="badge">signature</span> {plan.signature}
+      </span>
+      {plan.notes.map((n) => (
+        <span key={n} className="muted">
+          {n}
+        </span>
+      ))}
+      <span className="muted">The opening and the tease are not voiced into the video yet; the signature plays at the end once its clip is set.</span>
+    </div>
+  );
+}
+
 /** One episode: its chapters with their parts, the render and assembly buttons, and the video. */
-function EpisodeCard({ episode, chapters, root, busy, reload }: { episode: EpisodeView; chapters: ChapterManifest[]; root: string; busy: boolean; reload: () => void }) {
+function EpisodeCard({ episode, chapters, root, busy, reload, index }: { episode: EpisodeView; chapters: ChapterManifest[]; root: string; busy: boolean; reload: () => void; index: number }) {
   const members = useMemo(() => episode.chapters.map((id) => chapters.find((c) => c.id === id)).filter((c): c is ChapterManifest => !!c), [episode, chapters]);
   const unvoiced = members.filter((c) => !voiced(c)).map((c) => c.id);
   const ready = unvoiced.length === 0 && members.length === episode.chapters.length;
@@ -155,6 +211,7 @@ function EpisodeCard({ episode, chapters, root, busy, reload }: { episode: Episo
           })}
         </tbody>
       </table>
+      <EpisodePlanCard episode={episode} chapters={chapters} index={index} />
       {episode.video ? (
         <div className="stack">
           <span className="mono muted">{episode.video}</span>
@@ -271,8 +328,8 @@ export function EpisodesScreen({ project }: ScreenProps) {
           </div>
         </div>
 
-        {episodes.data?.map((e) => (
-          <EpisodeCard key={e.id} episode={e} chapters={chapters.data ?? []} root={project.root} busy={busy} reload={reload} />
+        {episodes.data?.map((e, i) => (
+          <EpisodeCard key={e.id} episode={e} chapters={chapters.data ?? []} root={project.root} busy={busy} reload={reload} index={i} />
         ))}
         {episodes.data && !episodes.data.length ? <div className="card empty">No episodes yet. Voice some chapters, then make an episode of them here.</div> : null}
 
