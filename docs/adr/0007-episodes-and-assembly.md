@@ -20,12 +20,18 @@ planned together with the narrator's personality. Episode parts join straight, c
    2026-10-29: `hybrid_trap_s1003` (ACE-Step, 94 BPM, E minor), the steadiest of five candidates under a voice.
    - Set once, the track is made into a loop (`mix.rs`): its soft intro and fade-out are left out, and its end is
      blended into its start over 3 s (equal power) at the point where the beats line up best, so it never stops
-     or stumbles however long the episode is. Its loudness is measured then.
-   - Under the episode it sits 12 dB below the narration (a setting), fades in over 2 s and out over 3 s, is
-     EQ'd (sub-bass trimmed, -2.5 dB around 3 kHz where the voice is clearest) and dips under the narration and
-     the sound effects (sidechain compression, ratio 6), so it swells in the pauses.
-   - The narration is measured first and brought to -14 LUFS, YouTube's playback level, and a limiter keeps
-     the peaks under -1.4 dBFS.
+     or stumbles however long the episode is.
+   - Under the episode it is shaped (808 sub held down, dips at 1.2 kHz and 3 kHz where the voice lives, sides
+     narrowed to 0.7 for mono phones), measured after that, set 17 dB below the narration (a setting), fades in
+     over 2 s and out over 3 s, and dips gently under the narration and the sound effects (sidechain at the voice's
+     level, 2:1, 80 ms attack, 1.5 s release), so it stays about 21 dB under the voice instead of vanishing while
+     he speaks and surging in every pause.
+   - The narration is high-passed at 70 Hz, lifted 2.5 dB at 3.5 kHz, levelled slowly (`dynaudnorm`, about 20 s)
+     so no stretch of lines sits a few dB under the rest, measured, brought to -14 LUFS (YouTube's playback
+     level) through a gentle 3:1 compressor, measured again after it and peak-limited at -1 dBFS. The episode's
+     own limiter sits at -2 dBFS, so YouTube's re-encode stays under -1 dBTP.
+   - These settings come from a measured QC of the first episode (2026-10-29): the first mix ducked the music
+     19 dB, let it surge 8 dB in pauses, let only its 808 through under speech, and drifted 3.6 dB minute to minute.
 7. **Character cards** show a character's name and short English role once in the whole series, on the line
    where the character first appears (`ScriptLine.card`, carried onto the line's first beat):
    - Gemini marks the line with `<card: Name>`; the role comes from its CHARACTERS list.
@@ -43,9 +49,15 @@ planned together with the narrator's personality. Episode parts join straight, c
    LUFS, with a soft/medium/loud tier), at most one per line (`ScriptLine.sfx`, carried onto the line's first beat).
    - Gemini marks a line with `<sfx: name>`; an unknown name is dropped with a note. The Script screen changes or
      removes them, also after approval, straight into the approved script.
-   - A sound plays as its line's first panel appears; a swell (whoosh, riser) starts early so it peaks on the cut.
+   - A sound plays as its line's first panel appears; a swell (whoosh, riser) starts early so it peaks on the cut
+     and gets a short echo tail, since it stops at its loudest. A sound over the narration is cut 4 dB around
+     2.5 kHz to stay clear of the words. The heartbeat, too deep for phone speakers, gets a copy of itself
+     ring-modulated to about 220 Hz. Sounds reach the music's ducking 6 dB down, so a big hit dips the music
+     without leaving a hole.
    - They are mixed in on this PC at assembly, not in the render, and are left out of the part fingerprint, so
      tuning them never renders a part again. One level setting moves them all.
+9. **The ending:** the last part holds its final panel 3 s after the narration (`endHold`), so the episode does not
+   stop on the last word and the music fades out over the held panel.
 
 ## Why
 - **Not one render of the whole hour.** A chunk machine stops itself after 80 minutes, one failure would lose
