@@ -1,6 +1,6 @@
 import type { EpisodeSpec } from "@jumbo/schema";
 import { describe, expect, it } from "vitest";
-import { episodeTimeline, promoWindows } from "../src/timeline";
+import { cardWindows, episodeTimeline, promoWindows } from "../src/timeline";
 
 type Transition = EpisodeSpec["beats"][number]["transition_in"];
 
@@ -48,5 +48,16 @@ describe("promoWindows", () => {
     expect(promoWindows(5_622, 30, { ...promo, early: false }, 60)).toEqual([{ from: 5_442, durationInFrames: 180 }]);
     // Too short for the card's own animation: nothing.
     expect(promoWindows(40, 30, promo, 60)).toEqual([]);
+  });
+});
+
+describe("cardWindows", () => {
+  it("shows each card for 3 s from its beat's first frame, cut at the episode's end", () => {
+    const t = episodeTimeline(spec([[2, "cut", 0], [1, "fade", 0.5], [2, "cut", 0]]));
+    const beats = [{ card: { name: "Sylvie" } }, { card: null }, { card: { name: "Luke" } }];
+    expect(cardWindows(beats, t.beats, t.durationInFrames, 30, 3)).toEqual([
+      { beat: 0, from: 0, durationInFrames: 90 },
+      { beat: 2, from: 75, durationInFrames: 60 },
+    ]);
   });
 });

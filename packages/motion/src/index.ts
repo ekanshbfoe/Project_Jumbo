@@ -7,6 +7,7 @@ export * from "./ambient/types";
 export * from "./components/BeatView";
 export * from "./components/Camera";
 export * from "./components/ChannelWatermark";
+export * from "./components/CharacterCard";
 export * from "./components/PolygonPanel";
 export * from "./components/SocialIcons";
 export * from "./components/SocialPromo";

@@ -33,6 +33,19 @@ export function episodeTimeline(spec: Pick<EpisodeSpec, "beats" | "video">): Epi
   return { beats, durationInFrames: Math.max(1, cursor) };
 }
 
+/**
+ * When each character card is on screen: from the first frame of its beat for `seconds`, cut short where it would
+ * run past the episode's end. The card belongs to its line, so it may outlast a short beat.
+ */
+export function cardWindows(beats: { card?: unknown }[], timing: BeatTiming[], totalFrames: number, fps: number, seconds: number): (FrameWindow & { beat: number })[] {
+  const length = Math.round(seconds * fps);
+  return beats.flatMap((b, i) => {
+    const from = timing[i]!.from;
+    const durationInFrames = Math.min(length, totalFrames - from);
+    return b.card && durationInFrames > 0 ? [{ beat: i, from, durationInFrames }] : [];
+  });
+}
+
 export interface FrameWindow {
   from: number;
   durationInFrames: number;

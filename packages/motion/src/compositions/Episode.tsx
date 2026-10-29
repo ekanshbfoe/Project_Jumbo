@@ -6,9 +6,10 @@ import { wipe } from "@remotion/transitions/wipe";
 import { useMemo, type ReactElement } from "react";
 import { AbsoluteFill, Sequence, useVideoConfig, type CalculateMetadataFunction } from "remotion";
 import { BeatView } from "../components/BeatView";
+import { CARD_SECONDS, CharacterCardView } from "../components/CharacterCard";
 import { ChannelWatermark, WATERMARK_RESERVED_HEIGHT } from "../components/ChannelWatermark";
 import { PROMO_ENTRY_SECONDS, PROMO_EXIT_SECONDS, SocialPromo } from "../components/SocialPromo";
-import { episodeTimeline, promoWindows } from "../timeline";
+import { cardWindows, episodeTimeline, promoWindows } from "../timeline";
 
 function presentation(name: Exclude<TransitionSpec["name"], "cut">): TransitionPresentation<Record<string, unknown>> {
   switch (name) {
@@ -66,6 +67,12 @@ export function Episode(spec: EpisodeSpec) {
   return (
     <AbsoluteFill style={{ backgroundColor: spec.video.background }}>
       <TransitionSeries>{children}</TransitionSeries>
+      {cardWindows(spec.beats, timeline.beats, durationInFrames, fps, CARD_SECONDS).map((w) => (
+        <Sequence key={`card-${w.beat}`} from={w.from} durationInFrames={w.durationInFrames} name={`Card · ${spec.beats[w.beat]!.card!.name}`}>
+          {/* A follow card in the bottom-left corner would cover it, so the name card moves up there. */}
+          <CharacterCardView card={spec.beats[w.beat]!.card!} durationInFrames={w.durationInFrames} top={promo.enabled && promo.position === "bottom-left"} />
+        </Sequence>
+      ))}
       {spec.watermark.enabled ? <ChannelWatermark text={spec.watermark.text} opacity={spec.watermark.opacity} /> : null}
       {windows.map((w, i) => (
         <Sequence key={w.from} from={w.from} durationInFrames={w.durationInFrames} name={i === windows.length - 1 && i > 0 ? "SocialPromo · outro" : "SocialPromo"}>
