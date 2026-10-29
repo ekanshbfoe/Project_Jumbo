@@ -168,8 +168,7 @@ pub(crate) struct Sound {
 
 /// A deep sound plus itself ring-modulated at 220 Hz: the same thump, also heard around 200-300 Hz (+10 dB there for
 /// the heartbeat), at about the same overall level. (ffmpeg's aexciter only works above 2 kHz.)
-const PHONE_LAYER: &str =
-    "aeval=val(0)+0.8*val(0)*sin(2*PI*220*t)|val(1)+0.8*val(1)*sin(2*PI*220*t):c=same";
+const PHONE_LAYER: &str = "aeval=val(0)+0.8*val(0)*sin(2*PI*220*t)|val(1)+0.8*val(1)*sin(2*PI*220*t):c=same";
 /// A short echo after a sound that ends at its peak (padded first, so the echo has room to ring out).
 const TAIL: &str = "apad=pad_dur=0.3,aecho=1:1:40|90:0.3|0.2";
 /// A sound over the narration steps back where the voice is clearest.

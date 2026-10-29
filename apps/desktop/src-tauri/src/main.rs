@@ -82,6 +82,8 @@ fn main() {
             assembly::set_brand_music,
             assembly::set_brand_volume,
             assembly::set_sfx_volume,
+            assembly::set_brand_signature,
+            assembly::clear_brand_signature,
             assembly::clear_brand_music,
             bridge::stop_session,
             bridge::resume_session,

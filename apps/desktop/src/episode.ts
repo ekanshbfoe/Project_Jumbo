@@ -18,14 +18,18 @@ export function buildEpisode(chapter: string, src: PreviewSources, title: string
  * in the last, so a long episode shows it once at each end. Parts join straight, with no title card between them.
  * The last part also holds its final panel after the narration (END_HOLD_S).
  */
-export function buildPart(chapter: string, src: PreviewSources, title: string, at: { first: boolean; last: boolean }) {
-  // The last part holds its final panel 3 s after the narration, so the episode does not stop on the last word.
+export function buildPart(chapter: string, src: PreviewSources, title: string, at: { first: boolean; last: boolean }, signatureS = 0) {
+  // The last part holds its final panel after the narration, so the episode does not stop on the last word, and
+  // long enough for the signature clip with a breath on either side.
   const promo = at.last ? { early: at.first } : { early: at.first, outro_s: 0 };
-  return buildEpisode(chapter, src, title, { promo, endHold: at.last ? END_HOLD_S : 0 });
+  return buildEpisode(chapter, src, title, { promo, endHold: at.last ? endHold(signatureS) : 0 });
 }
 
 /** Seconds the episode's last panel holds after the narration while the brand music fades out. */
 export const END_HOLD_S = 3;
+
+/** The final hold for a signature clip of `signatureS` seconds: a second before it and one after (assembly.rs). */
+export const endHold = (signatureS: number) => (signatureS > 0 ? Math.max(END_HOLD_S, Math.ceil((signatureS + 2) * 10) / 10) : END_HOLD_S);
 
 /** The title a chapter is shown under: its own, or its PDF's name. */
 export const chapterTitle = (c: { title?: string; original_name: string }) => c.title ?? c.original_name.replace(/\.pdf$/i, "");

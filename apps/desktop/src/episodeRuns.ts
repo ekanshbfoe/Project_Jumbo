@@ -59,8 +59,9 @@ export const episodeRunning = () => state.run !== undefined;
 /** Every chapter's part spec as the app would render it now, keyed by chapter id. */
 export async function partSpecs(chapters: ChapterManifest[]): Promise<Record<string, unknown>> {
   const specs: Record<string, unknown> = {};
+  const { signature_s } = await api.brandSettings();
   for (const [i, c] of chapters.entries()) {
-    specs[c.id] = buildPart(c.id, await api.chapterPreview(c.id), chapterTitle(c), { first: i === 0, last: i === chapters.length - 1 });
+    specs[c.id] = buildPart(c.id, await api.chapterPreview(c.id), chapterTitle(c), { first: i === 0, last: i === chapters.length - 1 }, signature_s);
   }
   return specs;
 }

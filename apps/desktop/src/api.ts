@@ -201,6 +201,9 @@ export interface BrandSettings {
   music_db: number;
   /** dB beyond each sound effect's tier. */
   sfx_db: number;
+  /** The narrator's signature clip, closing every episode, and its length in seconds. */
+  signature: string | null;
+  signature_s: number;
 }
 
 /** `assembly://progress` events while an episode is joined on this PC. */
@@ -279,6 +282,8 @@ export const api = {
   setBrandVolume: (musicDb: number) => invoke<BrandSettings>("set_brand_volume", { musicDb }),
   setSfxVolume: (sfxDb: number) => invoke<BrandSettings>("set_sfx_volume", { sfxDb }),
   clearBrandMusic: () => invoke<BrandSettings>("clear_brand_music"),
+  setBrandSignature: (path: string) => invoke<BrandSettings>("set_brand_signature", { path }),
+  clearBrandSignature: () => invoke<BrandSettings>("clear_brand_signature"),
 };
 
 /** Tauri rejects with the Rust error string; normalise anything else. */

@@ -152,7 +152,8 @@ fn save(
         return Err(format!("fix these lines first: {}", problems.join("; ")));
     }
     if let Some(hooks) = hooks {
-        let file: HooksFile = serde_json::from_value(hooks.clone()).map_err(|e| format!("the hooks are invalid: {e}"))?;
+        let file: HooksFile =
+            serde_json::from_value(hooks.clone()).map_err(|e| format!("the hooks are invalid: {e}"))?;
         if file.chapter_id != id.to_string() {
             return Err(format!("these hooks belong to {}, not {id}", file.chapter_id));
         }
@@ -275,13 +276,19 @@ mod tests {
     fn a_pasted_script_is_refused_for_the_wrong_project_pack_or_panels() {
         let (_tmp, mut project, ids) = project_with_chapters(2);
         let s = script(ids[0]);
-        assert!(save(&project, ids[0], "7f3a", &s, &story("x"), None).expect_err("method 1").contains("Method 1 project"));
+        assert!(
+            save(&project, ids[0], "7f3a", &s, &story("x"), None).expect_err("method 1").contains("Method 1 project")
+        );
         method2(&mut project);
-        assert!(save(&project, ids[0], "7f3a", &s, &story("x"), None).expect_err("no pack").contains("no numbered PDF"));
+        assert!(
+            save(&project, ids[0], "7f3a", &s, &story("x"), None).expect_err("no pack").contains("no numbered PDF")
+        );
         with_pack(&project, ids[0], "b201");
         assert!(save(&project, ids[0], "7f3a", &s, &story("x"), None).expect_err("old pack").contains("now pack b201"));
         assert!(
-            save(&project, ids[0], "b201", &s, &story(" "), None).expect_err("no memory").contains("MEMORY block is empty")
+            save(&project, ids[0], "b201", &s, &story(" "), None)
+                .expect_err("no memory")
+                .contains("MEMORY block is empty")
         );
         let mut short = s.clone();
         short["lines"].as_array_mut().expect("lines").truncate(1);
@@ -315,13 +322,15 @@ mod tests {
             json!({ "schema_version": 1, "chapter_id": ids[0].to_string(), "recap_in": "",
                     "hooks": [{ "id": "H1", "panel_ids": [panel], "strength": 5, "kind": "reveal", "spoiler": "low", "cold": "x", "tease": "" }] })
         };
-        let err = save(&project, ids[0], "7f3a", &script(ids[0]), &story("x"), Some(&hooks("p_0009"))).expect_err("panel");
+        let err =
+            save(&project, ids[0], "7f3a", &script(ids[0]), &story("x"), Some(&hooks("p_0009"))).expect_err("panel");
         assert!(err.contains("hook H1 names p_0009"), "{err}");
         save(&project, ids[0], "7f3a", &script(ids[0]), &story("x"), Some(&hooks("p_0002"))).expect("save");
         let file = chapter::chapter_dir(&project, ids[0]).join("script").join(HOOKS);
         assert!(file.is_file());
         let draft: StoryMemory =
-            serde_json::from_str(&std::fs::read_to_string(file.with_file_name(memory::DRAFT)).expect("draft")).expect("json");
+            serde_json::from_str(&std::fs::read_to_string(file.with_file_name(memory::DRAFT)).expect("draft"))
+                .expect("json");
         assert_eq!(draft.open_loops, vec!["Q1 | Who sent the letter?"]);
         // A later answer without hooks leaves none behind.
         save(&project, ids[0], "7f3a", &script(ids[0]), &story("x"), None).expect("save");

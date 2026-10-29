@@ -113,13 +113,25 @@ pub struct BrandSettings {
     /// Level of the sound effects in dB, beyond each one's tier.
     #[serde(default)]
     pub sfx_db: f64,
+    /// File name of the narrator's signature clip inside `<app config>/brand`: the same recording closes every
+    /// episode of every channel (ADR 0008).
+    #[serde(default)]
+    pub signature: Option<String>,
+    /// The clip's length in seconds: the last part holds its final panel long enough for it.
+    #[serde(default)]
+    pub signature_s: f64,
 }
 
 impl Default for BrandSettings {
     fn default() -> Self {
-        Self { music: None, music_db: -17.0, sfx_db: 0.0 }
+        Self { music: None, music_db: -17.0, sfx_db: 0.0, signature: None, signature_s: 0.0 }
     }
 }
+
+/// The longest signature clip: a closing line, not a speech.
+const SIGNATURE_MAX_S: f64 = 8.0;
+/// Seconds of silence after the signature before the episode ends.
+const SIGNATURE_TAIL_S: f64 = 1.0;
 
 #[derive(Clone, Serialize)]
 struct Progress<'a> {
@@ -297,6 +309,13 @@ struct Music<'a> {
     db: f64,
 }
 
+/// The signature clip, where it starts and its gain to the episode's loudness.
+struct Signature<'a> {
+    path: &'a Path,
+    at: f64,
+    db: f64,
+}
+
 /// The sound effects of an episode: the library folder, and each effect where it plays.
 struct Effects<'a> {
     dir: &'a Path,
@@ -336,13 +355,15 @@ fn voice_chain(first: usize, n: usize) -> String {
 
 /// ffmpeg's arguments and filter graph for an episode: the parts' video copied as it is from the concat list
 /// `video_list`, their soundtracks joined and levelled by `voice` (to the episode's loudness), the brand music
-/// (looped, faded in and out) dipping under the narration and the big hits, the sound effects on their lines, a
-/// limiter, and the result cut to `seconds` and written to `out`. The graph is read from `graph_file`.
+/// (looped, faded in and out) dipping under the narration and the big hits, the sound effects on their lines, the
+/// signature in the final hold, a limiter, and the result cut to `seconds` and written to `out`. The graph is read
+/// from `graph_file`.
 #[allow(clippy::too_many_arguments)]
 fn join_args(
     video_list: &Path,
     soundtracks: &[PathBuf],
     voice: VoiceGain,
+    signature: Option<Signature>,
     music: Option<Music>,
     effects: Effects,
     seconds: f64,
@@ -359,7 +380,21 @@ fn join_args(
     }
     let format = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
     let mut next = soundtracks.len() + 1;
-    let mut graph = voice_levelled(1, soundtracks.len(), voice) + "[voice];";
+    let mut graph = voice_levelled(1, soundtracks.len(), voice);
+    // The signature joins the narration, so the music dips under it like under any other line.
+    match signature {
+        Some(sig) => {
+            args.extend(["-i".into(), sig.path.display().to_string()]);
+            graph += &format!(
+                "[said];[{next}:a]{format},volume={:.2}dB,adelay=delays={}:all=1[sig];\
+                 [said][sig]amix=inputs=2:duration=first:normalize=0[voice];",
+                sig.db,
+                (sig.at * 1000.0).round() as u64
+            );
+            next += 1;
+        }
+        None => graph += "[voice];",
+    }
 
     // Each sound file is read once and split for every line it plays on.
     let mut files: Vec<(&str, Vec<&Effect>)> = Vec::new();
@@ -620,6 +655,60 @@ fn load_sfx(app: &AppHandle) -> CmdResult<(PathBuf, SfxLibrary)> {
     Ok((dir, library))
 }
 
+/// Makes `path` (an audio file) the narrator's signature clip: converted once to a 48 kHz WAV in the brand folder,
+/// so every episode closes on the identical recording.
+#[tauri::command]
+pub async fn set_brand_signature(app: AppHandle, path: String) -> CmdResult<BrandSettings> {
+    let ffmpeg = ffmpeg(&app, |_, _| {}).await?;
+    let dir = brand_dir(&app)?;
+    std::fs::create_dir_all(&dir).map_err(msg)?;
+    let partial = dir.join("signature.partial.wav");
+    let (source, out) = (path.clone(), partial.clone());
+    let made = tokio::task::spawn_blocking(move || {
+        Command::new(&ffmpeg)
+            .args(["-y", "-v", "error", "-i", &source, "-vn", "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le"])
+            .arg(&out)
+            .output()
+    })
+    .await
+    .map_err(msg)?
+    .map_err(|e| format!("ffmpeg did not start: {e}"))?;
+    let seconds = if made.status.success() {
+        wav_seconds(&partial)
+    } else {
+        Err(String::from_utf8_lossy(&made.stderr).trim().to_owned())
+    };
+    let seconds = match seconds {
+        Ok(s) if s > 0.3 && s <= SIGNATURE_MAX_S => s,
+        Ok(s) => {
+            let _ = std::fs::remove_file(&partial);
+            return Err(format!("{path} is {s:.1} s long; a signature clip is up to {SIGNATURE_MAX_S:.0} s"));
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&partial);
+            return Err(format!("{path}: {e}"));
+        }
+    };
+    let name = "signature.wav".to_owned();
+    std::fs::rename(&partial, dir.join(&name)).map_err(msg)?;
+    let mut settings = load_brand(&app)?;
+    settings.signature = Some(name);
+    settings.signature_s = seconds;
+    save_brand(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn clear_brand_signature(app: AppHandle) -> CmdResult<BrandSettings> {
+    let mut settings = load_brand(&app)?;
+    if let Some(old) = settings.signature.take() {
+        let _ = std::fs::remove_file(brand_dir(&app)?.join(old));
+    }
+    settings.signature_s = 0.0;
+    save_brand(&app, &settings)?;
+    Ok(settings)
+}
+
 #[tauri::command]
 pub fn clear_brand_music(app: AppHandle) -> CmdResult<BrandSettings> {
     let mut settings = load_brand(&app)?;
@@ -725,6 +814,17 @@ pub async fn assemble_episode(
         }
         None => 0.0,
     };
+    // The signature ends a second before the episode, in the final hold, at the narration's loudness.
+    let signature_path =
+        brand.signature.as_ref().map(|s| brand_dir(&app).map(|d| d.join(s))).transpose()?.filter(|p| p.is_file());
+    let signature = match signature_path {
+        Some(path) => {
+            let lufs = measure(&ffmpeg, std::slice::from_ref(&path), "[0:a]anull".into()).await?.unwrap_or(TARGET_LUFS);
+            let at = (seconds - brand.signature_s - SIGNATURE_TAIL_S).max(0.0);
+            Some((path, at, TARGET_LUFS - lufs))
+        }
+        None => None,
+    };
     let scratch = Scratch(dir.join(".assembling"));
     let _ = std::fs::remove_dir_all(&scratch.0);
     std::fs::create_dir_all(&scratch.0).map_err(msg)?;
@@ -736,6 +836,7 @@ pub async fn assemble_episode(
         &list,
         &soundtracks,
         voice,
+        signature.as_ref().map(|(path, at, db)| Signature { path, at: *at, db: *db }),
         music_path.as_deref().map(|path| Music { path, db: music_db }),
         Effects { dir: &sfx_dir, list: &effects },
         seconds,
@@ -895,8 +996,17 @@ mod tests {
     fn the_join_copies_video_and_ducks_the_music_under_the_narration() {
         let parts = [PathBuf::from("a.wav"), PathBuf::from("b.wav")];
         let none = Effects { dir: Path::new("sfx"), list: &[] };
-        let (plain, graph) =
-            join_args(Path::new("v.txt"), &parts, GAIN, None, none, 600.0, Path::new("g.txt"), Path::new("out.mp4"));
+        let (plain, graph) = join_args(
+            Path::new("v.txt"),
+            &parts,
+            GAIN,
+            None,
+            None,
+            none,
+            600.0,
+            Path::new("g.txt"),
+            Path::new("out.mp4"),
+        );
         // Shaped, raised into the compressor, made up after it and limited.
         let voice = format!(
             "[s1][s2]concat=n=2:v=0:a=1,{VOICE_SHAPE},volume=7.50dB,{VOICE_COMPRESSOR},volume=0.80dB,{VOICE_LIMITER}[voice]"
@@ -922,6 +1032,7 @@ mod tests {
             Path::new("v.txt"),
             &parts,
             GAIN,
+            None,
             Some(Music { path: Path::new("m.wav"), db: -12.4 }),
             Effects { dir: Path::new("sfx"), list: &effects },
             600.0,
@@ -951,6 +1062,35 @@ mod tests {
         assert!(inputs.windows(2).any(|w| w[0] == "-i" && w[1] == "sfx/02_punch.wav"));
         assert!(music.windows(4).any(|w| w == ["-stream_loop", "-1", "-i", "m.wav"]));
         assert_eq!(music.last().map(String::as_str), Some("out.mp4"));
+    }
+
+    #[test]
+    fn the_signature_joins_the_narration_in_the_final_hold() {
+        let parts = [PathBuf::from("a.wav")];
+        let none = Effects { dir: Path::new("sfx"), list: &[] };
+        let sig = Signature { path: Path::new("signature.wav"), at: 595.5, db: -2.25 };
+        let (args, graph) = join_args(
+            Path::new("v.txt"),
+            &parts,
+            GAIN,
+            Some(sig),
+            Some(Music { path: Path::new("m.wav"), db: -12.0 }),
+            none,
+            600.0,
+            Path::new("g.txt"),
+            Path::new("out.mp4"),
+        );
+        assert!(args.windows(2).any(|w| w == ["-i", "signature.wav"]));
+        for part in [
+            &format!("{VOICE_LIMITER}[said];[2:a]"),
+            "volume=-2.25dB,adelay=delays=595500:all=1[sig]",
+            "[said][sig]amix=inputs=2:duration=first:normalize=0[voice]",
+            // The music comes after it and still dips under the voice, the signature included.
+            "[3:a]aresample",
+            "[voice]asplit=2[say][key]",
+        ] {
+            assert!(graph.contains(part), "{part} missing from {graph}");
+        }
     }
 
     #[test]

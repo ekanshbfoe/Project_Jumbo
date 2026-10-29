@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { planEpisode } from "@jumbo/schema";
+import { planEpisode, SIGNATURE } from "@jumbo/schema";
 import { useEffect, useMemo, useState } from "react";
 import { api, CHAPTER_STATES, errorText, type ChapterManifest, type EpisodeView, type PartState } from "../api";
 import { chapterTitle } from "../episode";
@@ -37,6 +37,12 @@ function BrandMusic() {
       if (typeof path === "string") await api.setBrandMusic(path);
     });
   const music = brand.data?.music;
+  const signature = brand.data?.signature;
+  const chooseSignature = () =>
+    act(async () => {
+      const path = await open({ title: "Choose the signature clip", filters: [{ name: "Audio", extensions: ["wav", "mp3", "flac", "m4a", "ogg", "opus"] }] });
+      if (typeof path === "string") await api.setBrandSignature(path);
+    });
   return (
     <div className="card stack">
       <strong>Brand music</strong>
@@ -63,6 +69,20 @@ function BrandMusic() {
             <button onClick={() => window.confirm("Remove the brand music from every project?") && act(api.clearBrandMusic)}>Remove</button>
           </>
         ) : null}
+      </div>
+      <div className="row" title="The same recording closes every episode of every channel, in the last panel's hold; setting or changing it renders each episode's last part again">
+        <span className="muted">Signature</span>
+        <span>
+          {signature ? (
+            <span className="mono">
+              {signature} ({brand.data!.signature_s.toFixed(1)} s)
+            </span>
+          ) : (
+            <span className="muted">No clip yet: “{SIGNATURE}” is not said.</span>
+          )}
+        </span>
+        <button onClick={chooseSignature}>{signature ? "Replace clip…" : "Choose clip…"}</button>
+        {signature ? <button onClick={() => window.confirm("Remove the signature clip from every episode?") && act(api.clearBrandSignature)}>Remove</button> : null}
       </div>
       <label className="row" title="The 15 brand sound effects play at their own tier (soft, medium, loud); this moves them all together">
         <span className="muted">Sound effects</span>
