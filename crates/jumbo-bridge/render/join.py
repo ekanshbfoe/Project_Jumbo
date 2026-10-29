@@ -1,8 +1,10 @@
 """Jumbo render, join: the __CHUNKS__ chunks rendered by the chunk machines (kernel sources), joined without re-encoding,
-with the episode's soundtrack laid under them. Output: /kaggle/working/__NAME__.mp4.
+with the episode's soundtrack laid under them. Output: /kaggle/working/__NAME__.mp4, and the soundtrack itself as
+__NAME__.wav (an episode's local assembly joins the parts' soundtracks, never their AAC tracks).
 
 The soundtrack puts each beat's clip at the beat's first frame, as the Episode composition plays it
-(packages/motion/src/timeline.ts: a transition overlaps the previous beat, so a beat starts that much earlier)."""
+(packages/motion/src/timeline.ts: the beats start after the opening card, and a transition overlaps the previous
+beat, so a beat starts that much earlier)."""
 import glob, json, os, shutil, subprocess, sys, tarfile, wave
 from pathlib import Path
 
@@ -59,7 +61,8 @@ def read_clip(path):
 
 def soundtrack(spec, public, out):
     fps = spec["video"]["fps"]
-    cursor, starts, prev = 0, [], None
+    opening = spec.get("opening")
+    cursor, starts, prev = (round(opening["seconds"] * fps) if opening else 0), [], None
     for i, b in enumerate(spec["beats"]):
         dur = max(1, round(b["duration"] * fps))
         want = 0 if i == 0 or b["transition_in"]["name"] == "cut" else round(b["transition_in"]["duration"] * fps)
@@ -113,9 +116,8 @@ for i in range(1, CHUNKS + 1):
     chunks.append(found[0])
 (W / "chunks.txt").write_text("".join(f"file '{c}'\n" for c in chunks))
 spec = json.loads((JOB / "episode.json").read_text())
-soundtrack(spec, JOB / "public", W / "soundtrack.wav")
-sh([ffmpeg, "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(W / "chunks.txt"), "-i", str(W / "soundtrack.wav"),
+soundtrack(spec, JOB / "public", W / f"{NAME}.wav")
+sh([ffmpeg, "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(W / "chunks.txt"), "-i", str(W / f"{NAME}.wav"),
     "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(W / f"{NAME}.mp4")])
-for f in ("chunks.txt", "soundtrack.wav"):
-    (W / f).unlink()
+(W / "chunks.txt").unlink()
 print(f"wrote {NAME}.mp4: {(W / f'{NAME}.mp4').stat().st_size / 1e6:.1f} MB", flush=True)
