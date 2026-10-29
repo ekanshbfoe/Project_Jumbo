@@ -1,8 +1,10 @@
 //! Rendering a voiced chapter on Kaggle CPU machines (ADR 0005): the app uploads the render job, runs the chunk
 //! machines in parallel, pushes again any machine that was handed the previous job, then runs the join machine
 //! and downloads `render/<chapter>.mp4`. The episode itself is built in the app (buildEpisodeSpec) and saved first.
+//! A chapter rendered as a part of an episode (ADR 0007) keeps its soundtrack too, for the episode's assembly.
 
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use jumbo_bridge::kaggle::{DatasetFile, KaggleClient, KernelPush};
@@ -14,6 +16,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::assembly;
 use crate::bridge::kaggle_client;
 use crate::commands::{AppState, CmdResult, Lane, begin_job, msg, with_project};
 
@@ -56,7 +59,7 @@ struct Progress<'a> {
 }
 
 /// Every project file the episode plays: each panel's image and backdrop, and each beat's narration.
-fn assets(spec: &Value) -> Vec<String> {
+pub(crate) fn assets(spec: &Value) -> Vec<String> {
     let mut out = BTreeSet::new();
     for panel in spec["panels"].as_array().into_iter().flatten() {
         let image = panel["clean"].as_str().or(panel["crop"].as_str()).or(panel["page"].as_str());
@@ -110,7 +113,9 @@ async fn run_machine(client: &KaggleClient, kernel: &KernelPush, mut on_status: 
                 tokio::time::sleep(Duration::from_secs(60)).await;
                 continue;
             }
-            Err(e) => return Err(format!("{} ended {} and its log could not be read: {e}", kernel.slug, status.status)),
+            Err(e) => {
+                return Err(format!("{} ended {} and its log could not be read: {e}", kernel.slug, status.status));
+            }
         };
         if !log.contains("stale render job") {
             let tail = jumbo_bridge::kaggle::log_tail(&log, 15);
@@ -127,33 +132,29 @@ async fn run_machine(client: &KaggleClient, kernel: &KernelPush, mut on_status: 
     Err(format!("{} kept getting the previous render job from Kaggle", kernel.slug))
 }
 
-/// Renders a voiced chapter's saved episode on Kaggle CPU machines. Progress arrives as `render://progress` events.
-#[tauri::command]
-pub async fn render_chapter(app: AppHandle, state: State<'_, AppState>, chapter: String) -> CmdResult<ChapterManifest> {
-    let id: ChapterId = chapter.parse().map_err(msg)?;
-    let _job = begin_job(&state, Lane::Render, format!("{chapter} render"))?;
-    let (root, dir, episode) = with_project(&state, |p| {
-        let manifest = chapter::load_chapter(p, id).map_err(msg)?;
-        if !matches!(manifest.state, ChapterState::Voiced | ChapterState::Rendered) {
-            return Err(format!("{chapter} is {}; voice it first", manifest.state.as_str()));
-        }
-        let dir = chapter::chapter_dir(p, id);
-        let episode =
-            std::fs::read(dir.join("render").join("episode.json")).map_err(|e| format!("render/episode.json: {e}"))?;
-        Ok((p.paths().root().to_path_buf(), dir, episode))
-    })?;
-    let spec: Value = serde_json::from_slice(&episode).map_err(|e| format!("render/episode.json: {e}"))?;
-    let (client, owner) = kaggle_client(&app)?;
+/// Renders `episode` (an EpisodeSpec's JSON) on Kaggle CPU machines and downloads `<name>.mp4` into `dest`, with
+/// `<name>.wav` (the soundtrack) when `soundtrack` is set. Progress arrives as `render://progress` events.
+async fn render_spec(
+    app: &AppHandle,
+    root: &Path,
+    chapter: &str,
+    episode: &[u8],
+    name: &str,
+    dest: &Path,
+    soundtrack: bool,
+) -> CmdResult<()> {
+    let spec: Value = serde_json::from_slice(episode).map_err(|e| format!("the episode is invalid: {e}"))?;
+    let (client, owner) = kaggle_client(app)?;
     let machines = std::sync::Mutex::new(vec!["WAITING".to_owned(); CHUNKS as usize + 1]);
     let report = |progress: f64, message: String| {
         let machines = machines.lock().map(|m| m.clone()).unwrap_or_default();
-        let _ = app.emit("render://progress", Progress { chapter: &chapter, progress, message, machines });
+        let _ = app.emit("render://progress", Progress { chapter, progress, message, machines });
     };
 
     let stamp = format!("{chapter}-{}", time::OffsetDateTime::now_utc().unix_timestamp());
     report(0.0, "packing the render job".into());
     let files = assets(&spec);
-    let archive = render::job_archive(&root, &episode, &files, &stamp).map_err(msg)?;
+    let archive = render::job_archive(root, episode, &files, &stamp).map_err(msg)?;
     report(0.02, format!("uploading the render job ({:.0} MB)", archive.len() as f64 / 1e6));
     let dataset = render::job_dataset(&owner);
     let job_files = [DatasetFile { name: render::JOB_FILE.into(), bytes: archive }];
@@ -193,7 +194,7 @@ pub async fn render_chapter(app: AppHandle, state: State<'_, AppState>, chapter:
     }
 
     report(0.82, "joining the chunks with the soundtrack".into());
-    let join = render::join_kernel(&owner, CHUNKS, &stamp, &chapter);
+    let join = render::join_kernel(&owner, CHUNKS, &stamp, name);
     run_machine(&client, &join, |s| {
         if let Ok(mut m) = machines.lock() {
             m[CHUNKS as usize] = s.to_owned();
@@ -203,22 +204,86 @@ pub async fn render_chapter(app: AppHandle, state: State<'_, AppState>, chapter:
     .await?;
 
     report(0.95, "downloading the video".into());
-    let name = format!("{chapter}.mp4");
-    let files = kaggle(|| client.output_files(&join.slug)).await?;
-    let video = files.iter().find(|f| f.file_name == name).ok_or_else(|| format!("{} wrote no {name}", join.slug))?;
-    let out = dir.join("render").join(&name);
-    std::fs::create_dir_all(out.parent().ok_or("bad path")?).map_err(msg)?;
-    kaggle(|| client.download_output(video, &out)).await?;
-    let manifest = with_project(&state, |p| {
+    let outputs = kaggle(|| client.output_files(&join.slug)).await?;
+    std::fs::create_dir_all(dest).map_err(msg)?;
+    let wanted: &[&str] = if soundtrack { &["mp4", "wav"] } else { &["mp4"] };
+    for ext in wanted {
+        let file_name = format!("{name}.{ext}");
+        let file = outputs
+            .iter()
+            .find(|f| f.file_name == file_name)
+            .ok_or_else(|| format!("{} wrote no {file_name}", join.slug))?;
+        let out = dest.join(&file_name);
+        kaggle(|| client.download_output(file, &out)).await?;
+    }
+    report(1.0, format!("render/{name}.mp4"));
+    Ok(())
+}
+
+/// Moves a voiced chapter on to Rendered once a video of it exists.
+fn mark_rendered(state: &State<'_, AppState>, id: ChapterId) -> CmdResult<ChapterManifest> {
+    with_project(state, |p| {
         let manifest = chapter::load_chapter(p, id).map_err(msg)?;
         if manifest.state == ChapterState::Voiced {
             chapter::advance(p, id, ChapterState::Rendered).map_err(msg)
         } else {
             Ok(manifest)
         }
-    })?;
-    report(1.0, format!("render/{name}"));
-    Ok(manifest)
+    })
+}
+
+/// The project root and chapter folder of a chapter that is voiced (or rendered already).
+fn voiced_chapter(state: &State<'_, AppState>, id: ChapterId) -> CmdResult<(PathBuf, PathBuf)> {
+    with_project(state, |p| {
+        let manifest = chapter::load_chapter(p, id).map_err(msg)?;
+        if !matches!(manifest.state, ChapterState::Voiced | ChapterState::Rendered) {
+            return Err(format!("{id} is {}; voice it first", manifest.state.as_str()));
+        }
+        Ok((p.paths().root().to_path_buf(), chapter::chapter_dir(p, id)))
+    })
+}
+
+/// Renders a voiced chapter's saved episode on Kaggle CPU machines. Progress arrives as `render://progress` events.
+#[tauri::command]
+pub async fn render_chapter(app: AppHandle, state: State<'_, AppState>, chapter: String) -> CmdResult<ChapterManifest> {
+    let id: ChapterId = chapter.parse().map_err(msg)?;
+    let _job = begin_job(&state, Lane::Render, format!("{chapter} render"))?;
+    let (root, dir) = voiced_chapter(&state, id)?;
+    let episode =
+        std::fs::read(dir.join("render").join("episode.json")).map_err(|e| format!("render/episode.json: {e}"))?;
+    render_spec(&app, &root, &chapter, &episode, &chapter, &dir.join("render"), false).await?;
+    mark_rendered(&state, id)
+}
+
+/// Renders a voiced chapter as its part of episode `episode` (ADR 0007): `spec` is the part's EpisodeSpec, built by
+/// the app with the chapter's opening card and the part's follow-card settings. The part's video and soundtrack are
+/// kept as `render/part.mp4` and `render/part.wav`, with the fingerprint that tells later whether they are current.
+#[tauri::command]
+pub async fn render_part(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    episode: String,
+    chapter: String,
+    spec: Value,
+) -> CmdResult<ChapterManifest> {
+    let id: ChapterId = chapter.parse().map_err(msg)?;
+    let _job = begin_job(&state, Lane::Render, format!("{chapter} render (part of {episode})"))?;
+    let (root, dir) = voiced_chapter(&state, id)?;
+    with_project(&state, |p| assembly::check_member(p, &episode, id))?;
+    let _: EpisodeSpec = serde_json::from_value(spec.clone()).map_err(|e| format!("the part is invalid: {e}"))?;
+    let bytes = serde_json::to_vec(&spec).map_err(msg)?;
+    let fingerprint = assembly::fingerprint(&root, &spec)?;
+    let render = dir.join("render");
+    let name = format!("{chapter}-part");
+    let staging = render.join(".part");
+    render_spec(&app, &root, &chapter, &bytes, &name, &staging, true).await?;
+    for ext in ["mp4", "wav"] {
+        std::fs::rename(staging.join(format!("{name}.{ext}")), render.join(format!("{}.{ext}", assembly::PART)))
+            .map_err(msg)?;
+    }
+    let _ = std::fs::remove_dir_all(&staging);
+    assembly::write_part(&render, &episode, &fingerprint, &spec)?;
+    mark_rendered(&state, id)
 }
 
 /// The rendered video's path (project-relative) and the saved episode, for the Render screen.

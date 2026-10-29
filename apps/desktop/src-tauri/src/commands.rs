@@ -21,11 +21,13 @@ pub struct AppState {
 }
 
 /// What a long job occupies. One job at a time per lane: the T4 session runs one stage at a time (and Make
-/// video stops the session when its stage ends), and every render shares the same Kaggle job dataset and kernels.
+/// video stops the session when its stage ends), every render shares the same Kaggle job dataset and kernels, and
+/// an episode's assembly runs ffmpeg on this PC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Lane {
     Worker,
     Render,
+    Assembly,
 }
 
 /// A running job; dropping it (the job finished, failed or was abandoned) frees its lane.

@@ -47,6 +47,11 @@ fn title(slug: &str) -> String {
     slug.split_once('/').map_or(slug, |(_, s)| s).to_owned()
 }
 
+/// The chunk and join scripts as embedded, so a change to either one shows in an episode part's fingerprint.
+pub fn render_scripts() -> String {
+    format!("{CHUNK}\0{JOIN}")
+}
+
 /// The kernel that renders chunk `i` of `n` of the job stamped `stamp`.
 pub fn chunk_kernel(owner: &str, i: u32, n: u32, stamp: &str) -> KernelPush {
     let source = CHUNK

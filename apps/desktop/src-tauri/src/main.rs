@@ -1,6 +1,7 @@
 // Release builds run without a console window on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod assembly;
 mod bridge;
 mod commands;
 mod credentials;
@@ -68,6 +69,16 @@ fn main() {
             render::save_episode,
             render::render_chapter,
             render::chapter_render,
+            render::render_part,
+            assembly::list_episodes,
+            assembly::create_episode,
+            assembly::delete_episode,
+            assembly::episode_parts,
+            assembly::assemble_episode,
+            assembly::brand_settings,
+            assembly::set_brand_music,
+            assembly::set_brand_volume,
+            assembly::clear_brand_music,
             bridge::stop_session,
             bridge::resume_session,
         ])
