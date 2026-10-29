@@ -51,10 +51,10 @@ function BrandMusic() {
           <>
             <label className="row">
               <span className="muted">Level under the voice</span>
-              <select value={brand.data?.music_db ?? -12} onChange={(e) => act(() => api.setBrandVolume(Number(e.target.value)))}>
-                {[-20, -17, -15, -12, -10, -8].map((db) => (
+              <select value={brand.data?.music_db ?? -17} onChange={(e) => act(() => api.setBrandVolume(Number(e.target.value)))}>
+                {[-23, -20, -17, -15, -12].map((db) => (
                   <option key={db} value={db}>
-                    {db} dB{db === -12 ? " (default)" : ""}
+                    {db} dB{db === -17 ? " (default)" : ""}
                   </option>
                 ))}
               </select>

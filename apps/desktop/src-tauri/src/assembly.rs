@@ -40,15 +40,29 @@ const FFMPEG_BUILDS: &[(&str, &str, &str)] = &[
 /// Seconds the brand music fades in at the start and out at the end of an episode.
 const MUSIC_FADE_IN: f64 = 2.0;
 const MUSIC_FADE_OUT: f64 = 3.0;
-/// The brand music under the voice: the sub-bass trimmed and a dip where the voice is clearest.
-const MUSIC_EQ: &str = "highpass=f=35,lowshelf=f=60:g=-3,equalizer=f=3000:t=o:w=1:g=-2.5";
+/// The brand music under the voice: the 808 sub held down, dips where the voice lives (body and clarity), and the
+/// sides narrowed a little so phones playing in mono keep its middle.
+const MUSIC_SHAPE: &str = "highpass=f=40,lowshelf=f=90:g=-6,equalizer=f=1200:t=o:w=2:g=-4,\
+                           equalizer=f=3000:t=o:w=1:g=-2.5,stereotools=slev=0.7";
+/// The music dips gently and steadily under the voice instead of slamming down on every word and surging in every
+/// pause: a threshold at the voice's own level, 2:1, and a slow release that rides through short gaps.
+const DUCK: &str = "sidechaincompress=threshold=0.1:ratio=2:attack=80:release=1500:knee=6";
 /// The sound effects and their library, inside the brand folder.
 const SFX_DIR: &str = "sfx";
-/// The last stage of every episode: peaks held under -1.4 dBFS, so the AAC encode never clips.
-const LIMITER: &str = "alimiter=limit=0.85:attack=5:release=50:level=0";
-/// The narration, once raised to the episode's loudness: its sharpest peaks evened out 3:1, so the limiter only
-/// catches what is left instead of flattening every hard consonant.
+/// The last stage of every episode: peaks held about 2 dB under full scale, so neither the AAC encode nor
+/// YouTube's own re-encode overshoots -1 dBTP. `latency` keeps the sound in sync with the picture.
+const LIMITER: &str = "alimiter=limit=0.79:attack=5:release=80:level=0:latency=1";
+/// The narration before it is measured: rumble and DC removed, a lift where speech is clearest, and a slow
+/// leveller (about 20 s) so one quiet stretch of lines does not sit a few dB under the rest of the hour.
+const VOICE_SHAPE: &str = "highpass=f=70,equalizer=f=3500:t=q:w=1.2:g=2.5,\
+                           dynaudnorm=f=1000:g=21:p=0.95:m=6:r=0.08:t=0.002";
+/// The narration, once raised to the episode's loudness: its sharpest peaks evened out 3:1, so the limiters only
+/// catch what is left instead of flattening every hard consonant.
 const VOICE_COMPRESSOR: &str = "acompressor=threshold=0.25:ratio=3:attack=5:release=120:knee=4";
+/// The narration's own peak limiter, so its peaks never reach the episode's limiter.
+const VOICE_LIMITER: &str = "alimiter=limit=0.89:attack=1.5:release=40:level=0:latency=1";
+/// The sound effects reach the music's ducking 6 dB down: a big hit dips the music, without a hole after it.
+const FX_KEY_DB: f64 = -6.0;
 /// Headroom kept free beyond the parts' own size while the episode is written.
 const SPACE_MARGIN: u64 = 200 * 1024 * 1024;
 
@@ -96,9 +110,6 @@ pub struct BrandSettings {
     pub music: Option<String>,
     /// Level of the music under the narration, in dB below the voice (it dips further while the narrator speaks).
     pub music_db: f64,
-    /// Loudness of the prepared music loop (LUFS), measured when it was set.
-    #[serde(default)]
-    pub music_lufs: Option<f64>,
     /// Level of the sound effects in dB, beyond each one's tier.
     #[serde(default)]
     pub sfx_db: f64,
@@ -106,7 +117,7 @@ pub struct BrandSettings {
 
 impl Default for BrandSettings {
     fn default() -> Self {
-        Self { music: None, music_db: -12.0, music_lufs: None, sfx_db: 0.0 }
+        Self { music: None, music_db: -17.0, sfx_db: 0.0 }
     }
 }
 
@@ -300,9 +311,19 @@ struct VoiceGain {
     after: f64,
 }
 
-/// The parts' soundtracks levelled: raised, compressed and made up to the episode's loudness.
+/// The parts' soundtracks shaped (`VOICE_SHAPE`): what the first loudness measurement reads.
+fn voice_shaped(first: usize, n: usize) -> String {
+    voice_chain(first, n) + "," + VOICE_SHAPE
+}
+
+/// The shaped narration raised by `before` and compressed: what the second loudness measurement reads.
+fn voice_compressed(first: usize, n: usize, before: f64) -> String {
+    voice_shaped(first, n) + &format!(",volume={before:.2}dB,{VOICE_COMPRESSOR}")
+}
+
+/// The parts' soundtracks levelled: shaped, raised, compressed, made up to the episode's loudness and limited.
 fn voice_levelled(first: usize, n: usize, gain: VoiceGain) -> String {
-    voice_chain(first, n) + &format!(",volume={:.2}dB,{VOICE_COMPRESSOR},volume={:.2}dB", gain.before, gain.after)
+    voice_compressed(first, n, gain.before) + &format!(",volume={:.2}dB,{VOICE_LIMITER}", gain.after)
 }
 
 /// The parts' `n` soundtracks (inputs `first` onwards) resampled and joined, before any gain.
@@ -354,8 +375,9 @@ fn join_args(
         let labels: String = (0..uses.len()).map(|k| format!("[x{next}_{k}]")).collect();
         graph += &format!("[{next}:a]{format},asplit={}{labels};", uses.len());
         for (k, e) in uses.iter().enumerate() {
+            let filters: String = e.filters.iter().map(|f| format!("{f},")).collect();
             graph += &format!(
-                "[x{next}_{k}]volume={:.1}dB,adelay=delays={}:all=1[d{next}_{k}];",
+                "[x{next}_{k}]{filters}volume={:.1}dB,adelay=delays={}:all=1[d{next}_{k}];",
                 e.db,
                 (e.at * 1000.0).round() as u64
             );
@@ -374,17 +396,19 @@ fn join_args(
             args.push(m.path.display().to_string());
             let fade_out = (seconds - MUSIC_FADE_OUT).max(0.0);
             graph += &format!(
-                "[{next}:a]{format},{MUSIC_EQ},volume={:.2}dB,afade=t=in:d={MUSIC_FADE_IN},afade=t=out:st={fade_out:.3}:d={MUSIC_FADE_OUT}[bed];",
+                "[{next}:a]{format},{MUSIC_SHAPE},volume={:.2}dB,afade=t=in:d={MUSIC_FADE_IN},afade=t=out:st={fade_out:.3}:d={MUSIC_FADE_OUT}[bed];",
                 m.db
             );
             // The music dips under the voice and under the sound effects alike.
             if fx {
-                graph += "[voice]asplit=2[say][vkey];[fx]asplit=2[fxmix][fxkey];\
-                          [vkey][fxkey]amix=inputs=2:duration=first:normalize=0[key];";
+                graph += &format!(
+                    "[voice]asplit=2[say][vkey];[fx]asplit=2[fxmix][fxk];[fxk]volume={FX_KEY_DB}dB[fxkey];\
+                     [vkey][fxkey]amix=inputs=2:duration=first:normalize=0[key];"
+                );
             } else {
                 graph += "[voice]asplit=2[say][key];";
             }
-            graph += "[bed][key]sidechaincompress=threshold=0.02:ratio=6:attack=20:release=600[duck];";
+            graph += &format!("[bed][key]{DUCK}[duck];");
             if fx { "[say][duck][fxmix]amix=inputs=3" } else { "[say][duck]amix=inputs=2" }
         }
         None if fx => "[voice][fx]amix=inputs=2",
@@ -550,21 +574,17 @@ pub async fn set_brand_music(app: AppHandle, path: String) -> CmdResult<BrandSet
     let name = "music.wav".to_owned();
     let partial = dir.join("music.partial.wav");
     let made = partial.clone();
-    let lufs = tokio::task::spawn_blocking(move || mix::prepare_music(&ffmpeg, &source, &made)).await.map_err(msg)?;
-    let lufs = match lufs {
-        Ok(lufs) => lufs,
-        Err(e) => {
-            let _ = std::fs::remove_file(&partial);
-            return Err(format!("{path}: {e}"));
-        }
-    };
+    let made = tokio::task::spawn_blocking(move || mix::prepare_music(&ffmpeg, &source, &made)).await.map_err(msg)?;
+    if let Err(e) = made {
+        let _ = std::fs::remove_file(&partial);
+        return Err(format!("{path}: {e}"));
+    }
     let mut settings = load_brand(&app)?;
     if let Some(old) = settings.music.take().filter(|old| *old != name) {
         let _ = std::fs::remove_file(dir.join(old));
     }
     std::fs::rename(&partial, dir.join(&name)).map_err(msg)?;
     settings.music = Some(name);
-    settings.music_lufs = Some(lufs);
     save_brand(&app, &settings)?;
     Ok(settings)
 }
@@ -691,12 +711,20 @@ pub async fn assemble_episode(
     report(0.1, "measuring the narration's loudness".into());
     let n = soundtracks.len();
     let mut voice = VoiceGain { before: 0.0, after: 0.0 };
-    if let Some(lufs) = measure(&ffmpeg, &soundtracks, voice_chain(0, n)).await? {
+    if let Some(lufs) = measure(&ffmpeg, &soundtracks, voice_shaped(0, n)).await? {
         voice.before = TARGET_LUFS - lufs;
-        voice.after =
-            measure(&ffmpeg, &soundtracks, voice_levelled(0, n, voice)).await?.map_or(0.0, |l| TARGET_LUFS - l);
+        let compressed = voice_compressed(0, n, voice.before);
+        voice.after = measure(&ffmpeg, &soundtracks, compressed).await?.map_or(0.0, |l| TARGET_LUFS - l);
     }
-    let music_db = TARGET_LUFS + brand.music_db - brand.music_lufs.unwrap_or(TARGET_LUFS);
+    // The music is measured as it plays, after its EQ, so `music_db` is what the viewer hears under the voice.
+    let music_db = match &music_path {
+        Some(path) => {
+            let shaped = format!("[0:a]{MUSIC_SHAPE}");
+            let lufs = measure(&ffmpeg, std::slice::from_ref(path), shaped).await?.unwrap_or(TARGET_LUFS);
+            TARGET_LUFS + brand.music_db - lufs
+        }
+        None => 0.0,
+    };
     let scratch = Scratch(dir.join(".assembling"));
     let _ = std::fs::remove_dir_all(&scratch.0);
     std::fs::create_dir_all(&scratch.0).map_err(msg)?;
@@ -869,11 +897,11 @@ mod tests {
         let none = Effects { dir: Path::new("sfx"), list: &[] };
         let (plain, graph) =
             join_args(Path::new("v.txt"), &parts, GAIN, None, none, 600.0, Path::new("g.txt"), Path::new("out.mp4"));
-        assert!(
-            graph
-                .contains(&format!("[s1][s2]concat=n=2:v=0:a=1,volume=7.50dB,{VOICE_COMPRESSOR},volume=0.80dB[voice]")),
-            "{graph}"
+        // Shaped, raised into the compressor, made up after it and limited.
+        let voice = format!(
+            "[s1][s2]concat=n=2:v=0:a=1,{VOICE_SHAPE},volume=7.50dB,{VOICE_COMPRESSOR},volume=0.80dB,{VOICE_LIMITER}[voice]"
         );
+        assert!(graph.contains(&voice), "{graph}");
         assert!(graph.ends_with(&format!("[voice]anull,{LIMITER}[a]")), "{graph}");
         assert!(plain.windows(2).any(|w| w == ["-c:v", "copy"]));
         assert!(plain.windows(2).any(|w| w == ["-t", "600.000"]));
@@ -881,9 +909,14 @@ mod tests {
         assert!(!plain.contains(&"-stream_loop".to_string()));
 
         let effects = [
-            Effect { file: "02_punch.wav".into(), at: 12.5, db: -3.0 },
-            Effect { file: "01_whoosh.wav".into(), at: 30.0, db: -6.0 },
-            Effect { file: "02_punch.wav".into(), at: 61.25, db: -3.0 },
+            Effect { file: "02_punch.wav".into(), at: 12.5, db: -3.0, filters: vec![] },
+            Effect {
+                file: "01_whoosh.wav".into(),
+                at: 30.0,
+                db: -6.0,
+                filters: vec!["apad=pad_dur=0.3", "aecho=1:1:40:0.3"],
+            },
+            Effect { file: "02_punch.wav".into(), at: 61.25, db: -3.0, filters: vec![] },
         ];
         let (music, graph) = join_args(
             Path::new("v.txt"),
@@ -899,15 +932,17 @@ mod tests {
             // Each sound file is read once and placed on every line it plays on.
             "[3:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[x3_0][x3_1]",
             "[x3_1]volume=-3.0dB,adelay=delays=61250:all=1[d3_1]",
-            "[x4_0]volume=-6.0dB,adelay=delays=30000:all=1[d4_0]",
+            "[x4_0]apad=pad_dur=0.3,aecho=1:1:40:0.3,volume=-6.0dB,adelay=delays=30000:all=1[d4_0]",
             "amix=inputs=3:duration=longest:normalize=0[fx]",
             // The music is the next input, EQ'd, levelled and ducked by the voice and the effects.
             "[5:a]aresample",
-            MUSIC_EQ,
+            MUSIC_SHAPE,
             "volume=-12.40dB",
             "afade=t=out:st=597.000:d=3",
+            // The effects key the ducking 6 dB down.
+            "[fxk]volume=-6dB[fxkey]",
             "[vkey][fxkey]amix=inputs=2:duration=first:normalize=0[key]",
-            "[bed][key]sidechaincompress",
+            &format!("[bed][key]{DUCK}[duck]"),
             &format!("[say][duck][fxmix]amix=inputs=3:duration=first:normalize=0,{LIMITER}[a]"),
         ] {
             assert!(graph.contains(part), "{part} missing from {graph}");

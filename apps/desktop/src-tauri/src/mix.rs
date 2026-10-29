@@ -93,8 +93,8 @@ pub(crate) fn loop_graph(p: LoopPoints) -> String {
     )
 }
 
-/// Makes `source` into the loop the episodes play (`out`, a 48 kHz float WAV) and returns its loudness in LUFS.
-pub(crate) fn prepare_music(ffmpeg: &Path, source: &Path, out: &Path) -> CmdResult<f64> {
+/// Makes `source` into the loop the episodes play (`out`, a 48 kHz float WAV).
+pub(crate) fn prepare_music(ffmpeg: &Path, source: &Path, out: &Path) -> CmdResult<()> {
     let scan = Command::new(ffmpeg)
         .args(["-v", "error", "-i"])
         .arg(source)
@@ -116,7 +116,7 @@ pub(crate) fn prepare_music(ffmpeg: &Path, source: &Path, out: &Path) -> CmdResu
     if !made.status.success() {
         return Err(format!("the loop could not be made: {}", String::from_utf8_lossy(&made.stderr).trim()));
     }
-    loudness(ffmpeg, &[out.to_path_buf()], "[0:a]anull")?.ok_or_else(|| "the brand music is silent".into())
+    Ok(())
 }
 
 /// Integrated loudness (LUFS) of `graph` (a filter chain over `inputs`, without its output label), or None if
@@ -157,14 +157,31 @@ pub(crate) struct Sound {
     /// Seconds the sound starts before its panel appears, so a swell peaks on the cut.
     #[serde(default)]
     pub lead_s: f64,
+    /// Adds a copy of a very deep sound (heartbeat) moved up to the 200 Hz-2 kHz band, so phone speakers that cannot
+    /// play its low end still play its rhythm.
+    #[serde(default)]
+    pub phone_layer: bool,
+    /// Adds a short echo tail to a sound that stops at its loudest (whoosh, riser).
+    #[serde(default)]
+    pub tail: bool,
 }
 
-/// A sound effect in the episode: `file` (inside the library) played from `at` seconds at `db`.
+/// A deep sound plus itself ring-modulated at 220 Hz: the same thump, also heard around 200-300 Hz (+10 dB there for
+/// the heartbeat), at about the same overall level. (ffmpeg's aexciter only works above 2 kHz.)
+const PHONE_LAYER: &str =
+    "aeval=val(0)+0.8*val(0)*sin(2*PI*220*t)|val(1)+0.8*val(1)*sin(2*PI*220*t):c=same";
+/// A short echo after a sound that ends at its peak (padded first, so the echo has room to ring out).
+const TAIL: &str = "apad=pad_dur=0.3,aecho=1:1:40|90:0.3|0.2";
+/// A sound over the narration steps back where the voice is clearest.
+const UNDER_VOICE: &str = "equalizer=f=2500:t=o:w=1.5:g=-4";
+
+/// A sound effect in the episode: `file` (inside the library) played from `at` seconds at `db`, through `filters`.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Effect {
     pub file: String,
     pub at: f64,
     pub db: f64,
+    pub filters: Vec<&'static str>,
 }
 
 /// When each beat of a part starts, in seconds, as the Episode composition plays it: a transition overlaps the
@@ -199,10 +216,17 @@ pub(crate) fn part_effects(spec: &Value, offset: f64, library: &SfxLibrary, extr
             .ok_or_else(|| format!("the sound effect library has no {tag}"))?;
         let tier =
             library.tiers_db.get(&sound.tier).ok_or_else(|| format!("{tag}'s tier {} is unknown", sound.tier))?;
+        // A beat with narration means the sound lands on the narrator's voice.
+        let over_voice = !beat["audio"].is_null();
+        let filters = [(sound.phone_layer, PHONE_LAYER), (sound.tail, TAIL), (over_voice, UNDER_VOICE)]
+            .into_iter()
+            .filter_map(|(on, f)| on.then_some(f))
+            .collect();
         effects.push(Effect {
             file: sound.file.clone(),
             at: (offset + start - sound.lead_s).max(0.0),
             db: tier + extra_db,
+            filters,
         });
     }
     Ok(effects)
@@ -279,8 +303,8 @@ mod tests {
         serde_json::from_value(json!({
             "tiers_db": {"soft": -6, "medium": -3, "loud": 0},
             "sounds": [
-                {"tag": "punch", "file": "02_punch.wav", "tier": "medium"},
-                {"tag": "whoosh", "file": "01_whoosh.wav", "tier": "soft", "lead_s": 0.72}
+                {"tag": "punch", "file": "02_punch.wav", "tier": "medium", "phone_layer": true},
+                {"tag": "whoosh", "file": "01_whoosh.wav", "tier": "soft", "lead_s": 0.72, "tail": true}
             ]
         }))
         .expect("library")
@@ -289,8 +313,8 @@ mod tests {
     #[test]
     fn a_sound_effect_plays_as_its_beat_starts() {
         let spec = json!({"video": {"fps": 30}, "beats": [
-            {"duration": 2.0, "transition_in": {"name": "cut", "duration": 0.3}, "sfx": "whoosh"},
-            {"duration": 3.0, "transition_in": {"name": "fade", "duration": 0.3}, "sfx": "punch"},
+            {"duration": 2.0, "transition_in": {"name": "cut", "duration": 0.3}, "sfx": "whoosh", "audio": null},
+            {"duration": 3.0, "transition_in": {"name": "fade", "duration": 0.3}, "sfx": "punch", "audio": {"src": "a.wav"}},
             {"duration": 1.0, "transition_in": {"name": "cut", "duration": 0.3}, "sfx": null},
         ]});
         // The fade starts the second beat 9 frames early; the third follows on a cut.
@@ -299,8 +323,9 @@ mod tests {
         assert_eq!(
             effects,
             vec![
-                Effect { file: "01_whoosh.wav".into(), at: 100.0 - 0.72, db: -4.0 },
-                Effect { file: "02_punch.wav".into(), at: 101.7, db: -1.0 },
+                Effect { file: "01_whoosh.wav".into(), at: 100.0 - 0.72, db: -4.0, filters: vec![TAIL] },
+                // On the narration: it steps back where the voice is clearest.
+                Effect { file: "02_punch.wav".into(), at: 101.7, db: -1.0, filters: vec![PHONE_LAYER, UNDER_VOICE] },
             ]
         );
         assert!(part_effects(&json!({"beats": [{"duration": 1, "sfx": "laser"}]}), 0.0, &library(), 0.0).is_err());
