@@ -46,6 +46,9 @@ const MUSIC_EQ: &str = "highpass=f=35,lowshelf=f=60:g=-3,equalizer=f=3000:t=o:w=
 const SFX_DIR: &str = "sfx";
 /// The last stage of every episode: peaks held under -1.4 dBFS, so the AAC encode never clips.
 const LIMITER: &str = "alimiter=limit=0.85:attack=5:release=50:level=0";
+/// The narration, once raised to the episode's loudness: its sharpest peaks evened out 3:1, so the limiter only
+/// catches what is left instead of flattening every hard consonant.
+const VOICE_COMPRESSOR: &str = "acompressor=threshold=0.25:ratio=3:attack=5:release=120:knee=4";
 /// Headroom kept free beyond the parts' own size while the episode is written.
 const SPACE_MARGIN: u64 = 200 * 1024 * 1024;
 
@@ -289,6 +292,19 @@ struct Effects<'a> {
     list: &'a [Effect],
 }
 
+/// The narration's gain in dB before its compressor (to the episode's loudness) and after it (making up what the
+/// compressor took), both measured from the soundtracks.
+#[derive(Debug, Clone, Copy)]
+struct VoiceGain {
+    before: f64,
+    after: f64,
+}
+
+/// The parts' soundtracks levelled: raised, compressed and made up to the episode's loudness.
+fn voice_levelled(first: usize, n: usize, gain: VoiceGain) -> String {
+    voice_chain(first, n) + &format!(",volume={:.2}dB,{VOICE_COMPRESSOR},volume={:.2}dB", gain.before, gain.after)
+}
+
 /// The parts' `n` soundtracks (inputs `first` onwards) resampled and joined, before any gain.
 fn voice_chain(first: usize, n: usize) -> String {
     let format = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
@@ -298,14 +314,14 @@ fn voice_chain(first: usize, n: usize) -> String {
 }
 
 /// ffmpeg's arguments and filter graph for an episode: the parts' video copied as it is from the concat list
-/// `video_list`, their soundtracks joined and raised by `voice_db` (to the episode's loudness), the brand music
+/// `video_list`, their soundtracks joined and levelled by `voice` (to the episode's loudness), the brand music
 /// (looped, faded in and out) dipping under the narration and the big hits, the sound effects on their lines, a
 /// limiter, and the result cut to `seconds` and written to `out`. The graph is read from `graph_file`.
 #[allow(clippy::too_many_arguments)]
 fn join_args(
     video_list: &Path,
     soundtracks: &[PathBuf],
-    voice_db: f64,
+    voice: VoiceGain,
     music: Option<Music>,
     effects: Effects,
     seconds: f64,
@@ -322,7 +338,7 @@ fn join_args(
     }
     let format = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
     let mut next = soundtracks.len() + 1;
-    let mut graph = voice_chain(1, soundtracks.len()) + &format!(",volume={voice_db:.2}dB[voice];");
+    let mut graph = voice_levelled(1, soundtracks.len(), voice) + "[voice];";
 
     // Each sound file is read once and split for every line it plays on.
     let mut files: Vec<(&str, Vec<&Effect>)> = Vec::new();
@@ -447,6 +463,12 @@ async fn ffmpeg(app: &AppHandle, report: impl Fn(f64, String)) -> CmdResult<Path
 
 fn hex_string(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `mix::loudness` off the async runtime.
+async fn measure(ffmpeg: &Path, inputs: &[PathBuf], graph: String) -> CmdResult<Option<f64>> {
+    let (ffmpeg, inputs) = (ffmpeg.to_path_buf(), inputs.to_vec());
+    tokio::task::spawn_blocking(move || mix::loudness(&ffmpeg, &inputs, &graph)).await.map_err(msg)?
 }
 
 /// Removes the assembly's scratch folder however the join ends.
@@ -665,13 +687,15 @@ pub async fn assemble_episode(
     let ffmpeg = ffmpeg(&app, &report).await?;
     let music_path =
         brand.music.as_ref().map(|m| brand_dir(&app).map(|d| d.join(m))).transpose()?.filter(|p| p.is_file());
+    // Twice: the raw narration sets the gain into the compressor, the compressed one the make-up after it.
     report(0.1, "measuring the narration's loudness".into());
-    let voice_db = {
-        let (ffmpeg, inputs, graph) = (ffmpeg.clone(), soundtracks.clone(), voice_chain(0, soundtracks.len()));
-        let measured =
-            tokio::task::spawn_blocking(move || mix::loudness(&ffmpeg, &inputs, &graph)).await.map_err(msg)??;
-        measured.map_or(0.0, |lufs| TARGET_LUFS - lufs)
-    };
+    let n = soundtracks.len();
+    let mut voice = VoiceGain { before: 0.0, after: 0.0 };
+    if let Some(lufs) = measure(&ffmpeg, &soundtracks, voice_chain(0, n)).await? {
+        voice.before = TARGET_LUFS - lufs;
+        voice.after =
+            measure(&ffmpeg, &soundtracks, voice_levelled(0, n, voice)).await?.map_or(0.0, |l| TARGET_LUFS - l);
+    }
     let music_db = TARGET_LUFS + brand.music_db - brand.music_lufs.unwrap_or(TARGET_LUFS);
     let scratch = Scratch(dir.join(".assembling"));
     let _ = std::fs::remove_dir_all(&scratch.0);
@@ -683,7 +707,7 @@ pub async fn assemble_episode(
     let (args, graph) = join_args(
         &list,
         &soundtracks,
-        voice_db,
+        voice,
         music_path.as_deref().map(|path| Music { path, db: music_db }),
         Effects { dir: &sfx_dir, list: &effects },
         seconds,
@@ -837,13 +861,19 @@ mod tests {
         assert_eq!(concat_line(Path::new(r"C:\Videos\Kim's\part.mp4")), "file 'C:/Videos/Kim'\\''s/part.mp4'\n");
     }
 
+    const GAIN: VoiceGain = VoiceGain { before: 7.5, after: 0.8 };
+
     #[test]
     fn the_join_copies_video_and_ducks_the_music_under_the_narration() {
         let parts = [PathBuf::from("a.wav"), PathBuf::from("b.wav")];
         let none = Effects { dir: Path::new("sfx"), list: &[] };
         let (plain, graph) =
-            join_args(Path::new("v.txt"), &parts, 7.5, None, none, 600.0, Path::new("g.txt"), Path::new("out.mp4"));
-        assert!(graph.contains("[s1][s2]concat=n=2:v=0:a=1,volume=7.50dB[voice]"), "{graph}");
+            join_args(Path::new("v.txt"), &parts, GAIN, None, none, 600.0, Path::new("g.txt"), Path::new("out.mp4"));
+        assert!(
+            graph
+                .contains(&format!("[s1][s2]concat=n=2:v=0:a=1,volume=7.50dB,{VOICE_COMPRESSOR},volume=0.80dB[voice]")),
+            "{graph}"
+        );
         assert!(graph.ends_with(&format!("[voice]anull,{LIMITER}[a]")), "{graph}");
         assert!(plain.windows(2).any(|w| w == ["-c:v", "copy"]));
         assert!(plain.windows(2).any(|w| w == ["-t", "600.000"]));
@@ -858,7 +888,7 @@ mod tests {
         let (music, graph) = join_args(
             Path::new("v.txt"),
             &parts,
-            7.5,
+            GAIN,
             Some(Music { path: Path::new("m.wav"), db: -12.4 }),
             Effects { dir: Path::new("sfx"), list: &effects },
             600.0,
