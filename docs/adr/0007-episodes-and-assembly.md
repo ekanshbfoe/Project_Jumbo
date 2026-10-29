@@ -28,6 +28,10 @@ planned together with the narrator's personality. Episode parts join straight, c
      one ("Jin" and "Kang Jin") and new characters without a card. The Script screen edits, removes or adds cards.
    - Approving refuses a card for a character an earlier chapter knows, a second card for one character and an
      unnamed card, and adds every carded character missing from the chapter's memory to it.
+   - Style (option C, chosen 2026-10-29 from three mockups and a study of broadcast lower thirds): a soft dark
+     gradient instead of a plate, a 4 px gold bar (#E8B04B), the name in Barlow Semi Condensed 600 at 76 px over
+     the role in Inter 500 uppercase at 28 px, bottom-left at the 5% safe margin. The bar grows, the name wipes in,
+     the role rises; all of it slides out after 3 s. Top-left when the follow card is set to the bottom-left.
 
 ## Why
 - **Not one render of the whole hour.** A chunk machine stops itself after 80 minutes, one failure would lose
