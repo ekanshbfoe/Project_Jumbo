@@ -7,6 +7,7 @@ mod commands;
 mod credentials;
 mod gemini;
 mod memory;
+mod mix;
 mod recent;
 mod render;
 mod script;
@@ -78,6 +79,7 @@ fn main() {
             assembly::brand_settings,
             assembly::set_brand_music,
             assembly::set_brand_volume,
+            assembly::set_sfx_volume,
             assembly::clear_brand_music,
             bridge::stop_session,
             bridge::resume_session,

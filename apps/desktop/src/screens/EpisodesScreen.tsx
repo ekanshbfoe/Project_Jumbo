@@ -40,7 +40,8 @@ function BrandMusic() {
     <div className="card stack">
       <strong>Brand music</strong>
       <span className="muted">
-        One track for every project and channel. It plays under the whole episode, fades in and out, and dips while the narrator speaks.
+        One track for every project and channel. It loops seamlessly under the whole episode, fades in and out, and dips while the narrator speaks and under
+        the big sound effects. Every episode comes out at YouTube's loudness (-14 LUFS).
       </span>
       {error || brand.error ? <p className="error">{error ?? brand.error}</p> : null}
       <div className="row">
@@ -50,10 +51,10 @@ function BrandMusic() {
           <>
             <label className="row">
               <span className="muted">Level under the voice</span>
-              <select value={brand.data?.music_db ?? -18} onChange={(e) => act(() => api.setBrandVolume(Number(e.target.value)))}>
-                {[-30, -26, -22, -18, -14, -10].map((db) => (
+              <select value={brand.data?.music_db ?? -12} onChange={(e) => act(() => api.setBrandVolume(Number(e.target.value)))}>
+                {[-20, -17, -15, -12, -10, -8].map((db) => (
                   <option key={db} value={db}>
-                    {db} dB{db === -18 ? " (default)" : ""}
+                    {db} dB{db === -12 ? " (default)" : ""}
                   </option>
                 ))}
               </select>
@@ -62,6 +63,16 @@ function BrandMusic() {
           </>
         ) : null}
       </div>
+      <label className="row" title="The 15 brand sound effects play at their own tier (soft, medium, loud); this moves them all together">
+        <span className="muted">Sound effects</span>
+        <select value={brand.data?.sfx_db ?? 0} onChange={(e) => act(() => api.setSfxVolume(Number(e.target.value)))}>
+          {[-9, -6, -3, 0, 3, 6].map((db) => (
+            <option key={db} value={db}>
+              {db > 0 ? `+${db}` : db} dB{db === 0 ? " (default)" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 }

@@ -196,7 +196,11 @@ export type PartState = "missing" | "outdated" | "ready";
 /** The app-wide brand music under every episode. */
 export interface BrandSettings {
   music: string | null;
+  /** dB below the narration. */
   music_db: number;
+  music_lufs: number | null;
+  /** dB beyond each sound effect's tier. */
+  sfx_db: number;
 }
 
 /** `assembly://progress` events while an episode is joined on this PC. */
@@ -270,6 +274,7 @@ export const api = {
   brandSettings: () => invoke<BrandSettings>("brand_settings"),
   setBrandMusic: (path: string) => invoke<BrandSettings>("set_brand_music", { path }),
   setBrandVolume: (musicDb: number) => invoke<BrandSettings>("set_brand_volume", { musicDb }),
+  setSfxVolume: (sfxDb: number) => invoke<BrandSettings>("set_sfx_volume", { sfxDb }),
   clearBrandMusic: () => invoke<BrandSettings>("clear_brand_music"),
 };
 

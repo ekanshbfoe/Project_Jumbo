@@ -1,7 +1,8 @@
 //! Episodes (ADR 0007): several voiced chapters joined into one long video. Each chapter is rendered on Kaggle as
 //! its own part (`render.rs`), with a fingerprint of everything the part was made from, so an unchanged chapter is
 //! never rendered twice and a changed one is never joined stale. The join runs on this PC with a pinned ffmpeg:
-//! the parts' video is copied as it is, and their soundtracks are joined and laid under the brand music once.
+//! the parts' video is copied as it is, and their soundtracks are joined, brought to YouTube's loudness and laid
+//! under the brand music and sound effects once (`mix.rs`).
 //!
 //! An episode lives in `episodes/<ep_NNNN>/episode.json`; its video is `episodes/<ep_NNNN>/<ep_NNNN>.mp4`. A chapter
 //! belongs to at most one episode, so its part is simply `chapters/<id>/render/part.{mp4,wav,json}`.
@@ -19,6 +20,7 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::{AppState, CmdResult, Lane, begin_job, config_dir, msg, with_project};
+use crate::mix::{self, Effect, SfxLibrary, TARGET_LUFS};
 
 /// File stem of a chapter's part inside its `render` folder.
 pub(crate) const PART: &str = "part";
@@ -38,6 +40,12 @@ const FFMPEG_BUILDS: &[(&str, &str, &str)] = &[
 /// Seconds the brand music fades in at the start and out at the end of an episode.
 const MUSIC_FADE_IN: f64 = 2.0;
 const MUSIC_FADE_OUT: f64 = 3.0;
+/// The brand music under the voice: the sub-bass trimmed and a dip where the voice is clearest.
+const MUSIC_EQ: &str = "highpass=f=35,lowshelf=f=60:g=-3,equalizer=f=3000:t=o:w=1:g=-2.5";
+/// The sound effects and their library, inside the brand folder.
+const SFX_DIR: &str = "sfx";
+/// The last stage of every episode: peaks held under -1.4 dBFS, so the AAC encode never clips.
+const LIMITER: &str = "alimiter=limit=0.85:attack=5:release=50:level=0";
 /// Headroom kept free beyond the parts' own size while the episode is written.
 const SPACE_MARGIN: u64 = 200 * 1024 * 1024;
 
@@ -83,13 +91,19 @@ pub enum PartState {
 pub struct BrandSettings {
     /// File name of the track inside `<app config>/brand`, if one is set.
     pub music: Option<String>,
-    /// Level of the music under the narration, in dB (it dips further while the narrator speaks).
+    /// Level of the music under the narration, in dB below the voice (it dips further while the narrator speaks).
     pub music_db: f64,
+    /// Loudness of the prepared music loop (LUFS), measured when it was set.
+    #[serde(default)]
+    pub music_lufs: Option<f64>,
+    /// Level of the sound effects in dB, beyond each one's tier.
+    #[serde(default)]
+    pub sfx_db: f64,
 }
 
 impl Default for BrandSettings {
     fn default() -> Self {
-        Self { music: None, music_db: -18.0 }
+        Self { music: None, music_db: -12.0, music_lufs: None, sfx_db: 0.0 }
     }
 }
 
@@ -176,10 +190,11 @@ pub(crate) fn check_member(project: &Project, episode: &str, id: ChapterId) -> C
 
 /// A part's fingerprint: its EpisodeSpec, every file it plays (panels, backdrops, narration) and the renderer
 /// itself. The same fingerprint means the same video, so a part is rendered again only when one of them changed.
+/// Sound effects are left out: they are mixed in at assembly, so changing one never renders a part again.
 pub(crate) fn fingerprint(root: &Path, spec: &Value) -> CmdResult<String> {
     let mut hash = blake3::Hasher::new();
     hash.update(b"jumbo-part-1\0");
-    hash.update(&serde_json::to_vec(spec).map_err(msg)?);
+    hash.update(&serde_json::to_vec(&mix::without_effects(spec)).map_err(msg)?);
     hash.update(render::render_kit().as_bytes());
     hash.update(render::render_scripts().as_bytes());
     for rel in crate::render::assets(spec) {
@@ -262,22 +277,41 @@ fn concat_line(path: &Path) -> String {
     format!("file '{}'\n", path.to_string_lossy().replace('\\', "/").replace('\'', "'\\''"))
 }
 
-/// The music under the narration: its file and level.
+/// The music under the narration: its loop and its gain in dB.
 struct Music<'a> {
     path: &'a Path,
     db: f64,
 }
 
-/// ffmpeg's arguments for an episode: the parts' video copied as it is from the concat list `video_list`, their
-/// soundtracks resampled and joined, the brand music (looped, faded in and out) dipping under the narration, and
-/// the result cut to `seconds` and written to `out`.
+/// The sound effects of an episode: the library folder, and each effect where it plays.
+struct Effects<'a> {
+    dir: &'a Path,
+    list: &'a [Effect],
+}
+
+/// The parts' `n` soundtracks (inputs `first` onwards) resampled and joined, before any gain.
+fn voice_chain(first: usize, n: usize) -> String {
+    let format = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
+    let mut graph: String = (first..first + n).map(|i| format!("[{i}:a]{format}[s{i}];")).collect();
+    graph += &(first..first + n).map(|i| format!("[s{i}]")).collect::<String>();
+    graph + &format!("concat=n={n}:v=0:a=1")
+}
+
+/// ffmpeg's arguments and filter graph for an episode: the parts' video copied as it is from the concat list
+/// `video_list`, their soundtracks joined and raised by `voice_db` (to the episode's loudness), the brand music
+/// (looped, faded in and out) dipping under the narration and the big hits, the sound effects on their lines, a
+/// limiter, and the result cut to `seconds` and written to `out`. The graph is read from `graph_file`.
+#[allow(clippy::too_many_arguments)]
 fn join_args(
     video_list: &Path,
     soundtracks: &[PathBuf],
+    voice_db: f64,
     music: Option<Music>,
+    effects: Effects,
     seconds: f64,
+    graph_file: &Path,
     out: &Path,
-) -> Vec<String> {
+) -> (Vec<String>, String) {
     let mut args: Vec<String> =
         ["-y", "-v", "error", "-nostats", "-progress", "pipe:1", "-f", "concat", "-safe", "0", "-i"]
             .map(String::from)
@@ -286,31 +320,68 @@ fn join_args(
     for s in soundtracks {
         args.extend(["-i".into(), s.display().to_string()]);
     }
-    let n = soundtracks.len();
     let format = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
-    let mut graph: String = (1..=n).map(|i| format!("[{i}:a]{format}[s{i}];")).collect();
-    graph += &(1..=n).map(|i| format!("[s{i}]")).collect::<String>();
-    graph += &format!("concat=n={n}:v=0:a=1");
-    match music {
+    let mut next = soundtracks.len() + 1;
+    let mut graph = voice_chain(1, soundtracks.len()) + &format!(",volume={voice_db:.2}dB[voice];");
+
+    // Each sound file is read once and split for every line it plays on.
+    let mut files: Vec<(&str, Vec<&Effect>)> = Vec::new();
+    for e in effects.list {
+        match files.iter_mut().find(|(f, _)| *f == e.file) {
+            Some((_, uses)) => uses.push(e),
+            None => files.push((&e.file, vec![e])),
+        }
+    }
+    let mut placed = Vec::new();
+    for (file, uses) in &files {
+        args.extend(["-i".into(), effects.dir.join(file).display().to_string()]);
+        let labels: String = (0..uses.len()).map(|k| format!("[x{next}_{k}]")).collect();
+        graph += &format!("[{next}:a]{format},asplit={}{labels};", uses.len());
+        for (k, e) in uses.iter().enumerate() {
+            graph += &format!(
+                "[x{next}_{k}]volume={:.1}dB,adelay=delays={}:all=1[d{next}_{k}];",
+                e.db,
+                (e.at * 1000.0).round() as u64
+            );
+            placed.push(format!("[d{next}_{k}]"));
+        }
+        next += 1;
+    }
+    let fx = !placed.is_empty();
+    if fx {
+        graph += &format!("{}amix=inputs={}:duration=longest:normalize=0[fx];", placed.concat(), placed.len());
+    }
+
+    let mix = match music {
         Some(m) => {
             args.extend(["-stream_loop", "-1", "-i"].map(String::from));
             args.push(m.path.display().to_string());
             let fade_out = (seconds - MUSIC_FADE_OUT).max(0.0);
             graph += &format!(
-                "[voice];[voice]asplit=2[say][key];[{}:a]{format},volume={:.1}dB,afade=t=in:d={MUSIC_FADE_IN},afade=t=out:st={fade_out:.3}:d={MUSIC_FADE_OUT}[bed];\
-                 [bed][key]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=500[duck];[say][duck]amix=inputs=2:duration=first:normalize=0[a]",
-                n + 1,
+                "[{next}:a]{format},{MUSIC_EQ},volume={:.2}dB,afade=t=in:d={MUSIC_FADE_IN},afade=t=out:st={fade_out:.3}:d={MUSIC_FADE_OUT}[bed];",
                 m.db
             );
+            // The music dips under the voice and under the sound effects alike.
+            if fx {
+                graph += "[voice]asplit=2[say][vkey];[fx]asplit=2[fxmix][fxkey];\
+                          [vkey][fxkey]amix=inputs=2:duration=first:normalize=0[key];";
+            } else {
+                graph += "[voice]asplit=2[say][key];";
+            }
+            graph += "[bed][key]sidechaincompress=threshold=0.02:ratio=6:attack=20:release=600[duck];";
+            if fx { "[say][duck][fxmix]amix=inputs=3" } else { "[say][duck]amix=inputs=2" }
         }
-        None => graph += "[a]",
-    }
-    args.extend(["-filter_complex".into(), graph]);
+        None if fx => "[voice][fx]amix=inputs=2",
+        None => "[voice]anull",
+    };
+    graph += &format!("{mix}{},{LIMITER}[a]", if mix.contains("amix") { ":duration=first:normalize=0" } else { "" });
+
+    args.extend(["-filter_complex_script".into(), graph_file.display().to_string()]);
     args.extend(["-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t"].map(String::from));
     args.push(format!("{seconds:.3}"));
     args.extend(["-movflags", "+faststart"].map(String::from));
     args.push(out.display().to_string());
-    args
+    (args, graph)
 }
 
 fn brand_dir(app: &AppHandle) -> CmdResult<PathBuf> {
@@ -442,25 +513,36 @@ pub fn brand_settings(app: AppHandle) -> CmdResult<BrandSettings> {
     load_brand(&app)
 }
 
-/// Makes `path` (an audio file) the brand music of every project, replacing the old track.
+/// Makes `path` (an audio file) the brand music of every project, replacing the old track. The track is made into
+/// a loop once, here: its intro and fade-out left out and its end blended into its start on the beat (`mix.rs`).
 #[tauri::command]
-pub fn set_brand_music(app: AppHandle, path: String) -> CmdResult<BrandSettings> {
+pub async fn set_brand_music(app: AppHandle, path: String) -> CmdResult<BrandSettings> {
     let source = PathBuf::from(&path);
     let ext = source.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
     if !["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus"].contains(&ext.as_str()) {
         return Err(format!("{path} is not an audio file this app can use (mp3, wav, flac, m4a, aac, ogg, opus)"));
     }
+    let ffmpeg = ffmpeg(&app, |_, _| {}).await?;
     let dir = brand_dir(&app)?;
     std::fs::create_dir_all(&dir).map_err(msg)?;
-    let name = format!("music.{ext}");
-    let partial = dir.join(format!("{name}.partial"));
-    std::fs::copy(&source, &partial).map_err(|e| format!("{path}: {e}"))?;
+    let name = "music.wav".to_owned();
+    let partial = dir.join("music.partial.wav");
+    let made = partial.clone();
+    let lufs = tokio::task::spawn_blocking(move || mix::prepare_music(&ffmpeg, &source, &made)).await.map_err(msg)?;
+    let lufs = match lufs {
+        Ok(lufs) => lufs,
+        Err(e) => {
+            let _ = std::fs::remove_file(&partial);
+            return Err(format!("{path}: {e}"));
+        }
+    };
     let mut settings = load_brand(&app)?;
     if let Some(old) = settings.music.take().filter(|old| *old != name) {
         let _ = std::fs::remove_file(dir.join(old));
     }
     std::fs::rename(&partial, dir.join(&name)).map_err(msg)?;
     settings.music = Some(name);
+    settings.music_lufs = Some(lufs);
     save_brand(&app, &settings)?;
     Ok(settings)
 }
@@ -474,6 +556,26 @@ pub fn set_brand_volume(app: AppHandle, music_db: f64) -> CmdResult<BrandSetting
     settings.music_db = music_db;
     save_brand(&app, &settings)?;
     Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_sfx_volume(app: AppHandle, sfx_db: f64) -> CmdResult<BrandSettings> {
+    if !(-20.0..=10.0).contains(&sfx_db) {
+        return Err("the sound effects' level is between -20 and +10 dB".into());
+    }
+    let mut settings = load_brand(&app)?;
+    settings.sfx_db = sfx_db;
+    save_brand(&app, &settings)?;
+    Ok(settings)
+}
+
+fn load_sfx(app: &AppHandle) -> CmdResult<(PathBuf, SfxLibrary)> {
+    let dir = brand_dir(app)?.join(SFX_DIR);
+    let file = dir.join("library.json");
+    let text = std::fs::read_to_string(&file)
+        .map_err(|e| format!("the sound effect library ({}) cannot be read: {e}", file.display()))?;
+    let library = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", file.display()))?;
+    Ok((dir, library))
 }
 
 #[tauri::command]
@@ -543,24 +645,53 @@ pub async fn assemble_episode(
         return Err(format!("the disk needs {} MB free for {episode}, and has {} MB", need >> 20, free >> 20));
     }
 
-    let ffmpeg = ffmpeg(&app, &report).await?;
     let brand = load_brand(&app)?;
+    let mut effects = Vec::new();
+    let mut offset = 0.0;
+    let mut library = None;
+    for ((id, _, _), soundtrack) in parts.iter().zip(&soundtracks) {
+        let spec = specs.get(&id.to_string()).ok_or_else(|| format!("no part spec for {id}"))?;
+        let used = spec["beats"].as_array().is_some_and(|b| b.iter().any(|b| b["sfx"].is_string()));
+        if used && library.is_none() {
+            library = Some(load_sfx(&app)?);
+        }
+        if let Some((_, lib)) = &library {
+            effects.extend(mix::part_effects(spec, offset, lib, brand.sfx_db).map_err(|e| format!("{id}: {e}"))?);
+        }
+        offset += wav_seconds(soundtrack)?;
+    }
+    let sfx_dir = library.map(|(dir, _)| dir).unwrap_or_default();
+
+    let ffmpeg = ffmpeg(&app, &report).await?;
     let music_path =
         brand.music.as_ref().map(|m| brand_dir(&app).map(|d| d.join(m))).transpose()?.filter(|p| p.is_file());
+    report(0.1, "measuring the narration's loudness".into());
+    let voice_db = {
+        let (ffmpeg, inputs, graph) = (ffmpeg.clone(), soundtracks.clone(), voice_chain(0, soundtracks.len()));
+        let measured =
+            tokio::task::spawn_blocking(move || mix::loudness(&ffmpeg, &inputs, &graph)).await.map_err(msg)??;
+        measured.map_or(0.0, |lufs| TARGET_LUFS - lufs)
+    };
+    let music_db = TARGET_LUFS + brand.music_db - brand.music_lufs.unwrap_or(TARGET_LUFS);
     let scratch = Scratch(dir.join(".assembling"));
     let _ = std::fs::remove_dir_all(&scratch.0);
     std::fs::create_dir_all(&scratch.0).map_err(msg)?;
     let list = scratch.0.join("video.txt");
     std::fs::write(&list, videos.iter().map(|v| concat_line(v)).collect::<String>()).map_err(msg)?;
     let out = scratch.0.join(format!("{episode}.mp4"));
-    let args = join_args(
+    let graph_file = scratch.0.join("graph.txt");
+    let (args, graph) = join_args(
         &list,
         &soundtracks,
-        music_path.as_deref().map(|path| Music { path, db: brand.music_db }),
+        voice_db,
+        music_path.as_deref().map(|path| Music { path, db: music_db }),
+        Effects { dir: &sfx_dir, list: &effects },
         seconds,
+        &graph_file,
         &out,
     );
-    report(0.1, format!("joining {} parts ({:.0} min)", parts.len(), seconds / 60.0));
+    std::fs::write(&graph_file, graph).map_err(msg)?;
+    report(0.15, format!("joining {} parts ({:.0} min, {} sound effects)", parts.len(), seconds / 60.0, effects.len()));
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<f64>();
     let run = tokio::task::spawn_blocking(move || -> CmdResult<()> {
@@ -587,7 +718,7 @@ pub async fn assemble_episode(
     });
     while let Some(done) = rx.recv().await {
         report(
-            0.1 + 0.88 * (done / seconds.max(1.0)).clamp(0.0, 1.0),
+            0.15 + 0.83 * (done / seconds.max(1.0)).clamp(0.0, 1.0),
             format!("joining: {:.0} of {:.0} min", done / 60.0, seconds / 60.0),
         );
     }
@@ -709,31 +840,51 @@ mod tests {
     #[test]
     fn the_join_copies_video_and_ducks_the_music_under_the_narration() {
         let parts = [PathBuf::from("a.wav"), PathBuf::from("b.wav")];
-        let plain = join_args(Path::new("v.txt"), &parts, None, 600.0, Path::new("out.mp4"));
-        let graph = &plain[plain.iter().position(|a| a == "-filter_complex").expect("graph") + 1];
-        assert!(graph.ends_with("[s1][s2]concat=n=2:v=0:a=1[a]"), "{graph}");
+        let none = Effects { dir: Path::new("sfx"), list: &[] };
+        let (plain, graph) =
+            join_args(Path::new("v.txt"), &parts, 7.5, None, none, 600.0, Path::new("g.txt"), Path::new("out.mp4"));
+        assert!(graph.contains("[s1][s2]concat=n=2:v=0:a=1,volume=7.50dB[voice]"), "{graph}");
+        assert!(graph.ends_with(&format!("[voice]anull,{LIMITER}[a]")), "{graph}");
         assert!(plain.windows(2).any(|w| w == ["-c:v", "copy"]));
         assert!(plain.windows(2).any(|w| w == ["-t", "600.000"]));
+        assert!(plain.windows(2).any(|w| w == ["-filter_complex_script", "g.txt"]));
         assert!(!plain.contains(&"-stream_loop".to_string()));
 
-        let music = join_args(
+        let effects = [
+            Effect { file: "02_punch.wav".into(), at: 12.5, db: -3.0 },
+            Effect { file: "01_whoosh.wav".into(), at: 30.0, db: -6.0 },
+            Effect { file: "02_punch.wav".into(), at: 61.25, db: -3.0 },
+        ];
+        let (music, graph) = join_args(
             Path::new("v.txt"),
             &parts,
-            Some(Music { path: Path::new("m.mp3"), db: -18.0 }),
+            7.5,
+            Some(Music { path: Path::new("m.wav"), db: -12.4 }),
+            Effects { dir: Path::new("sfx"), list: &effects },
             600.0,
+            Path::new("g.txt"),
             Path::new("out.mp4"),
         );
-        let graph = &music[music.iter().position(|a| a == "-filter_complex").expect("graph") + 1];
         for part in [
-            "[3:a]",
-            "volume=-18.0dB",
+            // Each sound file is read once and placed on every line it plays on.
+            "[3:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[x3_0][x3_1]",
+            "[x3_1]volume=-3.0dB,adelay=delays=61250:all=1[d3_1]",
+            "[x4_0]volume=-6.0dB,adelay=delays=30000:all=1[d4_0]",
+            "amix=inputs=3:duration=longest:normalize=0[fx]",
+            // The music is the next input, EQ'd, levelled and ducked by the voice and the effects.
+            "[5:a]aresample",
+            MUSIC_EQ,
+            "volume=-12.40dB",
             "afade=t=out:st=597.000:d=3",
-            "sidechaincompress",
-            "amix=inputs=2:duration=first:normalize=0[a]",
+            "[vkey][fxkey]amix=inputs=2:duration=first:normalize=0[key]",
+            "[bed][key]sidechaincompress",
+            &format!("[say][duck][fxmix]amix=inputs=3:duration=first:normalize=0,{LIMITER}[a]"),
         ] {
             assert!(graph.contains(part), "{part} missing from {graph}");
         }
-        assert!(music.windows(4).any(|w| w == ["-stream_loop", "-1", "-i", "m.mp3"]));
+        let inputs: Vec<&String> = music.iter().skip(1).step_by(1).collect();
+        assert!(inputs.windows(2).any(|w| w[0] == "-i" && w[1] == "sfx/02_punch.wav"));
+        assert!(music.windows(4).any(|w| w == ["-stream_loop", "-1", "-i", "m.wav"]));
         assert_eq!(music.last().map(String::as_str), Some("out.mp4"));
     }
 
