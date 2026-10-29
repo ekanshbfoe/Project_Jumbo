@@ -80,7 +80,7 @@ export async function startMakeVideo(chapter: string, method: Method, onStage: (
       update(chapter, { stage, progress: 0, message: "" });
       onStage();
     });
-    finish(chapter, { notice: `${chapter}: the video is ready on the Render screen.` });
+    finish(chapter, { notice: `${chapter}: voiced and ready for an episode (Episodes screen), or to render alone on the Render screen.` });
   } catch (e) {
     finish(chapter, e instanceof ReviewNeeded ? { notice: `${chapter}: ${errorText(e)}` } : { error: `${chapter}: ${errorText(e)}` });
   } finally {

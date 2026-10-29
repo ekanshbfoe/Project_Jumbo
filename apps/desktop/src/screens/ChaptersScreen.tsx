@@ -23,7 +23,6 @@ const STAGE_LABEL: Record<MakeVideoStage, string> = {
   panels: "finding panels",
   script: "writing the script",
   voice: "recording the voice",
-  render: "rendering on Kaggle CPUs",
 };
 
 /** Where a chapter can be sent back to, and what that lets the person do again. */
@@ -141,6 +140,7 @@ export function ChaptersScreen({ project }: ScreenProps) {
                   <td>
                     <span className="badge">{c.state}</span>{" "}
                     {c.stale ? <span className="badge warn">stale</span> : null}
+                    {c.state === "voiced" && !c.stale ? <span className="muted"> ready for an episode</span> : null}
                   </td>
                   <td>
                     <Pipeline chapter={c} />
@@ -168,8 +168,12 @@ export function ChaptersScreen({ project }: ScreenProps) {
                     {runs[c.id] ? null : (
                       <button
                         className="primary"
-                        disabled={Object.keys(runs).length > 0 || c.state === "rendered"}
-                        title="Panels, script and voice in one T4 session that ends when the voice is done, then the render on Kaggle CPUs"
+                        disabled={Object.keys(runs).length > 0 || CHAPTER_STATES.indexOf(c.state) >= CHAPTER_STATES.indexOf("voiced")}
+                        title={
+                          CHAPTER_STATES.indexOf(c.state) >= CHAPTER_STATES.indexOf("voiced")
+                            ? "Voiced: add it to an episode on the Episodes screen, or render it alone on the Render screen"
+                            : "Panels, script and voice in one T4 session that ends when the voice is done; the video is made on the Episodes or Render screen"
+                        }
                         onClick={() => make(c.id)}
                       >
                         Make video

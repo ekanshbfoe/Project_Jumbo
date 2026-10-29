@@ -1,7 +1,6 @@
 import { api, bridgeApi, CHAPTER_STATES, type ChapterState, type Method } from "./api";
-import { buildEpisode } from "./episode";
 
-export type MakeVideoStage = "session" | "panels" | "script" | "voice" | "render";
+export type MakeVideoStage = "session" | "panels" | "script" | "voice";
 
 /** Raised when the Director's script needs a person before it is voiced: the GPU session is stopped first. */
 export class ReviewNeeded extends Error {}
@@ -20,9 +19,10 @@ async function waitForWorker() {
 }
 
 /**
- * One chapter from wherever it stands to a finished video, as ADR 0005 places the stages: Magi, the Director and
- * Drama 3 in one T4 session that ends as soon as the voice is done, then the render on Kaggle CPU machines.
- * A script with failed scenes or rule problems stops the run for review; pressing Make Video again continues.
+ * One chapter from wherever it stands to its recorded voice, as ADR 0005 places the stages: Magi, the Director and
+ * Drama 3 in one T4 session that ends as soon as the voice is done. A script with failed scenes or rule problems
+ * stops the run for review; pressing Make Video again continues. The run holds there (ADR 0007): a voiced chapter
+ * is rendered as a part of an episode on the Episodes screen, or alone on the Render screen.
  *
  * Method 2 (ADR 0006) never runs the Director and never approves on its own: its T4 session only finds the panels
  * (of every chapter still waiting for them), then the run stops until the person has pasted Gemini's answer and
@@ -43,65 +43,59 @@ export async function makeVideo(chapter: string, method: Method, onStage: (stage
         : "Give Gemini the numbered PDF, paste its answer on the Gemini script screen and approve it, then press Make video again.",
     );
   }
-  if (!at(current.state, "voiced")) {
-    onStage("session");
-    const view = await bridgeApi.view();
-    if ((view.phase === "ready" || view.phase === "booting") && view.mode !== "kaggle_gpu") {
-      throw new Error("A session that is not on the T4s is running: stop it on the Session screen, then press Make video again.");
-    }
-    // A session that is booting or finding its worker again is used as it is, never started twice.
-    if (view.phase !== "ready" && view.phase !== "booting" && view.phase !== "reconnecting") await bridgeApi.start("kaggle_gpu");
-    try {
-      await waitForWorker();
-      if (!at(current.state, "analyzed")) {
-        onStage("panels");
-        await api.analyzeChapter(chapter, "magi");
-        current = await state();
-        if (method === "method2") {
-          // The session is up anyway: find the panels of every other chapter still waiting for them, so later
-          // chapters do not each pay for a boot and Magi's load just for this step.
-          const waiting = (await api.listChapters()).filter((c) => c.id !== chapter && !at(c.state, "analyzed"));
-          const done = [chapter];
-          for (const other of waiting) {
-            try {
-              await api.analyzeChapter(other.id, "magi");
-              done.push(other.id);
-            } catch {
-              break;
-            }
-          }
-          throw new ReviewNeeded(
-            `Panels found for ${done.join(", ")}. Give Gemini the numbered PDF, paste its answer on the Gemini script screen and approve it, then press Make video again.`,
-          );
-        }
-      }
-      if (!at(current.state, "directed") || (current.state === "directed" && !(await api.chapterScript(chapter)).script)) {
-        onStage("script");
-        await api.writeScript(chapter);
-        current = await state();
-      }
-      if (current.state === "directed" || current.state === "librarian") {
-        const view = await api.chapterScript(chapter);
-        const failed = view.report?.failed ?? [];
-        const problems = view.report?.problems ?? [];
-        if (failed.length || problems.length) {
-          throw new ReviewNeeded(
-            `The script needs a look before it is voiced (${failed.length ? `scenes ${failed.join(", ")} failed` : problems.join("; ")}). Fix it on the Script screen, approve it, then press Make video again.`,
-          );
-        }
-        await api.approveScript(chapter, view.script);
-        current = await state();
-      }
-      onStage("voice");
-      await api.recordVoice(chapter);
-      current = await state();
-    } finally {
-      // The T4 hours are the scarce quota: the session ends the moment its stages are done or fail.
-      await bridgeApi.stop().catch(() => undefined);
-    }
+  if (at(current.state, "voiced")) throw new ReviewNeeded("It is voiced already: add it to an episode on the Episodes screen, or render it alone on the Render screen.");
+  onStage("session");
+  const view = await bridgeApi.view();
+  if ((view.phase === "ready" || view.phase === "booting") && view.mode !== "kaggle_gpu") {
+    throw new Error("A session that is not on the T4s is running: stop it on the Session screen, then press Make video again.");
   }
-  onStage("render");
-  const episode = buildEpisode(chapter, await api.chapterPreview(chapter), current.title ?? current.original_name.replace(/\.pdf$/i, ""));
-  await api.saveEpisode(chapter, episode);
-  await api.renderChapter(chapter);
+  // A session that is booting or finding its worker again is used as it is, never started twice.
+  if (view.phase !== "ready" && view.phase !== "booting" && view.phase !== "reconnecting") await bridgeApi.start("kaggle_gpu");
+  try {
+    await waitForWorker();
+    if (!at(current.state, "analyzed")) {
+      onStage("panels");
+      await api.analyzeChapter(chapter, "magi");
+      current = await state();
+      if (method === "method2") {
+        // The session is up anyway: find the panels of every other chapter still waiting for them, so later
+        // chapters do not each pay for a boot and Magi's load just for this step.
+        const waiting = (await api.listChapters()).filter((c) => c.id !== chapter && !at(c.state, "analyzed"));
+        const done = [chapter];
+        for (const other of waiting) {
+          try {
+            await api.analyzeChapter(other.id, "magi");
+            done.push(other.id);
+          } catch {
+            break;
+          }
+        }
+        throw new ReviewNeeded(
+          `Panels found for ${done.join(", ")}. Give Gemini the numbered PDF, paste its answer on the Gemini script screen and approve it, then press Make video again.`,
+        );
+      }
+    }
+    if (!at(current.state, "directed") || (current.state === "directed" && !(await api.chapterScript(chapter)).script)) {
+      onStage("script");
+      await api.writeScript(chapter);
+      current = await state();
+    }
+    if (current.state === "directed" || current.state === "librarian") {
+      const view = await api.chapterScript(chapter);
+      const failed = view.report?.failed ?? [];
+      const problems = view.report?.problems ?? [];
+      if (failed.length || problems.length) {
+        throw new ReviewNeeded(
+          `The script needs a look before it is voiced (${failed.length ? `scenes ${failed.join(", ")} failed` : problems.join("; ")}). Fix it on the Script screen, approve it, then press Make video again.`,
+        );
+      }
+      await api.approveScript(chapter, view.script);
+      current = await state();
+    }
+    onStage("voice");
+    await api.recordVoice(chapter);
+  } finally {
+    // The T4 hours are the scarce quota: the session ends the moment its stages are done or fail.
+    await bridgeApi.stop().catch(() => undefined);
+  }
 }

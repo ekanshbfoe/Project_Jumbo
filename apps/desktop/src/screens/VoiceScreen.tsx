@@ -97,7 +97,7 @@ export function VoiceScreen({ project }: ScreenProps) {
       {error || data.error || library.error ? <p className="error">{error ?? data.error ?? library.error}</p> : null}
       {!connected && !progress && (current?.state === "approved" || current?.state === "voiced") ? (
         <p className="muted">
-          Record voice needs a running T4 session. Press Make video on the Chapters screen (it starts one, voices and renders), or start one on the Session screen.
+          Record voice needs a running T4 session. Press Make video on the Chapters screen (it starts one and voices the chapter), or start one on the Session screen.
         </p>
       ) : null}
       <div className="stack">
