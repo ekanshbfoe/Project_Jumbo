@@ -111,10 +111,10 @@ export function ScriptScreen({ project }: ScreenProps) {
     }
   };
 
-  const edit = (i: number, narration: string) => {
+  const edit = (i: number, patch: Partial<ScriptDoc["lines"][number]>) => {
     setSaved(false);
     setDraft((d) => {
-      const next = d && { ...d, lines: d.lines.map((l, j) => (j === i ? { ...l, narration } : l)) };
+      const next = d && { ...d, lines: d.lines.map((l, j) => (j === i ? { ...l, ...patch } : l)) };
       if (next && chapter) saveDraft(project.root, chapter, draftKey, next);
       return next;
     });
@@ -180,7 +180,23 @@ export function ScriptScreen({ project }: ScreenProps) {
                   {line.voice?.tone ?? "neutral"} · {line.voice?.pace ?? "normal"}
                 </span>
               </div>
-              <textarea value={line.narration} rows={Math.max(3, Math.ceil(line.narration.length / 90))} onChange={(e) => edit(i, e.target.value)} />
+              <textarea value={line.narration} rows={Math.max(3, Math.ceil(line.narration.length / 90))} onChange={(e) => edit(i, { narration: e.target.value })} />
+              {project.method === "method2" ? (
+                line.card ? (
+                  <div className="row" title="Shown once in the whole series, as this line starts. Approving checks that no earlier chapter has this character.">
+                    <span className="muted">Name card</span>
+                    <input value={line.card.name} placeholder="Name" onChange={(e) => edit(i, { card: { ...line.card!, name: e.target.value } })} />
+                    <input value={line.card.role} placeholder="Role, e.g. the transfer student" onChange={(e) => edit(i, { card: { ...line.card!, role: e.target.value } })} />
+                    <button onClick={() => edit(i, { card: null })}>Remove card</button>
+                  </div>
+                ) : (
+                  <div className="row">
+                    <button onClick={() => edit(i, { card: { name: "", role: "" } })} title="A character's first appearance in the series: their name card shows as this line starts">
+                      + Name card
+                    </button>
+                  </div>
+                )
+              ) : null}
             </div>
           </div>
         ))}

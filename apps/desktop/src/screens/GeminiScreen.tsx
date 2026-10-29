@@ -98,11 +98,12 @@ export function GeminiScreen({ project }: ScreenProps) {
   const read = useMemo(() => {
     if (!pack || !answer.trim()) return null;
     try {
-      return readGeminiAnswer(answer, pack);
+      // A card shows only on a character's first appearance in the series: earlier chapters' characters lose theirs.
+      return readGeminiAnswer(answer, pack, view.data?.context?.characters ?? []);
     } catch (e) {
       return { doc: null, memory: { story: "", characters: [] }, beats: "", errors: [`The answer could not be read: ${errorText(e)}`], notes: [] };
     }
-  }, [answer, pack]);
+  }, [answer, pack, view.data?.context]);
 
   // A new answer brings its own memory. The boxes are refilled only when the parsed memory itself changes, so
   // hand edits survive fixing a narration line in the answer.

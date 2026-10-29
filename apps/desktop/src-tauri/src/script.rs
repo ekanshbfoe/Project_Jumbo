@@ -221,6 +221,42 @@ pub(crate) fn narration_problems(script: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The script's character cards as (line id, name, role), refused where a card would break the series rule (ADR
+/// 0007): a card shows only on a character's first appearance, so none for a character an earlier chapter's approved
+/// memory knows, none twice in the chapter, and none without a name.
+fn chapter_cards(project: &Project, id: ChapterId, script: &Value) -> CmdResult<Vec<(String, String, String)>> {
+    let known: std::collections::HashMap<String, String> = memory::context_before(project, id)
+        .map(|c| c.characters)
+        .unwrap_or_default()
+        .iter()
+        .map(|c| (memory::character_key(c), c.split('|').next().unwrap_or("").trim().to_owned()))
+        .collect();
+    let mut cards = Vec::new();
+    let mut problems = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for line in script["lines"].as_array().into_iter().flatten() {
+        let Some(card) = line["card"].as_object() else { continue };
+        let line_id = line["id"].as_str().unwrap_or("?").to_owned();
+        let name = card.get("name").and_then(Value::as_str).unwrap_or("").trim().to_owned();
+        let role = card.get("role").and_then(Value::as_str).unwrap_or("").trim().to_owned();
+        let key = memory::character_key(&name);
+        if key.is_empty() {
+            problems.push(format!("{line_id}: the name card has no name"));
+        } else if let Some(earlier) = known.get(&key) {
+            problems.push(format!("{line_id}: {earlier} appeared in an earlier chapter, so they get no card here"));
+        } else if !seen.insert(key) {
+            problems.push(format!("{line_id}: {name} has a card on an earlier line already"));
+        } else {
+            cards.push((line_id, name, role));
+        }
+    }
+    if problems.is_empty() {
+        Ok(cards)
+    } else {
+        Err(format!("fix the name cards before approving: {}", problems.join("; ")))
+    }
+}
+
 /// Saves a reviewed script as `approved.json` and moves the chapter on to Approved. There is no Librarian step: the
 /// script's memory carries the story, so the chapter passes straight through that stage. The narration rule is
 /// checked here, before any voice session is spent on the script, and the draft's memory becomes the chapter's;
@@ -238,6 +274,10 @@ fn approve(project: &Project, id: ChapterId, script: &Value) -> CmdResult<Chapte
     if !matches!(manifest.state, ChapterState::Directed | ChapterState::Librarian | ChapterState::Approved) {
         return Err(format!("{id} is {}; only a directed chapter's script can be approved", manifest.state.as_str()));
     }
+    let cards = chapter_cards(project, id, script)?;
+    // A carded character the memory missed would get a second card in a later chapter.
+    let named: Vec<(String, String)> = cards.into_iter().map(|(_, name, role)| (name, role)).collect();
+    memory::ensure_characters(project, id, &named)?;
     let dir = chapter::chapter_dir(project, id).join("script");
     fsx::atomic_write_json(&dir.join("approved.json"), script).map_err(msg)?;
     let last_lines = doc.lines.iter().rev().take(2).rev().map(|l| l.narration.to_string()).collect();
@@ -364,6 +404,37 @@ mod tests {
         script["lines"][1]["narration"] = json!("Dono taraf dushman, beech mein sirf woh.");
         let err = approve(&project, id, &script).expect_err("romanized");
         assert!(err.contains("l_0002: narration has Hindi in Latin letters"), "{err}");
+    }
+
+    #[test]
+    fn a_character_card_shows_once_in_the_series_and_its_character_joins_the_memory() {
+        let (tmp, project, first) = project_with_chapter();
+        let second = chapter::import_chapter(&project, &tmp.path().join("c.pdf"), None).expect("import").id;
+        for to in [ChapterState::Rasterized, ChapterState::Analyzed] {
+            chapter::advance(&project, second, to).expect("advance");
+        }
+        install(&project, first, &manifest(first, "Akira quits.")).expect("install");
+        let mut script = sample_script(first);
+        script["lines"][0]["card"] = json!({"name": "Akira", "role": "office worker"});
+        approve(&project, first, &script).expect("approve");
+        // Gemini's memory did not list Akira; the card puts him there, so chapter 2 knows him.
+        let ctx = memory::context_before(&project, second).expect("memory");
+        assert!(ctx.characters.contains(&"Akira | office worker".to_owned()), "{:?}", ctx.characters);
+
+        install(&project, second, &manifest(second, "Akira returns.")).expect("install");
+        let mut again = sample_script(second);
+        again["lines"][1]["card"] = json!({"name": "  akira ", "role": ""});
+        let err = approve(&project, second, &again).expect_err("second card");
+        assert!(err.contains("Akira appeared in an earlier chapter"), "{err}");
+
+        let mut twice = sample_script(second);
+        twice["lines"][0]["card"] = json!({"name": "Mina", "role": "rival"});
+        twice["lines"][1]["card"] = json!({"name": "mina", "role": "rival"});
+        assert!(approve(&project, second, &twice).expect_err("twice").contains("has a card on an earlier line"));
+        twice["lines"][1]["card"] = json!({"name": " ", "role": ""});
+        assert!(approve(&project, second, &twice).expect_err("unnamed").contains("no name"));
+        twice["lines"][1]["card"] = Value::Null;
+        approve(&project, second, &twice).expect("one new character");
     }
 
     #[test]

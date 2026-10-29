@@ -64,7 +64,7 @@ pub fn write_draft(project: &Project, id: ChapterId, memory: &StoryMemory) -> Cm
 }
 
 /// The key a character is merged by: the name before the first "|", lowercased, spaces collapsed.
-fn character_key(line: &str) -> String {
+pub(crate) fn character_key(line: &str) -> String {
     line.split('|').next().unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }
 
@@ -112,6 +112,29 @@ pub fn context_before(project: &Project, id: ChapterId) -> CmdResult<StoryContex
         last_lines: memory.last_lines,
         from: Some(previous.id.to_string()),
     })
+}
+
+/// Adds each `(name, role)` that the chapter's pending memory (its draft, else its approved memory) does not list
+/// yet, as "Name | role". A character with a name card must be in the memory, so later chapters know them.
+pub fn ensure_characters(project: &Project, id: ChapterId, named: &[(String, String)]) -> CmdResult<()> {
+    let (file, memory) = match read(project, id, DRAFT)? {
+        Some(m) => (DRAFT, m),
+        None => match read(project, id, APPROVED)? {
+            Some(m) => (DRAFT, m),
+            None => return Ok(()),
+        },
+    };
+    let mut memory = memory;
+    let before = memory.characters.len();
+    for (name, role) in named {
+        if !memory.characters.iter().any(|c| character_key(c) == character_key(name)) {
+            memory.characters.push(if role.is_empty() { name.clone() } else { format!("{name} | {role}") });
+        }
+    }
+    if memory.characters.len() == before {
+        return Ok(());
+    }
+    fsx::atomic_write_json(&path(project, id, file), &memory).map_err(msg)
 }
 
 /// Makes the draft memory the approved one, with `last_lines` taken from the script as approved (it may have been

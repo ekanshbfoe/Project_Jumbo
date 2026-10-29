@@ -34,7 +34,7 @@ BEATS:
 NARRATION:
 L1 [p_0001] (calm) {pan} …Hindi narration…
 
-L2 [p_0002, p_0003] (tense) {split_screen} …Hindi narration…
+L2 [p_0002, p_0003] (tense) {split_screen} <card: Kang Jin> …Hindi narration…
 
 MEMORY:
 STORY SO FAR: four to six English sentences covering everything up to the end of this chapter, including what is still unresolved.
@@ -43,3 +43,4 @@ CHARACTERS:
 
 Narrate every labelled panel, from the first to the last; never stop early, and keep BEATS short so the narration and MEMORY fit.
 Rules for each L line: it stays on one line, with an empty line before the next one; the brackets list the panels on screen while it is spoken (one panel, or two to three that form one moment); the word in parentheses is one of calm, tense, action, shock, sad, comedic, romantic, mysterious, triumphant; the word in braces is one camera move from the list, matching the number of panels.
+Name cards: when a named character appears on screen for the first time in the whole story (not in the CHARACTERS you were given), put <card: Name> right after the camera move, on the line where the character is first clearly seen. Use exactly the Latin name you write in CHARACTERS, mark each character once, and never mark a character from the CHARACTERS you were given.
