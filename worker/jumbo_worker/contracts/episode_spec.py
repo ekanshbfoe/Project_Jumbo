@@ -37,9 +37,16 @@ class SocialPromoSettings(BaseModel):
     position: (
         Literal["bottom-right", "bottom-left", "top-right", "top-left", "center"] | None
     ) = "bottom-right"
+    early: bool | None = True
     start_s: Annotated[float | None, Field(ge=0.0)] = 20
     duration_s: Annotated[float | None, Field(ge=1.0, le=60.0)] = 8
     outro_s: Annotated[float | None, Field(ge=0.0, le=60.0)] = 6
+
+
+class OpeningCard(BaseModel):
+    title: Annotated[str, Field(max_length=80, min_length=1)]
+    subtitle: Annotated[str | None, Field(max_length=80)] = ""
+    seconds: Annotated[float | None, Field(ge=1.0, le=6.0)] = 2.5
 
 
 class ImageSize(BaseModel):
@@ -271,5 +278,6 @@ class EpisodeSpec(BaseModel):
     social_promo: Annotated[SocialPromoSettings | None, Field(validate_default=True)] = {
 
     }
+    opening: OpeningCard | None = None
     panels: Annotated[list[EpisodePanel], Field(min_length=1)]
     beats: Annotated[list[Beat], Field(min_length=1)]

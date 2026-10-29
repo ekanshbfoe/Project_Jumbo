@@ -44,6 +44,14 @@ export const VideoFormat = z.object({
   background: HexColor.default("#0b0b10"),
 }).meta({ id: "VideoFormat" });
 
+/** A title card before the first beat: an episode part opens with its chapter's title (ADR 0007). Silent. */
+export const OpeningCard = z.object({
+  title: z.string().min(1).max(80),
+  subtitle: z.string().max(80).default(""),
+  /** Seconds on screen, fades included. */
+  seconds: z.number().min(1).max(6).default(2.5),
+}).meta({ id: "OpeningCard" });
+
 /** The parts of a detected panel the renderer needs. */
 export const EpisodePanel = Panel.pick({
   id: true,
@@ -85,6 +93,8 @@ export const EpisodeSpec = z
     ambient_effect: AmbientEffect.default("dust"),
     watermark: WatermarkSettings.prefault({}),
     social_promo: SocialPromoSettings.prefault({}),
+    /** Shown before the first beat; the beats and their narration start when it ends. */
+    opening: OpeningCard.nullable().default(null),
     panels: z.array(EpisodePanel).min(1),
     beats: z.array(Beat).min(1),
   })
@@ -116,6 +126,7 @@ export const EpisodeSpec = z
 export type AudioClip = z.infer<typeof AudioClip>;
 export type AudioManifest = z.infer<typeof AudioManifest>;
 export type AmbientEffect = z.infer<typeof AmbientEffect>;
+export type OpeningCard = z.infer<typeof OpeningCard>;
 export type WatermarkSettings = z.infer<typeof WatermarkSettings>;
 export type VideoFormat = z.infer<typeof VideoFormat>;
 export type EpisodePanel = z.infer<typeof EpisodePanel>;
@@ -136,6 +147,10 @@ export interface BuildEpisodeOptions {
   hideBubbles?: boolean;
   /** Show the panels of a multi-panel line one after another, each filling the frame (default true). */
   sequential?: boolean;
+  /** A title card before the first beat (an episode part's chapter title). */
+  opening?: z.input<typeof OpeningCard>;
+  /** Overrides for the follow card (an episode part shows it early only in the first part, at the end only in the last). */
+  promo?: Partial<z.input<typeof SocialPromoSettings>>;
 }
 
 /** A panel this many times taller than wide is "tall": two of them may share the frame side by side. */
@@ -219,6 +234,8 @@ export function buildEpisodeSpec(
     title: options.title ?? script.title ?? "",
     video: options.video ?? {},
     hide_bubbles: options.hideBubbles ?? false,
+    social_promo: options.promo ?? {},
+    opening: options.opening ?? null,
     panels: panelsDoc.panels.filter((p) => used.has(p.id)),
     beats: script.lines.flatMap((line, i) => {
       const clip = clips.get(line.id);

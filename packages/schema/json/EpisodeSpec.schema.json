@@ -42,6 +42,17 @@
       "default": {},
       "$ref": "#/$defs/SocialPromoSettings"
     },
+    "opening": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OpeningCard"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "panels": {
       "minItems": 1,
       "type": "array",
@@ -162,6 +173,10 @@
             "center"
           ]
         },
+        "early": {
+          "default": true,
+          "type": "boolean"
+        },
         "start_s": {
           "default": 20,
           "type": "number",
@@ -180,6 +195,30 @@
           "maximum": 60
         }
       }
+    },
+    "OpeningCard": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "subtitle": {
+          "default": "",
+          "type": "string",
+          "maxLength": 80
+        },
+        "seconds": {
+          "default": 2.5,
+          "type": "number",
+          "minimum": 1,
+          "maximum": 6
+        }
+      },
+      "required": [
+        "title"
+      ]
     },
     "EpisodePanel": {
       "type": "object",

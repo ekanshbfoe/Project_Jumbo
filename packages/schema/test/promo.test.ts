@@ -9,6 +9,7 @@ describe("SocialPromoSettings", () => {
       headline: "Follow for more recaps",
       platforms: ["x", "youtube", "instagram"],
       position: "bottom-right",
+      early: true,
       start_s: 20,
       duration_s: 8,
       outro_s: 6,
