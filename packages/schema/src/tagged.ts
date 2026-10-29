@@ -1,5 +1,5 @@
 import { scriptProblems } from "./hinglish";
-import { Emotion, ScriptDoc, type CharacterCard } from "./script";
+import { Emotion, ScriptDoc, SoundEffect, type CharacterCard } from "./script";
 import { MULTI_PANEL_PRESETS, PresetSpec, type PresetName } from "./presets";
 
 /**
@@ -8,6 +8,7 @@ import { MULTI_PANEL_PRESETS, PresetSpec, type PresetName } from "./presets";
  *   PACK: ch_0003 7f3a
  *   L3 [p_0005, p_0006] (tense) {split_screen} …Hindi narration…
  *   L4 [p_0007] (calm) {zoom} <card: Kang Jin> …Hindi narration…   (a character's first appearance)
+ *   L5 [p_0008] (action) {action_tilt} <sfx: punch> …Hindi narration…  (one of the brand sound effects)
  *
  * The answer is pasted by hand, so it is read forgivingly (Markdown, list markers, escaped brackets, wrapped lines,
  * loose panel ids) but checked strictly: an answer for another chapter or pack, a cut-off answer that leaves panels
@@ -25,6 +26,8 @@ export interface TaggedLine {
   move: string | null;
   /** The name in a `<card: Name>` mark: the character Gemini says first appears on this line. */
   card: string | null;
+  /** What a `<sfx: name>` mark names: the sound effect played as the line starts. */
+  sfx: string | null;
   narration: string;
 }
 
@@ -70,6 +73,8 @@ const MARKER_RE = /\s+(?=(?:PACK|BEATS|NARRATION|MEMORY|STORY SO FAR|CHARACTERS)
 const PRONOUN_RE = /^(?:he|she|they|it)(?:\s*\/\s*\w+)?$/i;
 /** `<card: Name>` anywhere in a line, also with Gemini's other brackets. */
 const CARD_RE = /[<‹«]\s*card\s*[:：]\s*([^>›»]+?)\s*[>›»]/i;
+/** `<sfx: name>` anywhere in a line; every mark is taken out of the narration, the first one counts. */
+const SFX_RE = /[<‹«]\s*sfx\s*[:：]\s*([^>›»]+?)\s*[>›»]/gi;
 
 /**
  * The answer one item per line, however it was copied. AI Studio's Markdown view can join the whole answer into
@@ -128,6 +133,7 @@ export function parseTagged(text: string): TaggedScript {
     if (m) {
       const emotion = Emotion.safeParse((m[3] ?? "").trim().toLowerCase());
       const card = CARD_RE.exec(m[5]!);
+      const sfx = [...m[5]!.matchAll(SFX_RE)][0];
       lines.push({
         n: Number(m[1]),
         panel_ids: panelIds(m[2]!),
@@ -135,7 +141,8 @@ export function parseTagged(text: string): TaggedScript {
         emotion_text: m[3]?.trim() || null,
         move: m[4] ? m[4].trim().toLowerCase() : null,
         card: card ? card[1]!.trim() : null,
-        narration: m[5]!.replace(CARD_RE, " ").replace(/\s+/g, " ").trim(),
+        sfx: sfx ? sfx[1]!.trim() : null,
+        narration: m[5]!.replace(CARD_RE, " ").replace(SFX_RE, " ").replace(/\s+/g, " ").trim(),
       });
       current = "NARRATION";
     } else if (current === "NARRATION" && lines.length) {
@@ -420,6 +427,9 @@ export function readGeminiAnswer(text: string, pack: GeminiPack, known: string[]
     if (!/[ऀ-ॿA-Za-z]/.test(l.narration)) errors.push(`L${l.n} has no narration.`);
     else if (l.narration.length > MAX_NARRATION) errors.push(`L${l.n} is ${l.narration.length} characters, over ${MAX_NARRATION}. Ask Gemini to split it.`);
     if (!l.emotion && l.emotion_text) notes.push(`L${l.n}: (${l.emotion_text}) is not one of the emotions, read as calm`);
+    if (l.sfx && !SoundEffect.safeParse(l.sfx.toLowerCase()).success) {
+      notes.push(`L${l.n}: <sfx: ${l.sfx}> is not one of the sound effects, so the line has none`);
+    }
   }
   const { lines, repairs, missing } = fixPanels(parsed.lines, pack.order);
   notes.push(...repairs);
@@ -455,6 +465,7 @@ export function readGeminiAnswer(text: string, pack: GeminiPack, known: string[]
       // A short fade between lines: 59 hard cuts in five minutes play like a slideshow.
       transition_in: { name: i === 0 ? "cut" : "fade", duration: 0.3 },
       card: cards.get(l.n) ?? null,
+      sfx: SoundEffect.safeParse(l.sfx?.toLowerCase()).data ?? null,
     })),
   });
   if (!built.success) {

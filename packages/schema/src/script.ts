@@ -34,6 +34,28 @@ export const CharacterCard = z.object({
   role: z.string().max(80).default(""),
 }).meta({ id: "CharacterCard" });
 
+/**
+ * The brand sound effects (ADR 0007): the 15 sounds of the locked library, one per line at most. A line's sound plays
+ * as its first panel appears; it is mixed in when the episode is assembled, so changing it never renders again.
+ */
+export const SoundEffect = z.enum([
+  "whoosh",
+  "punch",
+  "impact",
+  "slash",
+  "clash",
+  "explosion",
+  "boom",
+  "riser",
+  "heartbeat",
+  "shatter",
+  "power",
+  "system",
+  "footsteps",
+  "slam",
+  "comedic",
+]);
+
 export const ScriptLine = z
   .object({
     id: LineId,
@@ -45,6 +67,7 @@ export const ScriptLine = z
     preset: PresetSpec,
     transition_in: TransitionSpec.prefault({}),
     card: CharacterCard.nullable().default(null),
+    sfx: SoundEffect.nullable().default(null),
   })
   .superRefine((line, ctx) => {
     const multi = MULTI_PANEL_PRESETS.has(line.preset.name);
@@ -74,6 +97,7 @@ export const ScriptDoc = z
 
 export type Emotion = z.infer<typeof Emotion>;
 export type CharacterCard = z.infer<typeof CharacterCard>;
+export type SoundEffect = z.infer<typeof SoundEffect>;
 export type VoiceDirection = z.infer<typeof VoiceDirection>;
 export type ScriptLine = z.infer<typeof ScriptLine>;
 export type ScriptDoc = z.infer<typeof ScriptDoc>;

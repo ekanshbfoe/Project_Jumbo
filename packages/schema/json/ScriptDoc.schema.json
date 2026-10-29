@@ -120,6 +120,34 @@
               "type": "null"
             }
           ]
+        },
+        "sfx": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "whoosh",
+                "punch",
+                "impact",
+                "slash",
+                "clash",
+                "explosion",
+                "boom",
+                "riser",
+                "heartbeat",
+                "shatter",
+                "power",
+                "system",
+                "footsteps",
+                "slam",
+                "comedic"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

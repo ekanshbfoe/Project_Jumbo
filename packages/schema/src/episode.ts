@@ -3,7 +3,7 @@ import { AssetPath, ChapterId, HexColor, LineId, PanelId, SchemaVersion } from "
 import { Panel, type PanelsDoc } from "./panels";
 import { MULTI_PANEL_PRESETS, PresetSpec, TransitionSpec } from "./presets";
 import { SocialPromoSettings } from "./promo";
-import { CharacterCard, Emotion, type ScriptDoc } from "./script";
+import { CharacterCard, Emotion, SoundEffect, type ScriptDoc } from "./script";
 
 export const AudioClip = z.object({
   line_id: LineId,
@@ -73,6 +73,8 @@ export const Beat = z.object({
   duration: z.number().positive(),
   /** A character's first-appearance name card, shown as the beat starts. */
   card: CharacterCard.nullable().default(null),
+  /** The line's sound effect, played as the beat starts (mixed in at assembly, not in the render). */
+  sfx: SoundEffect.nullable().default(null),
 }).meta({ id: "Beat" });
 
 /** Everything Remotion needs to render one chapter. Consumed directly as composition input props. */
@@ -195,6 +197,7 @@ function stepThrough(beat: z.input<typeof Beat>, panels: ReadonlyMap<string, Epi
       transition_in: k === 0 ? beat.transition_in : { name: "fade", duration: STEP_FADE },
       // The card belongs to the line: it shows once, with its first panel.
       card: k === 0 ? beat.card : null,
+      sfx: k === 0 ? beat.sfx : null,
       audio,
       duration,
     };
@@ -239,6 +242,7 @@ export function buildEpisodeSpec(
         transition_in: transition(line),
         audio: clip ? { src: clip.src, duration: clip.duration, from: 0 } : null,
         card: line.card,
+        sfx: line.sfx,
         duration: beatLength(Math.max(minBeat, spoken + padding + overlapOf(transition(script.lines[i + 1]))), fps),
       };
       return sequential ? stepThrough(beat, byId, fps) : [beat];

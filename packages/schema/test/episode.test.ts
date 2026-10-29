@@ -109,6 +109,14 @@ describe("buildEpisodeSpec", () => {
     expect(spec.title).toBe("Pehla Darwaza");
   });
 
+  it("plays a line's sound effect once, as its first panel appears", () => {
+    const withSfx = ScriptDoc.parse({ ...script, lines: script.lines.map((l, i) => (i === 1 ? { ...l, sfx: "clash" } : l)) });
+    // Voiced long enough that the line's two panels are shown one after the other.
+    const voiced = AudioManifest.parse({ ...audio, clips: [...audio.clips, { line_id: "l_0002", src: "chapters/ch_0001/audio/l_0002.wav", duration: 6 }] });
+    const spec = buildEpisodeSpec(withSfx, panels, voiced);
+    expect(spec.beats.map((b) => b.sfx)).toEqual([null, "clash", null]);
+  });
+
   it("passes an episode part's follow-card settings", () => {
     const spec = buildEpisodeSpec(script, panels, audio, { promo: { early: false, outro_s: 0 } });
     expect(spec.social_promo).toMatchObject({ early: false, outro_s: 0, start_s: 20 });

@@ -142,7 +142,7 @@ describe("tagged answer pieces", () => {
   });
 
   it("joins only a single skipped panel to its neighbour's line", () => {
-    const line = (n: number, ids: string[]) => ({ n, panel_ids: ids, emotion: null, emotion_text: null, move: null, card: null, narration: "x" });
+    const line = (n: number, ids: string[]) => ({ n, panel_ids: ids, emotion: null, emotion_text: null, move: null, card: null, sfx: null, narration: "x" });
     const fixed = fixPanels([line(1, ["p_0001"]), line(2, ["p_0001", "p_0042"]), line(3, ["p_0003"])], ["p_0001", "p_0002", "p_0003", "p_0004", "p_0005"]);
     expect(fixed.lines.map((l) => l.panel_ids)).toEqual([["p_0001", "p_0002"], ["p_0003"]]);
     expect(fixed.missing).toEqual(["p_0004", "p_0005"]);
@@ -195,5 +195,16 @@ describe("character cards", () => {
         "No card for Sylvie Jaine, who is new in this chapter; add one on the Script screen if it should show",
       ]),
     );
+  });
+});
+
+describe("sound effects", () => {
+  it("keeps a known sound effect, drops an unknown one with a note, and takes the marks out of the narration", () => {
+    const marked = ANSWER.replace("{zoom} उसका", "{zoom} <SFX: Punch> उसका").replace("{split_screen} उधर", "{split_screen} <sfx: laser> उधर");
+    const r = readGeminiAnswer(marked, PACK);
+    expect(r.errors).toEqual([]);
+    expect(r.doc!.lines.map((l) => l.sfx)).toEqual([null, "punch", null]);
+    expect(r.notes).toContain("L3: <sfx: laser> is not one of the sound effects, so the line has none");
+    expect(r.doc!.lines.map((l) => l.narration).join(" ")).not.toMatch(/sfx|punch|laser/i);
   });
 });

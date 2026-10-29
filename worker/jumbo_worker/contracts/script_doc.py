@@ -199,6 +199,9 @@ class ScriptLine(BaseModel):
     preset: HoldPreset | ZoomPreset | PanPreset | ShakePreset | ActionTiltPreset | KineticJitterPreset | PanoramicFadePreset | SplitScreenPreset | FloatingPanelsPreset | HorizontalSlicesPreset | HudPopupPreset
     transition_in: Annotated[TransitionSpec | None, Field(validate_default=True)] = {}
     card: CharacterCard | None = None
+    sfx: Literal["whoosh", "punch", "impact", "slash", "clash", "explosion", "boom", "riser", "heartbeat", "shatter", "power", "system", "footsteps", "slam", "comedic"] | None = (
+        None
+    )
 
 
 class ScriptDoc(BaseModel):

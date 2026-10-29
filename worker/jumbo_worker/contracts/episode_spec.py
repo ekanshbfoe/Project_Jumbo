@@ -265,6 +265,9 @@ class Beat(BaseModel):
     audio: Audio | None
     duration: Annotated[float, Field(gt=0.0)]
     card: CharacterCard | None = None
+    sfx: Literal["whoosh", "punch", "impact", "slash", "clash", "explosion", "boom", "riser", "heartbeat", "shatter", "power", "system", "footsteps", "slam", "comedic"] | None = (
+        None
+    )
 
 
 class EpisodeSpec(BaseModel):
