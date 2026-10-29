@@ -1,4 +1,5 @@
 import { scriptProblems } from "./hinglish";
+import { ChapterHooks, HookKind, type Hook } from "./hooks";
 import { Emotion, ScriptDoc, SoundEffect, type CharacterCard } from "./script";
 import { MULTI_PANEL_PRESETS, PresetSpec, type PresetName } from "./presets";
 
@@ -9,6 +10,7 @@ import { MULTI_PANEL_PRESETS, PresetSpec, type PresetName } from "./presets";
  *   L3 [p_0005, p_0006] (tense) {split_screen} …Hindi narration…
  *   L4 [p_0007] (calm) {zoom} <card: Kang Jin> …Hindi narration…   (a character's first appearance)
  *   L5 [p_0008] (action) {action_tilt} <sfx: punch> …Hindi narration…  (one of the brand sound effects)
+ *   H1 [p_0075, p_0077] (strength 5) (reveal) (spoiler low)   then COLD: … and TEASE: …   (hooks.ts)
  *
  * The answer is pasted by hand, so it is read forgivingly (Markdown, list markers, escaped brackets, wrapped lines,
  * loose panel ids) but checked strictly: an answer for another chapter or pack, a cut-off answer that leaves panels
@@ -36,6 +38,18 @@ export interface StoryMemory {
   story: string;
   /** CHARACTERS: one line per named character, "Name | role | he/she | visual tag". */
   characters: string[];
+  /** OPEN LOOPS: every question still open at the end of this chapter, "Q1 | question", carried to the next. */
+  open_loops: string[];
+}
+
+/** A hook as Gemini wrote it, before it is checked against the chapter's panels. */
+export interface TaggedHook {
+  n: number;
+  panel_ids: string[];
+  /** The rest of the H line: strength, kind and spoiler level, in any order. */
+  tags: string;
+  cold: string;
+  tease: string;
 }
 
 export interface TaggedScript {
@@ -43,6 +57,9 @@ export interface TaggedScript {
   pack: { chapter: string; id: string } | null;
   beats: string;
   lines: TaggedLine[];
+  hooks: TaggedHook[];
+  /** RECAP_IN: the story before this chapter, for an episode that starts here. */
+  recap_in: string;
   memory: StoryMemory;
   /** How many NARRATION blocks the text holds; more than one means two answers were pasted. */
   answers: number;
@@ -64,12 +81,16 @@ export function cleanLine(raw: string): string {
 }
 
 const LINE_RE = /^L\s*(\d+)\s*[:.\-–]?\s*\[([^\]]*)\]\s*(?:\(([^)]*)\))?\s*(?:\{([^}]*)\})?\s*(.*)$/i;
-const SECTION_RE = /^(BEATS|NARRATION|MEMORY)\s*:?\s*(.*)$/i;
+const SECTION_RE = /^(BEATS|NARRATION|HOOKS|RECAP_IN|MEMORY)\s*:?\s*(.*)$/i;
+const HOOK_RE = /^H\s*(\d+)\s*[:.\-–]?\s*\[([^\]]*)\]\s*(.*)$/i;
+const HOOK_PART_RE = /^(COLD|TEASE)\s*:?\s*(.*)$/i;
 const PACK_RE = /^PACK\s*:?\s*(ch_\d{4})\W*(?:pack\W*)?([0-9a-f]{4})\b/i;
 const STORY_RE = /^STORY SO FAR\s*:?\s*/i;
 const CHARACTERS_RE = /^CHARACTERS\s*:?\s*/i;
+const LOOPS_RE = /^OPEN LOOPS\s*:?\s*/i;
 
-const MARKER_RE = /\s+(?=(?:PACK|BEATS|NARRATION|MEMORY|STORY SO FAR|CHARACTERS)\s*:|L\s*\d+\s*[:.\-–]?\s*\[)/g;
+const MARKER_RE =
+  /\s+(?=(?:PACK|BEATS|NARRATION|HOOKS|RECAP_IN|COLD|TEASE|MEMORY|STORY SO FAR|CHARACTERS|OPEN LOOPS)\s*:|[LH]\s*\d+\s*[:.\-–]?\s*\[)/g;
 const PRONOUN_RE = /^(?:he|she|they|it)(?:\s*\/\s*\w+)?$/i;
 /** `<card: Name>` anywhere in a line, also with Gemini's other brackets. */
 const CARD_RE = /[<‹«]\s*card\s*[:：]\s*([^>›»]+?)\s*[>›»]/i;
@@ -111,11 +132,14 @@ export function panelIds(text: string): string[] {
 }
 
 export function parseTagged(text: string): TaggedScript {
-  const sections: Record<string, string[]> = { BEATS: [], NARRATION: [], MEMORY: [] };
+  const sections: Record<string, string[]> = { BEATS: [], NARRATION: [], HOOKS: [], RECAP_IN: [], MEMORY: [] };
   let current = "NARRATION";
   let answers = 0;
   let pack: TaggedScript["pack"] = null;
   const lines: TaggedLine[] = [];
+  const hooks: TaggedHook[] = [];
+  /** The hook field a wrapped line continues. */
+  let hookField: "cold" | "tease" | null = null;
   for (const line of itemLines(text)) {
     const packMatch = PACK_RE.exec(line);
     if (packMatch) {
@@ -129,7 +153,23 @@ export function parseTagged(text: string): TaggedScript {
       if (heading[2]) sections[current]!.push(heading[2]);
       continue;
     }
-    const m = current === "MEMORY" ? null : LINE_RE.exec(line);
+    if (current === "HOOKS" && LINE_RE.test(line)) current = "NARRATION";
+    if (current === "HOOKS") {
+      const h = HOOK_RE.exec(line);
+      const part = HOOK_PART_RE.exec(line);
+      const last = hooks[hooks.length - 1];
+      if (h) {
+        hooks.push({ n: Number(h[1]), panel_ids: panelIds(h[2]!), tags: h[3]!, cold: "", tease: "" });
+        hookField = null;
+      } else if (part && last) {
+        hookField = part[1]!.toLowerCase() as "cold" | "tease";
+        last[hookField] = part[2]!.trim();
+      } else if (hookField && last) {
+        last[hookField] = `${last[hookField]} ${line}`.trim();
+      }
+      continue;
+    }
+    const m = current === "MEMORY" || current === "RECAP_IN" ? null : LINE_RE.exec(line);
     if (m) {
       const emotion = Emotion.safeParse((m[3] ?? "").trim().toLowerCase());
       const card = CARD_RE.exec(m[5]!);
@@ -157,6 +197,8 @@ export function parseTagged(text: string): TaggedScript {
     pack,
     beats: sections.BEATS!.join("\n"),
     lines,
+    hooks,
+    recap_in: sections.RECAP_IN!.join(" ").trim(),
     memory: readMemory(sections.MEMORY!),
     answers: Math.max(answers, lines.length ? 1 : 0),
   };
@@ -165,9 +207,14 @@ export function parseTagged(text: string): TaggedScript {
 function readMemory(lines: string[]): StoryMemory {
   const story: string[] = [];
   const characters: string[] = [];
+  const loops: string[] = [];
   let into: string[] | null = null;
   for (const line of lines) {
-    if (STORY_RE.test(line)) {
+    if (LOOPS_RE.test(line)) {
+      into = loops;
+      const rest = line.replace(LOOPS_RE, "");
+      if (rest) loops.push(rest);
+    } else if (STORY_RE.test(line)) {
       into = story;
       const rest = line.replace(STORY_RE, "");
       if (rest) story.push(rest);
@@ -179,7 +226,14 @@ function readMemory(lines: string[]): StoryMemory {
       into?.push(line);
     }
   }
-  return { story: story.join(" ").trim(), characters: characterEntries(characters) };
+  return { story: story.join(" ").trim(), characters: characterEntries(characters), open_loops: openLoops(loops) };
+}
+
+/** "Q1 | question" entries, one per line, also when copying glued them together. */
+function openLoops(lines: string[]): string[] {
+  const glued = lines.join(" ");
+  const entries = /\bQ\d+\s*\|/.test(glued) ? glued.split(/(?=\bQ\d+\s*\|)/) : lines;
+  return entries.map((l) => l.replace(/^[\s\-–•*]+|[\s\-–•*]+$/g, "").trim()).filter((l) => l && !/^none\.?$/i.test(l));
 }
 
 /**
@@ -334,6 +388,8 @@ export interface GeminiPack {
 export interface GeminiResult {
   /** The script, or null while there are errors. */
   doc: ScriptDoc | null;
+  /** The chapter's hooks and recap; empty when the answer has none. */
+  hooks: ChapterHooks;
   memory: StoryMemory;
   beats: string;
   /** Problems that block saving, each saying what to do. */
@@ -404,7 +460,8 @@ export function readGeminiAnswer(text: string, pack: GeminiPack, known: string[]
   const parsed = parseTagged(text);
   const errors: string[] = [];
   const notes: string[] = [];
-  const result = (doc: ScriptDoc | null): GeminiResult => ({ doc: errors.length ? null : doc, memory: parsed.memory, beats: parsed.beats, errors, notes });
+  let hooks: ChapterHooks = { schema_version: 1, chapter_id: pack.chapter, hooks: [], recap_in: "" };
+  const result = (doc: ScriptDoc | null): GeminiResult => ({ doc: errors.length ? null : doc, hooks, memory: parsed.memory, beats: parsed.beats, errors, notes });
 
   if (parsed.answers > 1 || new Set(parsed.lines.map((l) => l.n)).size < parsed.lines.length) {
     errors.push("Two answers are pasted (the narration starts again). Paste only the one you want to keep.");
@@ -452,6 +509,17 @@ export function readGeminiAnswer(text: string, pack: GeminiPack, known: string[]
 
   const { cards, notes: cardNotes } = chapterCards(lines, parsed.memory.characters, known);
   notes.push(...cardNotes);
+  hooks = chapterHooks(parsed, pack, notes);
+  notes.push(
+    ...nameSlips(
+      [
+        ...lines.map((l) => ({ where: `L${l.n}`, text: l.narration })),
+        ...hooks.hooks.map((h) => ({ where: h.id, text: `${h.cold} ${h.tease}` })),
+        { where: "RECAP_IN", text: hooks.recap_in },
+      ],
+      [...parsed.memory.characters, ...known],
+    ),
+  );
   const built = ScriptDoc.safeParse({
     schema_version: 1,
     chapter_id: pack.chapter,
@@ -475,4 +543,93 @@ export function readGeminiAnswer(text: string, pack: GeminiPack, known: string[]
   const doc = built.data;
   for (const p of scriptProblems(doc)) errors.push(`L${lines[Number(p.path[1])]!.n}: ${p.message}`);
   return result(doc);
+}
+
+const spoken = (text: string) => loanwordsToLatin(numbersToWords(text.replace(/\s+/g, " ").trim()));
+
+/**
+ * The chapter's hooks, checked against its panels: unknown panels are dropped, a missing strength, kind or spoiler
+ * level gets a safe default (a hook of unknown spoiler is only ever teased), and at most the three strongest stay.
+ */
+export function chapterHooks(parsed: Pick<TaggedScript, "hooks" | "recap_in">, pack: GeminiPack, notes: string[]): ChapterHooks {
+  const known = new Set(pack.order);
+  if (parsed.hooks.length === 0) notes.push("The answer has no HOOKS, so an episode cannot open on this chapter's best moment");
+  const kept: Hook[] = [];
+  for (const raw of parsed.hooks) {
+    const at = `H${raw.n}`;
+    const ids = [...new Set(raw.panel_ids)].filter((id) => known.has(id) || (notes.push(`${at}: unknown panel ${id} dropped`), false));
+    const cold = spoken(raw.cold);
+    if (!ids.length || !/[ऀ-ॿ]/.test(cold)) {
+      notes.push(`${at}: ${ids.length ? "no Hindi COLD text" : "no valid panel"}, hook dropped`);
+      continue;
+    }
+    const tags = raw.tags.toLowerCase();
+    const strength = Number(/strength\D{0,3}([1-5])/.exec(tags)?.[1] ?? 0);
+    const kind = HookKind.options.find((k) => new RegExp(`\\b${k}\\b`).test(tags));
+    const spoiler = /spoiler\W*(low|high)/.exec(tags)?.[1] as "low" | "high" | undefined;
+    if (!strength) notes.push(`${at}: no strength 1 to 5, read as 3`);
+    if (!kind) notes.push(`${at}: no type (${HookKind.options.join(", ")}), read as question`);
+    if (!spoiler) notes.push(`${at}: no spoiler level, read as high: it will only be teased`);
+    if (ids.length > 3) notes.push(`${at}: ${ids.length} panels, kept the first 3`);
+    kept.push({
+      id: at,
+      panel_ids: ids.sort((a, b) => pack.order.indexOf(a) - pack.order.indexOf(b)).slice(0, 3),
+      strength: strength || 3,
+      kind: kind ?? "question",
+      spoiler: spoiler ?? "high",
+      cold: cold.slice(0, 600),
+      tease: spoken(raw.tease).slice(0, 300),
+    });
+  }
+  const strongest = [...kept].sort((a, b) => b.strength - a.strength).slice(0, 3);
+  if (kept.length > 3) notes.push(`${kept.length} hooks, kept the 3 strongest`);
+  return ChapterHooks.parse({
+    schema_version: 1,
+    chapter_id: pack.chapter,
+    hooks: kept.filter((h) => strongest.includes(h)),
+    recap_in: spoken(parsed.recap_in).slice(0, 600),
+  });
+}
+
+/** Edit distance between two short words. */
+function distance(a: string, b: string): number {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next.push(Math.min(row[j]! + 1, next[j - 1]! + 1, row[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)));
+    row = next;
+  }
+  return row[b.length]!;
+}
+
+/**
+ * Names written two ways (ADR 0008): a capitalised Latin word that is one or two letters off a name in CHARACTERS
+ * or one used more often in the chapter ("Everbank" next to "Evermark") is probably a slip the voice would read
+ * as a different name. Returns a note per slip, saying where it is and what it looks like.
+ */
+export function nameSlips(texts: { where: string; text: string }[], characters: string[]): string[] {
+  const words = (t: string) => t.match(/\b\p{Lu}[\p{L}']{3,}/gu) ?? [];
+  const listed = new Set(characters.flatMap((c) => words((c.split("|")[0] ?? "").trim())));
+  const uses = new Map<string, string[]>();
+  for (const { where, text } of texts) {
+    for (const w of new Set(words(text))) uses.set(w, [...(uses.get(w) ?? []), where]);
+  }
+  const weight = (w: string) => (listed.has(w) ? 1000 : 0) + (uses.get(w)?.length ?? 0);
+  const notes: string[] = [];
+  for (const [word, where] of uses) {
+    if (listed.has(word)) continue;
+    const like = [...new Set([...listed, ...uses.keys()])].find(
+      (other) =>
+        other !== word &&
+        other[0] === word[0] &&
+        weight(other) > weight(word) &&
+        distance(word.toLowerCase(), other.toLowerCase()) <= (Math.min(word.length, other.length) >= 7 ? 2 : 1),
+    );
+    if (like) {
+      const seen = uses.get(like);
+      const source = listed.has(like) ? "CHARACTERS" : seen!.join(", ");
+      notes.push(`${where.join(", ")}: ${word} looks like a slip for ${like} (${source}); the voice would say two different names`);
+    }
+  }
+  return notes;
 }

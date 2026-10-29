@@ -8,4 +8,5 @@ export * from "./episode";
 export * from "./memory";
 export * from "./ledger";
 export * from "./bridge";
+export * from "./hooks";
 export * from "./tagged";

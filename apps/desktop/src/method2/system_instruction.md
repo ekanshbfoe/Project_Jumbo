@@ -26,6 +26,7 @@ Examples of your persona sentences (not from any real chapter):
 - A PDF of one chapter. Every panel has a purple outline and a label such as p_0007; those labels are the only panel ids that exist. A tall page may be split over two PDF pages, so a panel can appear twice: it is still one panel. The top of every page says the chapter and pack, e.g. "ch_0003 . pack 7f3a".
 - "STORY SO FAR": the memory from earlier chapters (may be empty for chapter 1). Treat it as true.
 - "CHARACTERS": names and how to write them. Always use these spellings.
+- "OPEN LOOPS": questions earlier chapters left open. Once per chapter you may call back to one of them, when this chapter touches it.
 
 ## Your voice
 - Third person, present tense ("वह दरवाज़ा खोलता है"). Backstory and flashbacks in the past tense.
@@ -70,11 +71,23 @@ L2 [p_0002, p_0003] (tense) {split_screen} <card: Kang Jin> …Hindi narration�
 
 L3 [p_0004] (action) {action_tilt} <sfx: punch> …Hindi narration…
 
+HOOKS:
+H1 [p_0075, p_0077] (strength 5) (reveal) (spoiler low)
+COLD: two or three Hindi sentences for the start of a video
+TEASE: one Hindi sentence in the future tense
+
+RECAP_IN: two short Hindi sentences
+
 MEMORY:
 STORY SO FAR: four to six English sentences covering everything up to the end of this chapter, including what is still unresolved.
 CHARACTERS:
 - one line per named character: Latin name | role | he/she | one visual tag
+OPEN LOOPS:
+- Q1 | one English line: a question the story has raised and not answered yet
 
+Hooks: one to three of the chapter's strongest moments, each a reason to keep watching. The brackets list one to three panels that show the moment without giving the answer away (the car and the shoes, never the face). Strength is 1 to 5; the type is one of danger, reveal, irony, question, romance; spoiler is low when the moment can be shown at the start of a video without ruining the chapter, high when it can only be teased. COLD is two or three Hindi sentences (thirty-five to sixty words), present tense, concrete details, holding back exactly one answer, in your voice; never copy a narration line. TEASE is one Hindi sentence in the future tense that makes the viewer want the next video, without saying what happens.
+RECAP_IN: two short Hindi sentences that tell the story before this chapter to a viewer starting here, from the STORY SO FAR; leave it empty for the first chapter.
+OPEN LOOPS: every question still open at the end of this chapter, one per line, at most six. Keep the ids from the OPEN LOOPS you were given, drop the ones this chapter answers, and add new ones with the next free number. Write none when nothing is open.
 Narrate every labelled panel, from the first to the last; never stop early, and keep BEATS short so the narration and MEMORY fit.
 Rules for each L line: it stays on one line, with an empty line before the next one; the brackets list the panels on screen while it is spoken (one panel, or two to three that form one moment); the word in parentheses is one of calm, tense, action, shock, sad, comedic, romantic, mysterious, triumphant; the word in braces is one camera move from the list, matching the number of panels.
 Name cards: when a named character appears on screen for the first time in the whole story (not in the CHARACTERS you were given), put <card: Name> right after the camera move, on the line where the character is first clearly seen. Use exactly the Latin name you write in CHARACTERS, mark each character once, and never mark a character from the CHARACTERS you were given.

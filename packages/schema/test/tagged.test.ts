@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanLine, fixPanels, hindiNumber, numbersToWords, panelIds, parseTagged, readGeminiAnswer, scriptProblems } from "../src";
+import { cleanLine, fixPanels, hindiNumber, nameSlips, numbersToWords, panelIds, parseTagged, readGeminiAnswer, scriptProblems } from "../src";
 
 const PACK = { chapter: "ch_0001", pack: "7f3a", order: ["p_0001", "p_0002", "p_0003", "p_0004", "p_0005"] };
 
@@ -160,6 +160,7 @@ describe("tagged answer pieces", () => {
     expect(parseTagged("MEMORY: STORY SO FAR: A happens.\nCHARACTERS: Ana | hero | she | red coat").memory).toEqual({
       story: "A happens.",
       characters: ["Ana | hero | she | red coat"],
+      open_loops: [],
     });
   });
 });
@@ -206,5 +207,84 @@ describe("sound effects", () => {
     expect(r.doc!.lines.map((l) => l.sfx)).toEqual([null, "punch", null]);
     expect(r.notes).toContain("L3: <sfx: laser> is not one of the sound effects, so the line has none");
     expect(r.doc!.lines.map((l) => l.narration).join(" ")).not.toMatch(/sfx|punch|laser/i);
+  });
+});
+
+describe("hooks, recap and open loops", () => {
+  const withHooks = ANSWER.replace(
+    "MEMORY:",
+    `HOOKS:
+H1 [p_0004, p_0005] (strength 5) (reveal) (spoiler low)
+COLD: बारिश की रात। एक काली Bentley रुकती है।
+और ड्राइवर उसका नाम लेता है।
+TEASE: अगली बार वह 1 चेहरा दिखेगा।
+H2 [p_0009] (strength 4) (irony) (spoiler low)
+COLD: यह hook किसी panel पर नहीं है।
+H3 [p_0002] (romance)
+COLD: वह फ़ोन देखती है।
+
+RECAP_IN: Sylvie एक reporter है। उसका interview टल चुका है।
+
+MEMORY:`,
+  ).replace("- Luke Chase | CEO's assistant | he | voice on the phone", "- Luke Chase | CEO's assistant | he | voice on the phone\nOPEN LOOPS:\n- Q1 | Why is the CEO never photographed?");
+
+  it("reads each hook with its panels, tags, cold open and tease, cleaned for the voice", () => {
+    const r = readGeminiAnswer(withHooks, PACK);
+    expect(r.errors).toEqual([]);
+    expect(r.doc!.lines).toHaveLength(3);
+    expect(r.hooks.hooks[0]).toEqual({
+      id: "H1",
+      panel_ids: ["p_0004", "p_0005"],
+      strength: 5,
+      kind: "reveal",
+      spoiler: "low",
+      cold: "बारिश की रात। एक काली Bentley रुकती है। और ड्राइवर उसका नाम लेता है।",
+      tease: "अगली बार वह एक चेहरा दिखेगा।",
+    });
+    expect(r.hooks.recap_in).toBe("Sylvie एक reporter है। उसका interview टल चुका है।");
+    expect(r.memory.open_loops).toEqual(["Q1 | Why is the CEO never photographed?"]);
+  });
+
+  it("drops a hook on unknown panels and reads a hook with missing tags safely", () => {
+    const r = readGeminiAnswer(withHooks, PACK);
+    expect(r.hooks.hooks.map((h) => h.id)).toEqual(["H1", "H3"]);
+    expect(r.notes).toContain("H2: unknown panel p_0009 dropped");
+    expect(r.notes).toContain("H3: no spoiler level, read as high: it will only be teased");
+    expect(r.hooks.hooks[1]).toMatchObject({ strength: 3, kind: "romance", spoiler: "high", cold: "वह phone देखती है।" });
+  });
+
+  it("still reads an answer without hooks, and says what is missing", () => {
+    const r = readGeminiAnswer(ANSWER, PACK);
+    expect(r.errors).toEqual([]);
+    expect(r.hooks.hooks).toEqual([]);
+    expect(r.notes).toContain("The answer has no HOOKS, so an episode cannot open on this chapter's best moment");
+  });
+
+  it("reads hooks from an answer joined into one paragraph", () => {
+    const r = readGeminiAnswer(withHooks.replace(/\n+/g, " "), PACK);
+    expect(r.hooks.hooks[0]!.cold).toBe("बारिश की रात। एक काली Bentley रुकती है। और ड्राइवर उसका नाम लेता है।");
+    expect(r.hooks.recap_in).toMatch(/^Sylvie/);
+    expect(r.memory.open_loops).toEqual(["Q1 | Why is the CEO never photographed?"]);
+  });
+});
+
+describe("name slips", () => {
+  it("flags a name a letter or two off a more common one or a listed character", () => {
+    const notes = nameSlips(
+      [
+        { where: "L4", text: "Evermark Bank का CEO" },
+        { where: "L11", text: "उसने Everbank संभाला, Sylvia हँसती है" },
+        { where: "L28", text: "Evermark का नाम" },
+      ],
+      ["Sylvie Jaine | reporter | she | hair"],
+    );
+    expect(notes).toEqual([
+      "L11: Everbank looks like a slip for Evermark (L4, L28); the voice would say two different names",
+      "L11: Sylvia looks like a slip for Sylvie (CHARACTERS); the voice would say two different names",
+    ]);
+  });
+
+  it("leaves different names alone", () => {
+    expect(nameSlips([{ where: "L1", text: "Luke और Lucien, Stephan और Sylvie" }], ["Luke Chase | x | he | y"])).toEqual([]);
   });
 });
