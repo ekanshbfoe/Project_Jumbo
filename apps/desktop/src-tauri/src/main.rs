@@ -59,6 +59,7 @@ fn main() {
             script::write_script,
             script::chapter_script,
             script::approve_script,
+            script::set_line_sfx,
             script::rewind_chapter,
             gemini::gemini_pack,
             gemini::save_gemini_script,

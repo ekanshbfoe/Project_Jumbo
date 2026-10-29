@@ -1,4 +1,4 @@
-import { PanelsDoc, ScriptDoc, scriptProblems } from "@jumbo/schema";
+import { PanelsDoc, ScriptDoc, scriptProblems, SoundEffect } from "@jumbo/schema";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useState } from "react";
@@ -120,6 +120,21 @@ export function ScriptScreen({ project }: ScreenProps) {
     });
   };
 
+  // After approval a sound effect is saved straight into the approved script: it is mixed in at assembly, so it
+  // needs neither a new voice nor a new render.
+  const setSfx = async (i: number, sfx: SoundEffect | null) => {
+    const line = draft?.lines[i];
+    if (!line || !chapter) return;
+    if (data.data?.script_file !== "approved.json") return edit(i, { sfx });
+    setError(undefined);
+    try {
+      await api.setLineSfx(chapter, line.id, sfx);
+      setDraft((d) => d && { ...d, lines: d.lines.map((l, j) => (j === i ? { ...l, sfx } : l)) });
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
   const stage = current ? CHAPTER_STATES.indexOf(current.state) : -1;
   const canWrite = connected && (current?.state === "analyzed" || current?.state === "directed") && !progress;
   const canApprove = !!draft && problems.length === 0 && !data.data?.report?.failed.length && stage >= CHAPTER_STATES.indexOf("directed") && stage <= CHAPTER_STATES.indexOf("approved");
@@ -196,6 +211,19 @@ export function ScriptScreen({ project }: ScreenProps) {
                     </button>
                   </div>
                 )
+              ) : null}
+              {project.method === "method2" ? (
+                <label className="row" title="Plays as this line's first panel appears. Mixed in when the episode is assembled, so changing it needs no new voice or render.">
+                  <span className="muted">Sound effect</span>
+                  <select value={line.sfx ?? ""} onChange={(e) => void setSfx(i, e.target.value ? SoundEffect.parse(e.target.value) : null)}>
+                    <option value="">none</option>
+                    {SoundEffect.options.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               ) : null}
             </div>
           </div>

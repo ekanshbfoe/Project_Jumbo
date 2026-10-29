@@ -36,6 +36,8 @@ L1 [p_0001] (calm) {pan} …Hindi narration…
 
 L2 [p_0002, p_0003] (tense) {split_screen} <card: Kang Jin> …Hindi narration…
 
+L3 [p_0004] (action) {action_tilt} <sfx: punch> …Hindi narration…
+
 MEMORY:
 STORY SO FAR: four to six English sentences covering everything up to the end of this chapter, including what is still unresolved.
 CHARACTERS:
@@ -44,3 +46,4 @@ CHARACTERS:
 Narrate every labelled panel, from the first to the last; never stop early, and keep BEATS short so the narration and MEMORY fit.
 Rules for each L line: it stays on one line, with an empty line before the next one; the brackets list the panels on screen while it is spoken (one panel, or two to three that form one moment); the word in parentheses is one of calm, tense, action, shock, sad, comedic, romantic, mysterious, triumphant; the word in braces is one camera move from the list, matching the number of panels.
 Name cards: when a named character appears on screen for the first time in the whole story (not in the CHARACTERS you were given), put <card: Name> right after the camera move, on the line where the character is first clearly seen. Use exactly the Latin name you write in CHARACTERS, mark each character once, and never mark a character from the CHARACTERS you were given.
+Sound effects: put <sfx: name> right after the camera move (after any card) on a line whose panel shows a strong physical moment; it plays as that panel appears. Use only these names: whoosh (a fast move, a dash, a scene change), punch (a hit with a fist or kick), impact (a heavy blow, a landing, a body hitting the ground), slash (a blade or claw swing), clash (blades or weapons meeting), explosion (a blast), boom (a huge reveal or a dramatic turn), riser (tension building just before a reveal), heartbeat (dread, fear, a frozen moment), shatter (glass, ice or something breaking), power (a power, aura or transformation awakening), system (a game-system window, notification or level-up), footsteps (someone slowly approaching), slam (a door, a desk or a fist slammed), comedic (a gag or a funny reaction). At most one per line, only where the panel itself shows it, and sparingly: about one line in six at most, none in quiet talking scenes, and never on two lines in a row with the same sound.

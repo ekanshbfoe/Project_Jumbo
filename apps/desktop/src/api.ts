@@ -253,6 +253,7 @@ export const api = {
   writeScript: (chapter: string) => invoke<ChapterManifest>("write_script", { chapter }),
   chapterScript: (chapter: string) => invoke<ScriptView>("chapter_script", { chapter }),
   approveScript: (chapter: string, script: unknown) => invoke<ChapterManifest>("approve_script", { chapter, script }),
+  setLineSfx: (chapter: string, line: string, sfx: string | null) => invoke<unknown>("set_line_sfx", { chapter, line, sfx }),
   rewindChapter: (chapter: string, to: ChapterState) => invoke<ChapterManifest>("rewind_chapter", { chapter, to }),
   geminiPack: (chapter: string) => invoke<GeminiView>("gemini_pack", { chapter }),
   exportNumberedPdf: (chapter: string, dest: string) => invoke<void>("export_numbered_pdf", { chapter, dest }),

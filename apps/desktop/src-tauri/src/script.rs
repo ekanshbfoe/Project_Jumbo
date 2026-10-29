@@ -332,6 +332,32 @@ pub fn approve_script(state: State<AppState>, chapter: String, script: Value) ->
     with_project(&state, |p| approve(p, chapter.parse().map_err(msg)?, &script))
 }
 
+/// Changes the sound effect of one line of an approved script, at any stage after approval: a sound effect is mixed
+/// in when the episode is assembled, so it never needs the voice recorded or a part rendered again.
+fn set_sfx(project: &Project, id: ChapterId, line: &str, sfx: Option<&str>) -> CmdResult<Value> {
+    let manifest = chapter::load_chapter(project, id).map_err(msg)?;
+    if manifest.state < ChapterState::Approved {
+        return Err(format!("{id} has no approved script yet; choose the sound effect before approving"));
+    }
+    let path = chapter::chapter_dir(project, id).join("script").join("approved.json");
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("approved.json: {e}"))?;
+    let mut script: Value = serde_json::from_str(&text).map_err(|e| format!("approved.json: {e}"))?;
+    let target = script["lines"]
+        .as_array_mut()
+        .and_then(|lines| lines.iter_mut().find(|l| l["id"].as_str() == Some(line)))
+        .ok_or_else(|| format!("{id} has no line {line}"))?;
+    target["sfx"] = sfx.map_or(Value::Null, |s| Value::String(s.to_owned()));
+    // The typed script knows the 15 sounds, so a name outside the library is refused.
+    serde_json::from_value::<ScriptDoc>(script.clone()).map_err(|e| format!("not a sound effect: {e}"))?;
+    fsx::atomic_write_json(&path, &script).map_err(msg)?;
+    Ok(script)
+}
+
+#[tauri::command]
+pub fn set_line_sfx(state: State<AppState>, chapter: String, line: String, sfx: Option<String>) -> CmdResult<Value> {
+    with_project(&state, |p| set_sfx(p, chapter.parse().map_err(msg)?, &line, sfx.as_deref()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,6 +461,23 @@ mod tests {
         assert!(approve(&project, second, &twice).expect_err("unnamed").contains("no name"));
         twice["lines"][1]["card"] = Value::Null;
         approve(&project, second, &twice).expect("one new character");
+    }
+
+    #[test]
+    fn a_sound_effect_changes_after_approval_without_touching_the_stage() {
+        let (_tmp, project, id) = project_with_chapter();
+        install(&project, id, &manifest(id, "m")).expect("install");
+        assert!(set_sfx(&project, id, "l_0001", Some("punch")).expect_err("draft").contains("before approving"));
+        let state = approve(&project, id, &sample_script(id)).expect("approve").state;
+        let script = set_sfx(&project, id, "l_0001", Some("punch")).expect("punch");
+        assert_eq!(script["lines"][0]["sfx"], "punch");
+        assert!(set_sfx(&project, id, "l_0001", Some("laser")).is_err());
+        assert!(set_sfx(&project, id, "l_9999", None).is_err());
+        set_sfx(&project, id, "l_0001", None).expect("none");
+        let saved =
+            std::fs::read_to_string(chapter::chapter_dir(&project, id).join("script/approved.json")).expect("saved");
+        assert!(saved.contains("\"sfx\": null") || saved.contains("\"sfx\":null"), "{saved}");
+        assert_eq!(chapter::load_chapter(&project, id).expect("manifest").state, state);
     }
 
     #[test]
