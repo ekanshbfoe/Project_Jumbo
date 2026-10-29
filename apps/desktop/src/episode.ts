@@ -16,10 +16,16 @@ export function buildEpisode(chapter: string, src: PreviewSources, title: string
 /**
  * A chapter's part of an episode (ADR 0007): the follow card shows early only in the first part and at the end only
  * in the last, so a long episode shows it once at each end. Parts join straight, with no title card between them.
+ * The last part also holds its final panel after the narration (END_HOLD_S).
  */
 export function buildPart(chapter: string, src: PreviewSources, title: string, at: { first: boolean; last: boolean }) {
-  return buildEpisode(chapter, src, title, { promo: at.last ? { early: at.first } : { early: at.first, outro_s: 0 } });
+  // The last part holds its final panel 3 s after the narration, so the episode does not stop on the last word.
+  const promo = at.last ? { early: at.first } : { early: at.first, outro_s: 0 };
+  return buildEpisode(chapter, src, title, { promo, endHold: at.last ? END_HOLD_S : 0 });
 }
+
+/** Seconds the episode's last panel holds after the narration while the brand music fades out. */
+export const END_HOLD_S = 3;
 
 /** The title a chapter is shown under: its own, or its PDF's name. */
 export const chapterTitle = (c: { title?: string; original_name: string }) => c.title ?? c.original_name.replace(/\.pdf$/i, "");

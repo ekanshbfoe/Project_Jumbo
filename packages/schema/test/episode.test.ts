@@ -117,6 +117,13 @@ describe("buildEpisodeSpec", () => {
     expect(spec.beats.map((b) => b.sfx)).toEqual([null, "clash", null]);
   });
 
+  it("holds the last panel after the narration when asked", () => {
+    const plain = buildEpisodeSpec(script, panels, audio);
+    const held = buildEpisodeSpec(script, panels, audio, { endHold: 3 });
+    expect(held.beats.at(-1)!.duration).toBeCloseTo(plain.beats.at(-1)!.duration + 3, 5);
+    expect(held.beats.slice(0, -1)).toEqual(plain.beats.slice(0, -1));
+  });
+
   it("passes an episode part's follow-card settings", () => {
     const spec = buildEpisodeSpec(script, panels, audio, { promo: { early: false, outro_s: 0 } });
     expect(spec.social_promo).toMatchObject({ early: false, outro_s: 0, start_s: 20 });

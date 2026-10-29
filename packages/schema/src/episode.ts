@@ -142,6 +142,8 @@ export interface BuildEpisodeOptions {
   sequential?: boolean;
   /** Overrides for the follow card (an episode part shows it early only in the first part, at the end only in the last). */
   promo?: Partial<z.input<typeof SocialPromoSettings>>;
+  /** Seconds the last panel stays on screen after the narration ends (an episode's last part), so the music can fade out. */
+  endHold?: number;
 }
 
 /** A panel this many times taller than wide is "tall": two of them may share the frame side by side. */
@@ -222,6 +224,26 @@ export function buildEpisodeSpec(
   const used = new Set(script.lines.flatMap((l) => l.panel_ids));
   const byId = new Map(panelsDoc.panels.map((p) => [p.id, EpisodePanel.parse(p)]));
 
+  const beats = script.lines.flatMap((line, i) => {
+    const clip = clips.get(line.id);
+    const spoken = clip ? clip.duration : line.narration.split(/\s+/).length / wordsPerSecond;
+    const beat = {
+      line_id: line.id,
+      panel_ids: line.panel_ids,
+      narration: line.narration,
+      emotion: line.emotion,
+      preset: line.preset,
+      transition_in: transition(line),
+      audio: clip ? { src: clip.src, duration: clip.duration, from: 0 } : null,
+      card: line.card,
+      sfx: line.sfx,
+      duration: beatLength(Math.max(minBeat, spoken + padding + overlapOf(transition(script.lines[i + 1]))), fps),
+    };
+    return sequential ? stepThrough(beat, byId, fps) : [beat];
+  });
+  const last = beats.at(-1);
+  if (last && options.endHold) last.duration = beatLength(last.duration + options.endHold, fps);
+
   return EpisodeSpec.parse({
     schema_version: 1,
     chapter_id: script.chapter_id,
@@ -230,23 +252,7 @@ export function buildEpisodeSpec(
     hide_bubbles: options.hideBubbles ?? false,
     social_promo: options.promo ?? {},
     panels: panelsDoc.panels.filter((p) => used.has(p.id)),
-    beats: script.lines.flatMap((line, i) => {
-      const clip = clips.get(line.id);
-      const spoken = clip ? clip.duration : line.narration.split(/\s+/).length / wordsPerSecond;
-      const beat = {
-        line_id: line.id,
-        panel_ids: line.panel_ids,
-        narration: line.narration,
-        emotion: line.emotion,
-        preset: line.preset,
-        transition_in: transition(line),
-        audio: clip ? { src: clip.src, duration: clip.duration, from: 0 } : null,
-        card: line.card,
-        sfx: line.sfx,
-        duration: beatLength(Math.max(minBeat, spoken + padding + overlapOf(transition(script.lines[i + 1]))), fps),
-      };
-      return sequential ? stepThrough(beat, byId, fps) : [beat];
-    }),
+    beats,
   });
 }
 
