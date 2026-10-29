@@ -80,6 +80,11 @@ class TransitionSpec(BaseModel):
     duration: Annotated[float | None, Field(ge=0.0, le=1.5)] = 0.4
 
 
+class CharacterCard(BaseModel):
+    name: Annotated[str, Field(max_length=60, min_length=1)]
+    role: Annotated[str | None, Field(max_length=80)] = ""
+
+
 class HoldPreset(BaseModel):
     """
     Static panel. Use for quiet exposition or dialogue-heavy beats.
@@ -193,6 +198,7 @@ class ScriptLine(BaseModel):
     voice: Annotated[VoiceDirection | None, Field(validate_default=True)] = {}
     preset: HoldPreset | ZoomPreset | PanPreset | ShakePreset | ActionTiltPreset | KineticJitterPreset | PanoramicFadePreset | SplitScreenPreset | FloatingPanelsPreset | HorizontalSlicesPreset | HudPopupPreset
     transition_in: Annotated[TransitionSpec | None, Field(validate_default=True)] = {}
+    card: CharacterCard | None = None
 
 
 class ScriptDoc(BaseModel):

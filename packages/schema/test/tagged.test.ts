@@ -142,7 +142,7 @@ describe("tagged answer pieces", () => {
   });
 
   it("joins only a single skipped panel to its neighbour's line", () => {
-    const line = (n: number, ids: string[]) => ({ n, panel_ids: ids, emotion: null, emotion_text: null, move: null, narration: "x" });
+    const line = (n: number, ids: string[]) => ({ n, panel_ids: ids, emotion: null, emotion_text: null, move: null, card: null, narration: "x" });
     const fixed = fixPanels([line(1, ["p_0001"]), line(2, ["p_0001", "p_0042"]), line(3, ["p_0003"])], ["p_0001", "p_0002", "p_0003", "p_0004", "p_0005"]);
     expect(fixed.lines.map((l) => l.panel_ids)).toEqual([["p_0001", "p_0002"], ["p_0003"]]);
     expect(fixed.missing).toEqual(["p_0004", "p_0005"]);
@@ -161,5 +161,39 @@ describe("tagged answer pieces", () => {
       story: "A happens.",
       characters: ["Ana | hero | she | red coat"],
     });
+  });
+});
+
+describe("character cards", () => {
+  const carded = ANSWER.replace("{zoom} उसका", "{zoom} <card: Sylvie Jaine> उसका").replace("{split_screen} उधर", "{split_screen} <Card: Luke Chase> उधर");
+
+  it("keeps a marked card with its role from CHARACTERS and takes the mark out of the narration", () => {
+    const r = readGeminiAnswer(carded, PACK);
+    expect(r.errors).toEqual([]);
+    expect(r.doc!.lines.map((l) => l.card)).toEqual([null, { name: "Sylvie Jaine", role: "reporter" }, { name: "Luke Chase", role: "CEO's assistant" }]);
+    expect(r.doc!.lines[1]!.narration).not.toContain("card");
+    expect(r.doc!.lines[1]!.narration.startsWith("उसका")).toBe(true);
+  });
+
+  it("shows a card only on the first appearance in the whole series", () => {
+    // Sylvie was in an earlier chapter's approved memory (any spelling of spaces or case).
+    const r = readGeminiAnswer(carded, PACK, ["  sylvie   jaine | reporter | she | black hair"]);
+    expect(r.doc!.lines[1]!.card).toBeNull();
+    expect(r.notes).toContain("L2: no card for Sylvie Jaine: sylvie   jaine appeared in an earlier chapter");
+    expect(r.doc!.lines[2]!.card).toEqual({ name: "Luke Chase", role: "CEO's assistant" });
+  });
+
+  it("flags a missing card, a repeat, an unlisted name and a name like an earlier one", () => {
+    const twice = ANSWER.replace("{zoom} उसका", "{zoom} <card: Luke> उसका").replace("{split_screen} उधर", "{split_screen} <card: luke> उधर");
+    const r = readGeminiAnswer(twice, PACK, ["Luke Chase | CEO's assistant | he | voice"]);
+    expect(r.doc!.lines.map((l) => l.card)).toEqual([null, { name: "Luke", role: "" }, null]);
+    expect(r.notes).toEqual(
+      expect.arrayContaining([
+        "L2: Luke is not in CHARACTERS, so the card has no role; add one on the Script screen",
+        "L2: Luke looks like Luke Chase from an earlier chapter; if it is the same person, remove the card",
+        "L3: luke has a card on an earlier line already, this one is dropped",
+        "No card for Sylvie Jaine, who is new in this chapter; add one on the Script screen if it should show",
+      ]),
+    );
   });
 });

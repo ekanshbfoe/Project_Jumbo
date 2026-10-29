@@ -450,6 +450,17 @@
         "duration": {
           "type": "number",
           "exclusiveMinimum": 0
+        },
+        "card": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CharacterCard"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -874,6 +885,24 @@
           "maximum": 1.5
         }
       }
+    },
+    "CharacterCard": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "role": {
+          "default": "",
+          "type": "string",
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "name"
+      ]
     }
   }
 }

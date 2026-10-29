@@ -24,6 +24,16 @@ export const VoiceDirection = z.object({
   intensity: z.number().min(0).max(1).default(0.5),
 }).meta({ id: "VoiceDirection" });
 
+/**
+ * A character's name card, shown once in the whole series: on the line where the character first appears (ADR 0007).
+ * Gemini marks the line; the app keeps the card only when no earlier chapter's story memory knows the character.
+ */
+export const CharacterCard = z.object({
+  name: z.string().min(1).max(60),
+  /** Short English role from the CHARACTERS list, e.g. "the transfer student". */
+  role: z.string().max(80).default(""),
+}).meta({ id: "CharacterCard" });
+
 export const ScriptLine = z
   .object({
     id: LineId,
@@ -34,6 +44,7 @@ export const ScriptLine = z
     voice: VoiceDirection.prefault({}),
     preset: PresetSpec,
     transition_in: TransitionSpec.prefault({}),
+    card: CharacterCard.nullable().default(null),
   })
   .superRefine((line, ctx) => {
     const multi = MULTI_PANEL_PRESETS.has(line.preset.name);
@@ -62,6 +73,7 @@ export const ScriptDoc = z
   });
 
 export type Emotion = z.infer<typeof Emotion>;
+export type CharacterCard = z.infer<typeof CharacterCard>;
 export type VoiceDirection = z.infer<typeof VoiceDirection>;
 export type ScriptLine = z.infer<typeof ScriptLine>;
 export type ScriptDoc = z.infer<typeof ScriptDoc>;

@@ -24,6 +24,7 @@ export function SocialPromoPreview(settings: SocialPromoSettings) {
     emotion: "calm",
     preset: PresetSpec.parse({ name: "zoom", params: { to: 1.08 } }),
     transition_in: { name: "cut", duration: 0 },
+    card: null,
     audio: null,
     duration: PROMO_PREVIEW_SECONDS,
   };

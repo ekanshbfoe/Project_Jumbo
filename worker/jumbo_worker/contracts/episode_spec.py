@@ -131,6 +131,11 @@ class TransitionSpec(BaseModel):
     duration: Annotated[float | None, Field(ge=0.0, le=1.5)] = 0.4
 
 
+class CharacterCard(BaseModel):
+    name: Annotated[str, Field(max_length=60, min_length=1)]
+    role: Annotated[str | None, Field(max_length=80)] = ""
+
+
 class Bubble(BaseModel):
     id: Annotated[str, Field(pattern="^b_\\d{4}$")]
     kind: Literal["speech", "thought", "narration", "sfx"]
@@ -259,6 +264,7 @@ class Beat(BaseModel):
     transition_in: Annotated[TransitionSpec | None, Field(validate_default=True)] = {}
     audio: Audio | None
     duration: Annotated[float, Field(gt=0.0)]
+    card: CharacterCard | None = None
 
 
 class EpisodeSpec(BaseModel):

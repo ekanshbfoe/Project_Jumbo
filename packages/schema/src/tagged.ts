@@ -1,5 +1,5 @@
 import { scriptProblems } from "./hinglish";
-import { Emotion, ScriptDoc } from "./script";
+import { Emotion, ScriptDoc, type CharacterCard } from "./script";
 import { MULTI_PANEL_PRESETS, PresetSpec, type PresetName } from "./presets";
 
 /**
@@ -7,6 +7,7 @@ import { MULTI_PANEL_PRESETS, PresetSpec, type PresetName } from "./presets";
  *
  *   PACK: ch_0003 7f3a
  *   L3 [p_0005, p_0006] (tense) {split_screen} …Hindi narration…
+ *   L4 [p_0007] (calm) {zoom} <card: Kang Jin> …Hindi narration…   (a character's first appearance)
  *
  * The answer is pasted by hand, so it is read forgivingly (Markdown, list markers, escaped brackets, wrapped lines,
  * loose panel ids) but checked strictly: an answer for another chapter or pack, a cut-off answer that leaves panels
@@ -22,6 +23,8 @@ export interface TaggedLine {
   /** What Gemini wrote in the parentheses, kept to say so when it is not a known emotion. */
   emotion_text: string | null;
   move: string | null;
+  /** The name in a `<card: Name>` mark: the character Gemini says first appears on this line. */
+  card: string | null;
   narration: string;
 }
 
@@ -65,6 +68,8 @@ const CHARACTERS_RE = /^CHARACTERS\s*:?\s*/i;
 
 const MARKER_RE = /\s+(?=(?:PACK|BEATS|NARRATION|MEMORY|STORY SO FAR|CHARACTERS)\s*:|L\s*\d+\s*[:.\-–]?\s*\[)/g;
 const PRONOUN_RE = /^(?:he|she|they|it)(?:\s*\/\s*\w+)?$/i;
+/** `<card: Name>` anywhere in a line, also with Gemini's other brackets. */
+const CARD_RE = /[<‹«]\s*card\s*[:：]\s*([^>›»]+?)\s*[>›»]/i;
 
 /**
  * The answer one item per line, however it was copied. AI Studio's Markdown view can join the whole answer into
@@ -122,13 +127,15 @@ export function parseTagged(text: string): TaggedScript {
     const m = current === "MEMORY" ? null : LINE_RE.exec(line);
     if (m) {
       const emotion = Emotion.safeParse((m[3] ?? "").trim().toLowerCase());
+      const card = CARD_RE.exec(m[5]!);
       lines.push({
         n: Number(m[1]),
         panel_ids: panelIds(m[2]!),
         emotion: emotion.success ? emotion.data : null,
         emotion_text: m[3]?.trim() || null,
         move: m[4] ? m[4].trim().toLowerCase() : null,
-        narration: m[5]!.trim(),
+        card: card ? card[1]!.trim() : null,
+        narration: m[5]!.replace(CARD_RE, " ").replace(/\s+/g, " ").trim(),
       });
       current = "NARRATION";
     } else if (current === "NARRATION" && lines.length) {
@@ -328,13 +335,65 @@ export interface GeminiResult {
   notes: string[];
 }
 
+/** The key a character is known by: the name before the first "|", lowercased, spaces collapsed (memory.rs). */
+export function characterKey(line: string): string {
+  return (line.split("|")[0] ?? "").trim().split(/\s+/).join(" ").toLowerCase();
+}
+
+/** True when one name's words are all in the other ("Jin" and "Kang Jin"): perhaps the same person. */
+function similar(a: string, b: string): boolean {
+  if (!a || !b || a === b) return false;
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  const words = new Set(long.split(" "));
+  return short.split(" ").every((w) => words.has(w));
+}
+
+/**
+ * The cards a chapter keeps (ADR 0007): a card shows only on a character's first appearance in the whole series.
+ * `known` are the characters of every earlier chapter's approved memory, `characters` this answer's CHARACTERS
+ * (where a card's role comes from). Returns each marked line's card, or null where it was dropped, with notes.
+ */
+export function chapterCards(marks: { n: number; card: string | null }[], characters: string[], known: string[]): { cards: Map<number, CharacterCard>; notes: string[] } {
+  const cards = new Map<number, CharacterCard>();
+  const notes: string[] = [];
+  const earlier = new Map(known.map((c) => [characterKey(c), (c.split("|")[0] ?? "").trim()]));
+  const listed = new Map(characters.map((c) => [characterKey(c), c]));
+  const carded = new Set<string>();
+  for (const { n, card } of marks) {
+    if (!card) continue;
+    const key = characterKey(card);
+    if (earlier.has(key)) {
+      notes.push(`L${n}: no card for ${card}: ${earlier.get(key)} appeared in an earlier chapter`);
+      continue;
+    }
+    if (carded.has(key)) {
+      notes.push(`L${n}: ${card} has a card on an earlier line already, this one is dropped`);
+      continue;
+    }
+    carded.add(key);
+    const line = listed.get(key);
+    const role = (line?.split("|")[1] ?? "").trim();
+    if (!line) notes.push(`L${n}: ${card} is not in CHARACTERS, so the card has no role; add one on the Script screen`);
+    const like = [...earlier.entries()].find(([k]) => similar(k, key));
+    if (like) notes.push(`L${n}: ${card} looks like ${like[1]} from an earlier chapter; if it is the same person, remove the card`);
+    cards.set(n, { name: card, role });
+  }
+  for (const [key, line] of listed) {
+    if (!earlier.has(key) && !carded.has(key)) notes.push(`No card for ${(line.split("|")[0] ?? "").trim()}, who is new in this chapter; add one on the Script screen if it should show`);
+  }
+  return { cards, notes };
+}
+
 /** Ids for a message: a short list, or "first–last (n panels)". */
 function describe(ids: string[]): string {
   return ids.length > 4 ? `${ids[0]}–${ids[ids.length - 1]} (${ids.length} panels)` : ids.join(", ");
 }
 
-/** Gemini's pasted answer, checked against the pack the chapter was exported as. */
-export function readGeminiAnswer(text: string, pack: GeminiPack): GeminiResult {
+/**
+ * Gemini's pasted answer, checked against the pack the chapter was exported as. `known` are the characters of the
+ * earlier chapters (the prompt's CHARACTERS), so a card is kept only for a character's first appearance.
+ */
+export function readGeminiAnswer(text: string, pack: GeminiPack, known: string[] = []): GeminiResult {
   const parsed = parseTagged(text);
   const errors: string[] = [];
   const notes: string[] = [];
@@ -381,6 +440,8 @@ export function readGeminiAnswer(text: string, pack: GeminiPack): GeminiResult {
   }
   if (errors.length || lines.length === 0) return result(null);
 
+  const { cards, notes: cardNotes } = chapterCards(lines, parsed.memory.characters, known);
+  notes.push(...cardNotes);
   const built = ScriptDoc.safeParse({
     schema_version: 1,
     chapter_id: pack.chapter,
@@ -393,6 +454,7 @@ export function readGeminiAnswer(text: string, pack: GeminiPack): GeminiResult {
       preset: presetFor(l.move, l.panel_ids.length, (msg) => notes.push(`L${l.n}: ${msg}`)),
       // A short fade between lines: 59 hard cuts in five minutes play like a slideshow.
       transition_in: { name: i === 0 ? "cut" : "fade", duration: 0.3 },
+      card: cards.get(l.n) ?? null,
     })),
   });
   if (!built.success) {
