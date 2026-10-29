@@ -9,15 +9,18 @@ export interface BeatTiming {
 }
 
 export interface EpisodeTimeline {
+  /** Frames of the opening card; the first beat starts here. */
+  openingFrames: number;
   beats: BeatTiming[];
   durationInFrames: number;
 }
 
 /** Frame layout of an episode. Transitions overlap neighbouring beats, so they shorten the total. */
-export function episodeTimeline(spec: Pick<EpisodeSpec, "beats" | "video">): EpisodeTimeline {
+export function episodeTimeline(spec: Pick<EpisodeSpec, "beats" | "video"> & { opening?: EpisodeSpec["opening"] }): EpisodeTimeline {
   const { fps } = spec.video;
   const beats: BeatTiming[] = [];
-  let cursor = 0;
+  const openingFrames = spec.opening ? Math.round(spec.opening.seconds * fps) : 0;
+  let cursor = openingFrames;
 
   spec.beats.forEach((beat, i) => {
     const durationInFrames = Math.max(1, Math.round(beat.duration * fps));
@@ -30,7 +33,7 @@ export function episodeTimeline(spec: Pick<EpisodeSpec, "beats" | "video">): Epi
     cursor = from + durationInFrames;
   });
 
-  return { beats, durationInFrames: Math.max(1, cursor) };
+  return { openingFrames, beats, durationInFrames: Math.max(1, cursor) };
 }
 
 export interface FrameWindow {
@@ -46,7 +49,7 @@ export interface FrameWindow {
 export function promoWindows(
   totalFrames: number,
   fps: number,
-  promo: { start_s: number; duration_s: number; outro_s: number },
+  promo: { early?: boolean; start_s: number; duration_s: number; outro_s: number },
   minFrames: number,
 ): FrameWindow[] {
   const windows: FrameWindow[] = [];
@@ -54,7 +57,7 @@ export function promoWindows(
   const outroFrom = totalFrames - outro;
   const from = Math.round(promo.start_s * fps);
   const end = Math.min(from + Math.round(promo.duration_s * fps), outro >= minFrames ? outroFrom : totalFrames);
-  if (end - from >= minFrames) windows.push({ from, durationInFrames: end - from });
+  if (promo.early !== false && end - from >= minFrames) windows.push({ from, durationInFrames: end - from });
   if (outro >= minFrames) windows.push({ from: outroFrom, durationInFrames: outro });
   return windows;
 }
