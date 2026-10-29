@@ -26,6 +26,7 @@ function promptFor(view: GeminiView): string {
     `STORY SO FAR: ${ctx?.story || "This is the first chapter."}`,
     "CHARACTERS:",
     ...(ctx?.characters.length ? ctx.characters : ["(none yet)"]),
+    ...(ctx?.open_loops.length ? ["OPEN LOOPS:", ...ctx.open_loops] : []),
     ...(ctx?.last_lines.length ? [`LAST NARRATED LINES: ${ctx.last_lines.join(" / ")}`] : []),
     "",
     `Narrate this chapter now: every labelled panel from ${pack.order[0]} to ${pack.order[pack.order.length - 1]} (${pack.order.length} panels), in the answer format, starting with the PACK line.`,
@@ -138,7 +139,8 @@ export function GeminiScreen({ project }: ScreenProps) {
     if (!chapter || !pack || !read?.doc) return;
     setError(undefined);
     try {
-      await api.saveGeminiScript(chapter, pack.pack, read.doc, { story, characters: characters.split("\n").map((c) => c.trim()).filter(Boolean) });
+      const memory = { story, characters: characters.split("\n").map((c) => c.trim()).filter(Boolean), open_loops: read.memory.open_loops };
+      await api.saveGeminiScript(chapter, pack.pack, read.doc, memory, read.hooks.hooks.length || read.hooks.recap_in ? read.hooks : null);
       setSaved(`Saved ${read.doc.lines.length} lines. Review and approve the script on the Script screen.`);
       clearDraft(project.root, chapter, "gemini");
       chapters.reload();
@@ -197,7 +199,7 @@ export function GeminiScreen({ project }: ScreenProps) {
             <strong>2. Paste Gemini's answer</strong>
             <textarea
               className="answer"
-              placeholder={`PACK: ${pack.chapter} ${pack.pack}\n\nBEATS:\n…\n\nNARRATION:\nL1 [${pack.order[0]}] (calm) {hold} …\n\nMEMORY:\nSTORY SO FAR: …\nCHARACTERS:\n…`}
+              placeholder={`PACK: ${pack.chapter} ${pack.pack}\n\nBEATS:\n…\n\nNARRATION:\nL1 [${pack.order[0]}] (calm) {hold} …\n\nHOOKS:\nH1 [${pack.order[0]}] (strength 5) (reveal) (spoiler low)\nCOLD: …\nTEASE: …\n\nRECAP_IN: …\n\nMEMORY:\nSTORY SO FAR: …\nCHARACTERS:\n…\nOPEN LOOPS:\n…`}
               value={answer}
               onChange={(e) => {
                 setAnswer(e.target.value);

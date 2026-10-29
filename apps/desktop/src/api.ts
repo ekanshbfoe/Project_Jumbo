@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ChapterHooks } from "@jumbo/schema";
 
 // Mirrors the DTOs in src-tauri/src/commands.rs and the serde types in jumbo-core / jumbo-ledger.
 
@@ -223,6 +224,7 @@ export interface StoryContext {
   story: string;
   characters: string[];
   last_lines: string[];
+  open_loops: string[];
   from: string | null;
 }
 
@@ -256,8 +258,9 @@ export const api = {
   rewindChapter: (chapter: string, to: ChapterState) => invoke<ChapterManifest>("rewind_chapter", { chapter, to }),
   geminiPack: (chapter: string) => invoke<GeminiView>("gemini_pack", { chapter }),
   exportNumberedPdf: (chapter: string, dest: string) => invoke<void>("export_numbered_pdf", { chapter, dest }),
-  saveGeminiScript: (chapter: string, pack: string, script: unknown, memory: { story: string; characters: string[] }) =>
-    invoke<ChapterManifest>("save_gemini_script", { chapter, pack, script, memory }),
+  saveGeminiScript: (chapter: string, pack: string, script: unknown, memory: { story: string; characters: string[]; open_loops: string[] }, hooks: ChapterHooks | null) =>
+    invoke<ChapterManifest>("save_gemini_script", { chapter, pack, script, memory, hooks }),
+  chapterHooks: (chapters: string[]) => invoke<Record<string, ChapterHooks | null>>("chapter_hooks", { chapters }),
   voiceLibrary: () => invoke<Record<string, string[]>>("voice_library"),
   importVoice: (speaker: string, emotion: string, path: string) => invoke<void>("import_voice", { speaker, emotion, path }),
   recordVoice: (chapter: string) => invoke<ChapterManifest>("record_voice", { chapter }),

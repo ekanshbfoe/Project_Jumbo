@@ -31,6 +31,9 @@ pub struct StoryMemory {
     /// The chapter's last narration lines, so the next one does not repeat them.
     #[serde(default)]
     pub last_lines: Vec<String>,
+    /// Questions still open at the end of the chapter, "Q1 | question" (Method 2 hooks, ADR 0008).
+    #[serde(default)]
+    pub open_loops: Vec<String>,
     #[serde(default)]
     pub method: Method,
 }
@@ -41,6 +44,7 @@ pub struct StoryContext {
     pub story: String,
     pub characters: Vec<String>,
     pub last_lines: Vec<String>,
+    pub open_loops: Vec<String>,
     /// The chapter the story comes from; none for the first chapter.
     pub from: Option<String>,
 }
@@ -110,6 +114,7 @@ pub fn context_before(project: &Project, id: ChapterId) -> CmdResult<StoryContex
         story: memory.story,
         characters,
         last_lines: memory.last_lines,
+        open_loops: memory.open_loops,
         from: Some(previous.id.to_string()),
     })
 }

@@ -89,7 +89,24 @@ pub struct PastedMemory {
     pub story: String,
     #[serde(default)]
     pub characters: Vec<String>,
+    #[serde(default)]
+    pub open_loops: Vec<String>,
 }
+
+/// A hook as the frontend checked it (packages/schema/src/hooks.ts); only its panels are checked again here.
+#[derive(Debug, Clone, Deserialize)]
+struct HookPanels {
+    id: String,
+    panel_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct HooksFile {
+    chapter_id: String,
+    hooks: Vec<HookPanels>,
+}
+
+pub const HOOKS: &str = "hooks.json";
 
 /// Saves a script read from Gemini's answer as the chapter's next draft, with its memory, and marks it Directed.
 fn save(
@@ -98,6 +115,7 @@ fn save(
     pack: &str,
     script: &Value,
     pasted: &PastedMemory,
+    hooks: Option<&Value>,
 ) -> CmdResult<ChapterManifest> {
     if project.manifest().method != Method::Method2 {
         return Err("this is a Method 1 project: its scripts come from the Director".into());
@@ -133,6 +151,17 @@ fn save(
     if !problems.is_empty() {
         return Err(format!("fix these lines first: {}", problems.join("; ")));
     }
+    if let Some(hooks) = hooks {
+        let file: HooksFile = serde_json::from_value(hooks.clone()).map_err(|e| format!("the hooks are invalid: {e}"))?;
+        if file.chapter_id != id.to_string() {
+            return Err(format!("these hooks belong to {}, not {id}", file.chapter_id));
+        }
+        if let Some((h, p)) =
+            file.hooks.iter().find_map(|h| h.panel_ids.iter().find(|p| !known.contains(p.as_str())).map(|p| (h, p)))
+        {
+            return Err(format!("hook {} names {p}, which this chapter does not have", h.id));
+        }
+    }
     if pasted.story.trim().is_empty() {
         return Err("the answer's MEMORY block is empty; the next chapter would start without the story".into());
     }
@@ -148,9 +177,17 @@ fn save(
         story: pasted.story.trim().to_owned(),
         characters: pasted.characters.iter().map(|c| c.trim().to_owned()).filter(|c| !c.is_empty()).collect(),
         last_lines,
+        open_loops: pasted.open_loops.iter().map(|c| c.trim().to_owned()).filter(|c| !c.is_empty()).collect(),
         method: Method::Method2,
     };
     memory::write_draft(project, id, &story)?;
+    // Hooks come with the answer they were read from: an answer without any leaves none behind.
+    match hooks {
+        Some(hooks) => fsx::atomic_write_json(&dir.join(HOOKS), hooks).map_err(msg)?,
+        None => {
+            let _ = std::fs::remove_file(dir.join(HOOKS));
+        }
+    }
     fsx::atomic_write_json(&dir.join("gemini.json"), &json!({ "pack": numbered.pack })).map_err(msg)?;
     if state.state == ChapterState::Analyzed {
         return chapter::advance(project, id, ChapterState::Directed).map_err(msg);
@@ -165,8 +202,28 @@ pub fn save_gemini_script(
     pack: String,
     script: Value,
     memory: PastedMemory,
+    hooks: Option<Value>,
 ) -> CmdResult<ChapterManifest> {
-    with_project(&state, |p| save(p, chapter.parse().map_err(msg)?, &pack, &script, &memory))
+    with_project(&state, |p| save(p, chapter.parse().map_err(msg)?, &pack, &script, &memory, hooks.as_ref()))
+}
+
+/// Each chapter's hooks (script/hooks.json), or null where its answer had none: what an episode opens and ends on.
+#[tauri::command]
+pub fn chapter_hooks(state: State<AppState>, chapters: Vec<String>) -> CmdResult<serde_json::Map<String, Value>> {
+    with_project(&state, |p| {
+        let mut out = serde_json::Map::new();
+        for c in chapters {
+            let id: ChapterId = c.parse().map_err(msg)?;
+            let path = chapter::chapter_dir(p, id).join("script").join(HOOKS);
+            let value = match std::fs::read_to_string(&path) {
+                Ok(text) => serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Value::Null,
+                Err(e) => return Err(format!("{}: {e}", path.display())),
+            };
+            out.insert(c, value);
+        }
+        Ok(out)
+    })
 }
 
 #[cfg(test)]
@@ -192,7 +249,11 @@ mod tests {
     }
 
     fn story(text: &str) -> PastedMemory {
-        PastedMemory { story: text.into(), characters: vec!["Jinwoo | hunter | he | scar".into()] }
+        PastedMemory {
+            story: text.into(),
+            characters: vec!["Jinwoo | hunter | he | scar".into()],
+            open_loops: vec!["Q1 | Who sent the letter?".into()],
+        }
     }
 
     fn method2(project: &mut Project) {
@@ -204,7 +265,7 @@ mod tests {
         let (_tmp, mut project, ids) = project_with_chapters(1);
         method2(&mut project);
         with_pack(&project, ids[0], "7f3a");
-        let state = save(&project, ids[0], "7f3a", &script(ids[0]), &story("Jinwoo wakes.")).expect("save");
+        let state = save(&project, ids[0], "7f3a", &script(ids[0]), &story("Jinwoo wakes."), None).expect("save");
         assert_eq!(state.state, ChapterState::Directed);
         let dir = chapter::chapter_dir(&project, ids[0]).join("script");
         assert!(dir.join("draft.v1.json").is_file() && dir.join("memory.draft.json").is_file());
@@ -214,24 +275,24 @@ mod tests {
     fn a_pasted_script_is_refused_for_the_wrong_project_pack_or_panels() {
         let (_tmp, mut project, ids) = project_with_chapters(2);
         let s = script(ids[0]);
-        assert!(save(&project, ids[0], "7f3a", &s, &story("x")).expect_err("method 1").contains("Method 1 project"));
+        assert!(save(&project, ids[0], "7f3a", &s, &story("x"), None).expect_err("method 1").contains("Method 1 project"));
         method2(&mut project);
-        assert!(save(&project, ids[0], "7f3a", &s, &story("x")).expect_err("no pack").contains("no numbered PDF"));
+        assert!(save(&project, ids[0], "7f3a", &s, &story("x"), None).expect_err("no pack").contains("no numbered PDF"));
         with_pack(&project, ids[0], "b201");
-        assert!(save(&project, ids[0], "7f3a", &s, &story("x")).expect_err("old pack").contains("now pack b201"));
+        assert!(save(&project, ids[0], "7f3a", &s, &story("x"), None).expect_err("old pack").contains("now pack b201"));
         assert!(
-            save(&project, ids[0], "b201", &s, &story(" ")).expect_err("no memory").contains("MEMORY block is empty")
+            save(&project, ids[0], "b201", &s, &story(" "), None).expect_err("no memory").contains("MEMORY block is empty")
         );
         let mut short = s.clone();
         short["lines"].as_array_mut().expect("lines").truncate(1);
         assert!(
-            save(&project, ids[0], "b201", &short, &story("x"))
+            save(&project, ids[0], "b201", &short, &story("x"), None)
                 .expect_err("incomplete")
                 .contains("no narration for p_0002")
         );
         // Chapter 2 waits for chapter 1's approved story.
         with_pack(&project, ids[1], "c0de");
-        let err = save(&project, ids[1], "c0de", &script(ids[1]), &story("y")).expect_err("chain");
+        let err = save(&project, ids[1], "c0de", &script(ids[1]), &story("y"), None).expect_err("chain");
         assert!(err.contains("Approve ch_0001's script first"), "{err}");
     }
 
@@ -241,7 +302,29 @@ mod tests {
         assert!(!memory::any_script(&project).expect("none"));
         method2(&mut project);
         with_pack(&project, ids[0], "7f3a");
-        save(&project, ids[0], "7f3a", &script(ids[0]), &story("x")).expect("save");
+        save(&project, ids[0], "7f3a", &script(ids[0]), &story("x"), None).expect("save");
         assert!(memory::any_script(&project).expect("one"));
+    }
+
+    #[test]
+    fn hooks_are_saved_with_the_answer_and_checked_against_the_panels() {
+        let (_tmp, mut project, ids) = project_with_chapters(1);
+        method2(&mut project);
+        with_pack(&project, ids[0], "7f3a");
+        let hooks = |panel: &str| {
+            json!({ "schema_version": 1, "chapter_id": ids[0].to_string(), "recap_in": "",
+                    "hooks": [{ "id": "H1", "panel_ids": [panel], "strength": 5, "kind": "reveal", "spoiler": "low", "cold": "x", "tease": "" }] })
+        };
+        let err = save(&project, ids[0], "7f3a", &script(ids[0]), &story("x"), Some(&hooks("p_0009"))).expect_err("panel");
+        assert!(err.contains("hook H1 names p_0009"), "{err}");
+        save(&project, ids[0], "7f3a", &script(ids[0]), &story("x"), Some(&hooks("p_0002"))).expect("save");
+        let file = chapter::chapter_dir(&project, ids[0]).join("script").join(HOOKS);
+        assert!(file.is_file());
+        let draft: StoryMemory =
+            serde_json::from_str(&std::fs::read_to_string(file.with_file_name(memory::DRAFT)).expect("draft")).expect("json");
+        assert_eq!(draft.open_loops, vec!["Q1 | Who sent the letter?"]);
+        // A later answer without hooks leaves none behind.
+        save(&project, ids[0], "7f3a", &script(ids[0]), &story("x"), None).expect("save");
+        assert!(!file.exists());
     }
 }

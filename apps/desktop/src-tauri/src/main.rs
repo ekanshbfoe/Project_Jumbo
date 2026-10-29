@@ -63,6 +63,7 @@ fn main() {
             script::rewind_chapter,
             gemini::gemini_pack,
             gemini::save_gemini_script,
+            gemini::chapter_hooks,
             gemini::export_numbered_pdf,
             voice::voice_library,
             voice::import_voice,
