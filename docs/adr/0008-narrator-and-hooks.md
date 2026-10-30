@@ -32,7 +32,18 @@ one chapter at a time and cannot see a whole one-hour episode, so a hook for the
 5. **Name slips** (a name one or two letters off a listed or more common one, "Everbank" beside "Evermark") are
    flagged when the answer is read, since the voice would say two different names.
 
-## Not yet
-
-The cold open, bridge, recap and tease are planned and shown on the Episodes screen but not voiced or rendered into
-the video: that needs the new narrator voice and cloud runs, and waits for them.
+6. **The voice (2026-10-30).** Drama 3 is the only voice engine. Mayu is two cloned references in the shared voice
+   library, picked by each line's emotion: the serious one is `neutral` (cold open, tense, action, shock, sad,
+   mysterious, and anything without its own file) and says the signature; the bright one is `calm`, `comedic`,
+   `romantic` and `triumphant`. The worker keeps her in one voice across one-line switches (a line between two lines
+   of the other voice takes theirs, its own cue still directing it); a sad line keeps its voice. The signature was
+   made by voicing a Hindi sentence and the line in one take and cutting it out, so she says the English the way
+   she says the Hindi.
+7. **The wrapper is voiced and rendered.** The plan becomes one script (`buildWrapper`, packages/schema/src/
+   wrapper.ts): the cold open over its hook's panels (mysterious), the bridge on the cold open's last panel
+   (mysterious), the recap over the last panels of the chapter before the episode or else the episode's first panel
+   (calm), the tease over the next chapter's hook panels (calm, soft and warm). Its panels are copied from their own
+   chapters under new ids. It is voiced in one T4 job into `episodes/<id>/wrapper/` and rendered on Kaggle CPU as two
+   parts of the episode, `episodes/<id>/intro` and `episodes/<id>/outro`, joined around the chapters' parts. The
+   outro takes the follow card and the final hold for the signature from the last chapter's part. Until the wrapper
+   is voiced as the plan stands, the episode is made without it.
