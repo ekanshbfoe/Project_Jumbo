@@ -86,7 +86,9 @@ export interface WrapperState {
   current: boolean;
 }
 
-const spoken = (lines: { id: string; narration: string; emotion: string; voice?: unknown }[]) => JSON.stringify(lines.map((l) => [l.id, l.narration, l.emotion, l.voice]));
+type Spoken = { id: string; narration: string; emotion: string; voice?: { speaker?: string; tone?: string; pace?: string } };
+// Field by field: the saved script comes back from Rust with its keys in another order.
+const spoken = (lines: Spoken[]) => JSON.stringify(lines.map((l) => [l.id, l.narration, l.emotion, l.voice?.speaker, l.voice?.tone, l.voice?.pace]));
 
 export async function episodeWrapper({ episode, all, index }: EpisodeSources): Promise<WrapperState> {
   const at = (id: string) => all.findIndex((c) => c.id === id);
