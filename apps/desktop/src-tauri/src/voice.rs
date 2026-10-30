@@ -171,25 +171,46 @@ pub async fn record_voice(
     let report = |progress: f64, message: String| {
         let _ = app.emit("voice://progress", Progress { chapter: &chapter, progress, message });
     };
+    let staged = dir.join(".voice.partial");
+    let manifest = voice_job(&state, &bridge, &voices, &dir, &script, &chapter, &staged, report).await;
+    let done = manifest.and_then(|manifest| with_project(&state, |p| install(p, id, &staged, &manifest)));
+    let _ = std::fs::remove_dir_all(&staged);
+    report(1.0, "voiced".into());
+    done
+}
 
+/// Runs the worker's voice job on `script` (a ScriptDoc for `chapter`) with every voice in the library, and fetches
+/// its clips into `staged/audio/`. Voice files the job created are kept in the project's library. `work` holds the
+/// request and the manifest while they are passed on.
+#[allow(clippy::too_many_arguments)]
+async fn voice_job(
+    state: &State<'_, AppState>,
+    bridge: &State<'_, BridgeState>,
+    voices: &BTreeMap<String, BTreeMap<String, PathBuf>>,
+    work: &Path,
+    script: &Value,
+    chapter: &str,
+    staged: &Path,
+    report: impl Fn(f64, String),
+) -> CmdResult<VoiceManifest> {
     report(0.0, "uploading voices".into());
     let mut specs = Map::new();
-    for (speaker, emotions) in &voices {
+    for (speaker, emotions) in voices {
         let mut prompts = Map::new();
         for (emotion, path) in emotions {
-            prompts.insert(emotion.clone(), Value::String(upload(&bridge, path).await?));
+            prompts.insert(emotion.clone(), Value::String(upload(bridge, path).await?));
         }
         specs.insert(speaker.clone(), json!({ "prompts": prompts }));
     }
-    let request_path = dir.join(".voice.request.json");
+    let request_path = work.join(".voice.request.json");
     fsx::atomic_write_json(&request_path, &json!({ "script": script, "voices": specs })).map_err(msg)?;
-    let input = upload(&bridge, &request_path).await;
+    let input = upload(bridge, &request_path).await;
     let _ = std::fs::remove_file(&request_path);
-    let output = run_job(&bridge, "voice", &input?, json!({}), |p, m| report(0.02 + p * 0.88, m)).await?;
+    let output = run_job(bridge, "voice", &input?, json!({}), |p, m| report(0.02 + p * 0.88, m)).await?;
 
     report(0.9, "downloading clips".into());
-    let manifest_path = dir.join(".voice.manifest.json");
-    download(&bridge, &output, &manifest_path).await?;
+    let manifest_path = work.join(".voice.manifest.json");
+    download(bridge, &output, &manifest_path).await?;
     let manifest: Result<VoiceManifest, String> =
         std::fs::read(&manifest_path).map_err(msg).and_then(|bytes| serde_json::from_slice(&bytes).map_err(msg));
     let _ = std::fs::remove_file(&manifest_path);
@@ -197,24 +218,101 @@ pub async fn record_voice(
     if manifest.chapter_id != chapter {
         return Err(format!("worker answered for {} instead of {chapter}", manifest.chapter_id));
     }
-    let staged = dir.join(".voice.partial");
-    let _ = std::fs::remove_dir_all(&staged);
+    let _ = std::fs::remove_dir_all(staged);
     for (rel, hash) in &manifest.files {
         let dest = staged.join(safe_audio(rel)?);
         std::fs::create_dir_all(dest.parent().ok_or("bad path")?).map_err(msg)?;
-        download(&bridge, hash, &dest).await?;
+        download(bridge, hash, &dest).await?;
     }
     for (speaker, emotions) in &manifest.voices {
         for (emotion, hash) in emotions {
-            let dest = with_project(&state, |p| voice_path(p, speaker, emotion))?;
+            let dest = with_project(state, |p| voice_path(p, speaker, emotion))?;
             std::fs::create_dir_all(dest.parent().ok_or("bad path")?).map_err(msg)?;
-            download(&bridge, hash, &dest).await?;
+            download(bridge, hash, &dest).await?;
         }
     }
-    let done = with_project(&state, |p| install(p, id, &staged, &manifest));
+    Ok(manifest)
+}
+
+/// Swaps the fetched clips in as the wrapper's `audio/` (ADR 0008), each clip's path moved from the chapter the
+/// worker filed it under to the wrapper's folder, with the script they were voiced from. `rel` is the wrapper
+/// folder's project-relative path.
+fn install_wrapper(dir: &Path, rel: &str, staged: &Path, manifest: &VoiceManifest, script: &Value) -> CmdResult<Value> {
+    let mut audio = manifest.audio.clone();
+    for clip in audio["clips"].as_array_mut().into_iter().flatten() {
+        let src = clip["src"].as_str().unwrap_or_default();
+        let file = src
+            .rsplit_once("/audio/")
+            .map(|(_, f)| f)
+            .ok_or_else(|| format!("worker sent a clip outside audio/: {src}"))?;
+        clip["src"] = Value::String(format!("{rel}/audio/{file}"));
+    }
+    let _: AudioManifest =
+        serde_json::from_value(audio.clone()).map_err(|e| format!("audio manifest from the worker is invalid: {e}"))?;
+    let fresh = staged.join("audio");
+    std::fs::create_dir_all(&fresh).map_err(msg)?;
+    fsx::atomic_write_json(&fresh.join("audio.manifest.json"), &audio).map_err(msg)?;
+    fsx::atomic_write_json(&fresh.join("voice.report.json"), &manifest.report).map_err(msg)?;
+    let live = dir.join("audio");
+    let old = dir.join(".audio.old");
+    let _ = std::fs::remove_dir_all(&old);
+    if live.exists() {
+        std::fs::rename(&live, &old).map_err(msg)?;
+    }
+    std::fs::rename(&fresh, &live).map_err(msg)?;
+    let _ = std::fs::remove_dir_all(&old);
+    fsx::atomic_write_json(&dir.join("script.json"), script).map_err(msg)?;
+    Ok(json!({ "script": script, "audio": audio }))
+}
+
+/// Voices an episode's wrapper (ADR 0008): `script` is its cold open, bridge, recap and tease as one ScriptDoc, built
+/// by the app from the episode's plan. Spoken by the same voices and checks as a chapter; progress arrives as
+/// `voice://progress` events under the episode's id.
+#[tauri::command]
+pub async fn record_wrapper(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    bridge: State<'_, BridgeState>,
+    episode: String,
+    script: Value,
+) -> CmdResult<Value> {
+    let _job = begin_job(&state, Lane::Worker, format!("{episode} wrapper voice"))?;
+    let chapter = script["chapter_id"].as_str().ok_or("the wrapper's script has no chapter_id")?.to_owned();
+    let shared = shared_voices(&app).ok();
+    let (root, dir, voices) = with_project(&state, |p| {
+        crate::assembly::load_episode(p, &episode)?;
+        Ok((p.paths().root().to_path_buf(), crate::assembly::wrapper_dir(p, &episode)?, library(shared.as_deref(), p)))
+    })?;
+    std::fs::create_dir_all(&dir).map_err(msg)?;
+    let rel = dir.strip_prefix(&root).map_err(msg)?.to_string_lossy().replace('\\', "/");
+    current_client(&bridge).await?;
+    let report = |progress: f64, message: String| {
+        let _ = app.emit("voice://progress", Progress { chapter: &episode, progress, message });
+    };
+    let staged = dir.join(".voice.partial");
+    let manifest = voice_job(&state, &bridge, &voices, &dir, &script, &chapter, &staged, report).await;
+    let done = manifest.and_then(|manifest| install_wrapper(&dir, &rel, &staged, &manifest, &script));
     let _ = std::fs::remove_dir_all(&staged);
     report(1.0, "voiced".into());
     done
+}
+
+/// The wrapper an episode was last voiced with: its script and audio manifest, or nulls before the first time.
+#[tauri::command]
+pub fn episode_wrapper(state: State<AppState>, episode: String) -> CmdResult<Value> {
+    with_project(&state, |p| {
+        let dir = crate::assembly::wrapper_dir(p, &episode)?;
+        let read = |path: PathBuf| -> CmdResult<Value> {
+            match std::fs::read_to_string(&path) {
+                Ok(text) => serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display())),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::Null),
+                Err(e) => Err(msg(e)),
+            }
+        };
+        Ok(
+            json!({ "script": read(dir.join("script.json"))?, "audio": read(dir.join("audio").join("audio.manifest.json"))? }),
+        )
+    })
 }
 
 /// The chapter's clips and the voice report, for the Voice screen.
@@ -320,6 +418,27 @@ mod tests {
             dir.join("audio").join("audio.manifest.json").is_file()
                 && dir.join("audio").join("voice.report.json").is_file()
         );
+    }
+
+    #[test]
+    fn the_wrapper_keeps_its_clips_and_script_in_the_episode() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (wrapper, staged) = (dir.path().join("wrapper"), dir.path().join("staged"));
+        std::fs::create_dir_all(wrapper.join("audio")).expect("old audio");
+        std::fs::write(wrapper.join("audio").join("old.wav"), b"old").expect("old clip");
+        let id = ChapterId::new(1).expect("id");
+        let script = json!({"chapter_id": "ch_0001", "lines": []});
+        let saved =
+            install_wrapper(&wrapper, "episodes/ep_0001/wrapper", &staged, &manifest(id), &script).expect("install");
+        assert_eq!(saved["audio"]["clips"][0]["src"], "episodes/ep_0001/wrapper/audio/l_0001.wav");
+        assert_eq!(saved["script"], script);
+        assert!(!wrapper.join("audio").join("old.wav").exists());
+        let on_disk: Value = serde_json::from_str(
+            &std::fs::read_to_string(wrapper.join("audio/audio.manifest.json")).expect("manifest"),
+        )
+        .expect("json");
+        assert_eq!(on_disk, saved["audio"]);
+        assert!(wrapper.join("script.json").is_file());
     }
 
     #[test]

@@ -286,6 +286,39 @@ pub async fn render_part(
     mark_rendered(&state, id)
 }
 
+/// Renders part `part` (`intro` or `outro`) of `episode`'s wrapper (ADR 0008) on Kaggle CPU machines, like a
+/// chapter's part: `spec` plays the wrapper's voiced lines over panels of any of the project's chapters. Kept as
+/// `episodes/<id>/<part>/part.{mp4,wav,json}`.
+#[tauri::command]
+pub async fn render_wrapper(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    episode: String,
+    part: String,
+    spec: Value,
+) -> CmdResult<()> {
+    if !assembly::WRAPPER_PARTS.contains(&part.as_str()) {
+        return Err(format!("{part} is not a part of an episode's wrapper"));
+    }
+    let _job = begin_job(&state, Lane::Render, format!("{episode} {part} render"))?;
+    let (root, dir) = with_project(&state, |p| {
+        assembly::load_episode(p, &episode)?;
+        Ok((p.paths().root().to_path_buf(), assembly::part_dir(p, &episode, &part)?))
+    })?;
+    let _: EpisodeSpec = serde_json::from_value(spec.clone()).map_err(|e| format!("the {part} is invalid: {e}"))?;
+    let bytes = serde_json::to_vec(&spec).map_err(msg)?;
+    let fingerprint = assembly::fingerprint(&root, &spec)?;
+    let name = format!("{episode}-{part}");
+    let staging = dir.join(".part");
+    render_spec(&app, &root, &name, &bytes, &name, &staging, true).await?;
+    for ext in ["mp4", "wav"] {
+        std::fs::rename(staging.join(format!("{name}.{ext}")), dir.join(format!("{}.{ext}", assembly::PART)))
+            .map_err(msg)?;
+    }
+    let _ = std::fs::remove_dir_all(&staging);
+    assembly::write_part(&dir, &episode, &fingerprint, &spec)
+}
+
 /// The rendered video's path (project-relative) and the saved episode, for the Render screen.
 #[tauri::command]
 pub fn chapter_render(state: State<AppState>, chapter: String) -> CmdResult<Value> {

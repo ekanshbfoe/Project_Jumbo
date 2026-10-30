@@ -5,7 +5,9 @@
 //! under the brand music and sound effects once (`mix.rs`).
 //!
 //! An episode lives in `episodes/<ep_NNNN>/episode.json`; its video is `episodes/<ep_NNNN>/<ep_NNNN>.mp4`. A chapter
-//! belongs to at most one episode, so its part is simply `chapters/<id>/render/part.{mp4,wav,json}`.
+//! belongs to at most one episode, so its part is simply `chapters/<id>/render/part.{mp4,wav,json}`. The episode's
+//! wrapper (ADR 0008) adds up to two parts of its own around the chapters, `episodes/<ep_NNNN>/{intro,outro}/`, from
+//! the script and clips voiced into `episodes/<ep_NNNN>/wrapper/`.
 
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -26,6 +28,10 @@ use crate::mix::{self, Effect, SfxLibrary, TARGET_LUFS};
 pub(crate) const PART: &str = "part";
 const EPISODES: &str = "episodes";
 const EPISODE_FILE: &str = "episode.json";
+/// The wrapper's parts: the intro plays before the episode's first chapter, the outro after its last.
+pub(crate) const WRAPPER_PARTS: [&str; 2] = ["intro", "outro"];
+/// The folder of an episode's voiced wrapper: its script (`script.json`) and clips (`audio/`).
+const WRAPPER: &str = "wrapper";
 
 /// The ffmpeg the join uses: a static build pinned by version and SHA-256, downloaded once into the app's folder.
 const FFMPEG_RELEASE: &str = "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1";
@@ -214,6 +220,29 @@ pub(crate) fn check_member(project: &Project, episode: &str, id: ChapterId) -> C
     if file.chapters.contains(&id) { Ok(()) } else { Err(format!("{id} is not in {episode}")) }
 }
 
+/// The folder of an episode's voiced wrapper.
+pub(crate) fn wrapper_dir(project: &Project, episode: &str) -> CmdResult<PathBuf> {
+    Ok(episode_dir(project, episode)?.join(WRAPPER))
+}
+
+/// Where the part `key` of `episode` lives: `intro` and `outro` in the episode's folder, a chapter's in its `render`.
+pub(crate) fn part_dir(project: &Project, episode: &str, key: &str) -> CmdResult<PathBuf> {
+    if WRAPPER_PARTS.contains(&key) {
+        return episode_dir(project, episode).map(|d| d.join(key));
+    }
+    let id: ChapterId = key.parse().map_err(msg)?;
+    Ok(chapter::chapter_dir(project, id).join("render"))
+}
+
+/// The episode's parts in playing order: the intro when the app has a spec for one, the chapters, then the outro.
+fn part_order(file: &EpisodeFile, specs: &serde_json::Map<String, Value>) -> Vec<String> {
+    let [intro, outro] = WRAPPER_PARTS;
+    let mut keys: Vec<String> = specs.contains_key(intro).then(|| intro.to_owned()).into_iter().collect();
+    keys.extend(file.chapters.iter().map(ToString::to_string));
+    keys.extend(specs.contains_key(outro).then(|| outro.to_owned()));
+    keys
+}
+
 /// A part's fingerprint: its EpisodeSpec, every file it plays (panels, backdrops, narration) and the renderer
 /// itself. The same fingerprint means the same video, so a part is rendered again only when one of them changed.
 /// Sound effects are left out: they are mixed in at assembly, so changing one never renders a part again.
@@ -251,9 +280,10 @@ fn read_part(render_dir: &Path) -> Option<PartInfo> {
     serde_json::from_str(&text).ok()
 }
 
-/// Whether `id`'s part for `episode` is current, given the part `spec` the app would render now.
-pub(crate) fn part_state(project: &Project, episode: &str, id: ChapterId, spec: &Value) -> CmdResult<PartState> {
-    let render_dir = chapter::chapter_dir(project, id).join("render");
+/// Whether the part `key` (a chapter id, `intro` or `outro`) of `episode` is current, given the part `spec` the app
+/// would render now.
+pub(crate) fn part_state(project: &Project, episode: &str, key: &str, spec: &Value) -> CmdResult<PartState> {
+    let render_dir = part_dir(project, episode, key)?;
     let Some(info) = read_part(&render_dir) else { return Ok(PartState::Missing) };
     let files = [format!("{PART}.mp4"), format!("{PART}.wav")];
     if info.episode != episode || files.iter().any(|f| !render_dir.join(f).is_file()) {
@@ -570,7 +600,8 @@ pub fn delete_episode(state: State<AppState>, episode: String) -> CmdResult<()> 
     })
 }
 
-/// Each chapter's part state, given the part specs the app would render now (chapter id -> EpisodeSpec).
+/// Each part's state in playing order, given the part specs the app would render now (chapter id, `intro` or
+/// `outro` -> EpisodeSpec).
 #[tauri::command]
 pub fn episode_parts(
     state: State<AppState>,
@@ -579,11 +610,12 @@ pub fn episode_parts(
 ) -> CmdResult<Vec<(String, PartState)>> {
     with_project(&state, |p| {
         let file = load_episode(p, &episode)?;
-        file.chapters
-            .iter()
-            .map(|id| {
-                let spec = specs.get(&id.to_string()).ok_or_else(|| format!("no part spec for {id}"))?;
-                Ok((id.to_string(), part_state(p, &episode, *id, spec)?))
+        part_order(&file, &specs)
+            .into_iter()
+            .map(|key| {
+                let spec = specs.get(&key).ok_or_else(|| format!("no part spec for {key}"))?;
+                let state = part_state(p, &episode, &key, spec)?;
+                Ok((key, state))
             })
             .collect()
     })
@@ -720,8 +752,9 @@ pub fn clear_brand_music(app: AppHandle) -> CmdResult<BrandSettings> {
 }
 
 /// Joins an episode's parts into `episodes/<id>/<id>.mp4` on this PC. `specs` are the part specs the app would render
-/// now (chapter id -> EpisodeSpec): every part must match its own, so a stale part is never joined. Progress arrives
-/// as `assembly://progress` events.
+/// now (chapter id, `intro` or `outro` -> EpisodeSpec): every part must match its own, so a stale part is never
+/// joined, and the wrapper's parts are joined when there are specs for them. Progress arrives as
+/// `assembly://progress` events.
 #[tauri::command]
 pub async fn assemble_episode(
     app: AppHandle,
@@ -737,9 +770,9 @@ pub async fn assemble_episode(
     let (dir, parts) = with_project(&state, |p| {
         let file = load_episode(p, &episode)?;
         let mut parts = Vec::new();
-        for id in &file.chapters {
-            let spec = specs.get(&id.to_string()).ok_or_else(|| format!("no part spec for {id}"))?;
-            match part_state(p, &episode, *id, spec)? {
+        for id in part_order(&file, &specs) {
+            let spec = specs.get(&id).ok_or_else(|| format!("no part spec for {id}"))?;
+            match part_state(p, &episode, &id, spec)? {
                 PartState::Ready => {}
                 PartState::Missing => {
                     return Err(format!("{id} has no part for {episode} yet; render the missing parts first"));
@@ -748,9 +781,9 @@ pub async fn assemble_episode(
                     return Err(format!("{id} changed since its part was rendered; render it again first"));
                 }
             }
-            let render_dir = chapter::chapter_dir(p, *id).join("render");
+            let render_dir = part_dir(p, &episode, &id)?;
             let info = read_part(&render_dir).ok_or_else(|| format!("{id}: its part.json is unreadable"))?;
-            parts.push((*id, render_dir, info));
+            parts.push((id, render_dir, info));
         }
         Ok((episode_dir(p, &episode)?, parts))
     })?;
@@ -781,7 +814,7 @@ pub async fn assemble_episode(
     let mut offset = 0.0;
     let mut library = None;
     for ((id, _, _), soundtrack) in parts.iter().zip(&soundtracks) {
-        let spec = specs.get(&id.to_string()).ok_or_else(|| format!("no part spec for {id}"))?;
+        let spec = specs.get(id).ok_or_else(|| format!("no part spec for {id}"))?;
         let used = spec["beats"].as_array().is_some_and(|b| b.iter().any(|b| b["sfx"].is_string()));
         if used && library.is_none() {
             library = Some(load_sfx(&app)?);
@@ -940,7 +973,7 @@ mod tests {
             "panels": [],
             "beats": [{"audio": {"src": "chapters/ch_0001/audio/l_0001.wav"}}],
         });
-        assert_eq!(part_state(&project, &episode.id, id, &spec).expect("state"), PartState::Missing);
+        assert_eq!(part_state(&project, &episode.id, &id.to_string(), &spec).expect("state"), PartState::Missing);
 
         let render_dir = chapter::chapter_dir(&project, id).join("render");
         std::fs::create_dir_all(&render_dir).expect("dir");
@@ -948,16 +981,42 @@ mod tests {
             std::fs::write(render_dir.join(f), b"x").expect("part");
         }
         write_part(&render_dir, &episode.id, &fingerprint(root, &spec).expect("fp"), &spec).expect("write");
-        assert_eq!(part_state(&project, &episode.id, id, &spec).expect("state"), PartState::Ready);
-        assert_eq!(part_state(&project, "ep_0009", id, &spec).expect("state"), PartState::Missing);
+        assert_eq!(part_state(&project, &episode.id, &id.to_string(), &spec).expect("state"), PartState::Ready);
+        assert_eq!(part_state(&project, "ep_0009", &id.to_string(), &spec).expect("state"), PartState::Missing);
 
         // A new recording of the same line, or a different opening card, makes the part outdated.
         std::fs::write(root.join("chapters/ch_0001/audio/l_0001.wav"), b"two").expect("clip");
-        assert_eq!(part_state(&project, &episode.id, id, &spec).expect("state"), PartState::Outdated);
+        assert_eq!(part_state(&project, &episode.id, &id.to_string(), &spec).expect("state"), PartState::Outdated);
         std::fs::write(root.join("chapters/ch_0001/audio/l_0001.wav"), b"one").expect("clip");
         let mut opened = spec.clone();
         opened["opening"] = serde_json::json!({"title": "Chapter 1"});
-        assert_eq!(part_state(&project, &episode.id, id, &opened).expect("state"), PartState::Outdated);
+        assert_eq!(part_state(&project, &episode.id, &id.to_string(), &opened).expect("state"), PartState::Outdated);
+    }
+
+    #[test]
+    fn the_wrapper_plays_around_the_chapters_and_keeps_its_parts_in_the_episode() {
+        let (_dir, project) = project_with(2);
+        let episode = create(&project, "Arc", ids(&[1, 2]), "t".into()).expect("episode");
+        let spec = serde_json::json!({"video": {"width": 1920, "height": 1080, "fps": 30}, "panels": [], "beats": []});
+        let mut specs = serde_json::Map::new();
+        for key in ["outro", "ch_0002", "ch_0001"] {
+            specs.insert(key.into(), spec.clone());
+        }
+        assert_eq!(part_order(&episode, &specs), ["ch_0001", "ch_0002", "outro"]);
+        specs.insert("intro".into(), spec.clone());
+        assert_eq!(part_order(&episode, &specs), ["intro", "ch_0001", "ch_0002", "outro"]);
+
+        let intro = part_dir(&project, &episode.id, "intro").expect("dir");
+        assert_eq!(intro, project.paths().root().join("episodes/ep_0001/intro"));
+        assert_eq!(part_state(&project, &episode.id, "intro", &spec).expect("state"), PartState::Missing);
+        std::fs::create_dir_all(&intro).expect("dir");
+        for f in ["part.mp4", "part.wav"] {
+            std::fs::write(intro.join(f), b"x").expect("part");
+        }
+        write_part(&intro, &episode.id, &fingerprint(project.paths().root(), &spec).expect("fp"), &spec)
+            .expect("write");
+        assert_eq!(part_state(&project, &episode.id, "intro", &spec).expect("state"), PartState::Ready);
+        assert!(part_dir(&project, &episode.id, "nope").is_err());
     }
 
     #[test]
