@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ChapterHooks } from "@jumbo/schema";
+import type { ChapterHooks, ScriptDoc, WrapperPart } from "@jumbo/schema";
 
 // Mirrors the DTOs in src-tauri/src/commands.rs and the serde types in jumbo-core / jumbo-ledger.
 
@@ -101,6 +101,12 @@ export interface VerifyReport {
   ledger_len: number;
   snapshots: number;
   problems: string[];
+}
+
+/** An episode's wrapper as last voiced (ADR 0008): the script it was voiced from and its clips, or nulls before. */
+export interface WrapperVoice {
+  script: unknown | null;
+  audio: unknown | null;
 }
 
 /** Raw preview inputs for one chapter (`chapter_preview`); the screen validates them with @jumbo/schema. */
@@ -272,6 +278,9 @@ export const api = {
   chapterRender: (chapter: string) => invoke<{ episode: boolean; video: string | null }>("chapter_render", { chapter }),
   chapterAudio: (chapter: string) => invoke<{ audio: unknown; report: VoiceReport | null }>("chapter_audio", { chapter }),
   renderPart: (episode: string, chapter: string, spec: unknown) => invoke<ChapterManifest>("render_part", { episode, chapter, spec }),
+  recordWrapper: (episode: string, script: ScriptDoc) => invoke<WrapperVoice>("record_wrapper", { episode, script }),
+  episodeWrapper: (episode: string) => invoke<WrapperVoice>("episode_wrapper", { episode }),
+  renderWrapper: (episode: string, part: WrapperPart, spec: unknown) => invoke<void>("render_wrapper", { episode, part, spec }),
   listEpisodes: () => invoke<EpisodeView[]>("list_episodes"),
   createEpisode: (title: string, chapters: string[]) => invoke<EpisodeView>("create_episode", { title, chapters }),
   deleteEpisode: (episode: string) => invoke<void>("delete_episode", { episode }),

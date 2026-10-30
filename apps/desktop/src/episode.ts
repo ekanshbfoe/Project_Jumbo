@@ -1,4 +1,4 @@
-import { AudioManifest, buildEpisodeSpec, PanelsDoc, ScriptDoc, type BuildEpisodeOptions } from "@jumbo/schema";
+import { AudioManifest, buildEpisodeSpec, PanelsDoc, ScriptDoc, wrapperPart, type BuildEpisodeOptions, type Wrapper, type WrapperPart } from "@jumbo/schema";
 import { z } from "zod";
 import type { PreviewSources } from "./api";
 
@@ -16,13 +16,25 @@ export function buildEpisode(chapter: string, src: PreviewSources, title: string
 /**
  * A chapter's part of an episode (ADR 0007): the follow card shows early only in the first part and at the end only
  * in the last, so a long episode shows it once at each end. Parts join straight, with no title card between them.
- * The last part also holds its final panel after the narration (END_HOLD_S).
+ * The last part also holds its final panel after the narration (END_HOLD_S). `at.last` is false for the last
+ * chapter when the episode's wrapper ends on its outro.
  */
 export function buildPart(chapter: string, src: PreviewSources, title: string, at: { first: boolean; last: boolean }, signatureS = 0) {
   // The last part holds its final panel after the narration, so the episode does not stop on the last word, and
   // long enough for the signature clip with a breath on either side.
   const promo = at.last ? { early: at.first } : { early: at.first, outro_s: 0 };
   return buildEpisode(chapter, src, title, { promo, endHold: at.last ? endHold(signatureS) : 0 });
+}
+
+/**
+ * A part of the episode's wrapper (ADR 0008), or null when it has no lines: the intro opens the episode with no
+ * follow card; the outro ends it, with the follow card and the final hold for the signature.
+ */
+export function buildWrapperPart(wrapper: Wrapper, audio: AudioManifest, part: WrapperPart, title: string, signatureS = 0) {
+  const script = wrapperPart(wrapper, part);
+  if (!script) return null;
+  const promo = part === "outro" ? { early: false } : { early: false, outro_s: 0 };
+  return buildEpisodeSpec(script, wrapper.panels, audio, { title, promo, endHold: part === "outro" ? endHold(signatureS) : 0 });
 }
 
 /** Seconds the episode's last panel holds after the narration while the brand music fades out. */

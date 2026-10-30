@@ -1,10 +1,10 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { planEpisode, SIGNATURE } from "@jumbo/schema";
+import { SIGNATURE } from "@jumbo/schema";
 import { useEffect, useMemo, useState } from "react";
 import { api, CHAPTER_STATES, errorText, type ChapterManifest, type EpisodeView, type PartState } from "../api";
 import { chapterTitle } from "../episode";
-import { assemble, clearEpisodeOutcome, partSpecs, renderParts, useEpisodeRuns } from "../episodeRuns";
+import { assemble, clearEpisodeOutcome, episodeWrapper, partSpecs, renderParts, voiceWrapper, useEpisodeRuns, type EpisodeSources, type WrapperState } from "../episodeRuns";
 import type { ScreenProps } from "../hub/modules";
 import { useRuns } from "../runs";
 import { useAsync } from "../useAsync";
@@ -98,24 +98,34 @@ function BrandMusic() {
   );
 }
 
+/** Where the episode's wrapper stands, in a few words. */
+const wrapperStatus = (wrap: WrapperState) =>
+  !wrap.wrapper
+    ? "Nothing to voice yet: the signature still plays at the end once its clip is set."
+    : wrap.current
+      ? "Voiced: the cold open, bridge and recap play before the first chapter (intro) and the tease after the last (outro)."
+      : wrap.audio
+        ? "Changed since it was voiced: voice it again, or the episode is made without it."
+        : "Not voiced yet: voice it on the T4s, then render its parts; until then the episode is made without it.";
+
 /**
  * How the episode opens and ends (ADR 0008), picked from its chapters' hooks: the cold open, the bridge back to the
- * start, the recap, the next chapter's tease and the signature. Shown as text until the opening is voiced.
+ * start, the recap, the next chapter's tease and the signature, and whether that wrapper is voiced.
  */
-function EpisodePlanCard({ episode, chapters, index }: { episode: EpisodeView; chapters: ChapterManifest[]; index: number }) {
-  const last = chapters.findIndex((c) => c.id === episode.chapters[episode.chapters.length - 1]);
-  const next = last >= 0 ? chapters[last + 1] : undefined;
-  const hooks = useAsync(() => api.chapterHooks([...episode.chapters, ...(next ? [next.id] : [])]), [episode.chapters.join(), next?.id]);
-  if (!hooks.data) return hooks.error ? <p className="error">{hooks.error}</p> : null;
-  const plan = planEpisode({
-    chapters: episode.chapters.map((id) => ({ id, hooks: hooks.data![id] ?? null })),
-    index,
-    startsStory: chapters[0]?.id === episode.chapters[0],
-    next: next && hooks.data[next.id] ? { id: next.id, hooks: hooks.data[next.id]! } : null,
-  });
+function EpisodePlanCard({ wrap, busy, onVoice }: { wrap: WrapperState; busy: boolean; onVoice: () => void }) {
+  const { plan } = wrap;
   return (
     <div className="stack">
-      <strong>Opening and ending</strong>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <strong>Opening and ending</strong>
+        <button
+          disabled={busy || !wrap.wrapper || wrap.current}
+          title="Drama 3 voices the cold open, bridge, recap and tease on the T4s in Mayu's voices; the session stops right after"
+          onClick={onVoice}
+        >
+          {wrap.current ? "Voiced" : wrap.audio ? "Voice again" : "Voice opening and ending"}
+        </button>
+      </div>
       {plan.cold ? (
         <span>
           <span className="badge">cold open</span>{" "}
@@ -148,7 +158,7 @@ function EpisodePlanCard({ episode, chapters, index }: { episode: EpisodeView; c
           {n}
         </span>
       ))}
-      <span className="muted">The opening and the tease are not voiced into the video yet; the signature plays at the end once its clip is set.</span>
+      <span className="muted">{wrapperStatus(wrap)}</span>
     </div>
   );
 }
@@ -158,12 +168,29 @@ function EpisodeCard({ episode, chapters, root, busy, reload, index }: { episode
   const members = useMemo(() => episode.chapters.map((id) => chapters.find((c) => c.id === id)).filter((c): c is ChapterManifest => !!c), [episode, chapters]);
   const unvoiced = members.filter((c) => !voiced(c)).map((c) => c.id);
   const ready = unvoiced.length === 0 && members.length === episode.chapters.length;
+  const src: EpisodeSources = useMemo(() => ({ episode, all: chapters, index }), [episode, chapters, index]);
+  const wrap = useAsync(() => episodeWrapper(src), [src, busy]);
   const parts = useAsync(
-    async () => (ready ? new Map(await api.episodeParts(episode.id, await partSpecs(members))) : null),
-    [ready, members, busy],
+    async () => (ready && wrap.data ? new Map(await api.episodeParts(episode.id, await partSpecs(src, wrap.data))) : null),
+    [ready, src, wrap.data],
   );
   const [error, setError] = useState<string>();
-  const todo = members.filter((c) => parts.data?.get(c.id) !== "ready").map((c) => c.id);
+  const todo = [...(parts.data?.entries() ?? [])].filter(([, state]) => state !== "ready").map(([key]) => key);
+  const wrapperRow = (key: "intro" | "outro", label: string) => {
+    const part = parts.data?.get(key);
+    return part ? (
+      <tr key={key}>
+        <td className="mono">{key}</td>
+        <td>{label}</td>
+        <td>
+          <span className="badge">voiced</span>
+        </td>
+        <td>
+          <span className={`badge ${PART_BADGE[part].badge}`}>{PART_BADGE[part].label}</span>
+        </td>
+      </tr>
+    ) : null;
+  };
 
   const remove = async () => {
     if (!window.confirm(`Delete ${episode.id} (${episode.title}) and its assembled video? Its chapters and their parts stay.`)) return;
@@ -187,7 +214,7 @@ function EpisodeCard({ episode, chapters, root, busy, reload, index }: { episode
           <button
             disabled={busy || !ready || !parts.data || todo.length === 0}
             title="Each chapter renders on Kaggle CPUs as its own part, one after another; parts already current are kept"
-            onClick={() => void renderParts(episode.id, members, todo, reload)}
+            onClick={() => void renderParts(src, todo, reload)}
           >
             {todo.length && parts.data ? `Render ${todo.length} part${todo.length === 1 ? "" : "s"}` : "Parts rendered"}
           </button>
@@ -195,7 +222,7 @@ function EpisodeCard({ episode, chapters, root, busy, reload, index }: { episode
             className="primary"
             disabled={busy || !ready || !parts.data || todo.length > 0}
             title="Joins the parts on this PC: the video is copied as it is, and the sound is mixed once with the brand music"
-            onClick={() => void assemble(episode.id, members, reload)}
+            onClick={() => void assemble(src, reload)}
           >
             {episode.video ? "Assemble again" : "Assemble video"}
           </button>
@@ -204,7 +231,7 @@ function EpisodeCard({ episode, chapters, root, busy, reload, index }: { episode
           </button>
         </div>
       </div>
-      {error || parts.error ? <p className="error">{error ?? parts.error}</p> : null}
+      {error || parts.error || wrap.error ? <p className="error">{error ?? parts.error ?? wrap.error}</p> : null}
       {unvoiced.length ? <span className="muted">Voice {unvoiced.join(", ")} first (Make video on the Chapters screen).</span> : null}
       <table>
         <thead>
@@ -216,6 +243,7 @@ function EpisodeCard({ episode, chapters, root, busy, reload, index }: { episode
           </tr>
         </thead>
         <tbody>
+          {wrapperRow("intro", "Cold open, bridge and recap")}
           {members.map((c) => {
             const part = parts.data?.get(c.id);
             return (
@@ -229,9 +257,10 @@ function EpisodeCard({ episode, chapters, root, busy, reload, index }: { episode
               </tr>
             );
           })}
+          {wrapperRow("outro", "Tease and signature")}
         </tbody>
       </table>
-      <EpisodePlanCard episode={episode} chapters={chapters} index={index} />
+      {wrap.data ? <EpisodePlanCard wrap={wrap.data} busy={busy} onVoice={() => void voiceWrapper(src, reload)} /> : null}
       {episode.video ? (
         <div className="stack">
           <span className="mono muted">{episode.video}</span>
@@ -302,7 +331,12 @@ export function EpisodesScreen({ project }: ScreenProps) {
           <div className="card stack">
             <span>
               {run.episode} ·{" "}
-              {run.kind === "parts" ? `part ${run.done + 1} of ${run.total}${run.chapter ? ` (${run.chapter})` : ""}` : "assembling on this PC"} ·{" "}
+              {run.kind === "parts"
+                ? `part ${run.done + 1} of ${run.total}${run.chapter ? ` (${run.chapter})` : ""}`
+                : run.kind === "voice"
+                  ? "voicing the opening and ending on the T4s"
+                  : "assembling on this PC"}{" "}
+              ·{" "}
               {Math.round(run.progress * 100)}% {run.message}
             </span>
             {run.machines.length ? (

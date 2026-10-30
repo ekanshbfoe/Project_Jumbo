@@ -19,6 +19,26 @@ async function waitForWorker() {
 }
 
 /**
+ * Runs `work` on the T4 session: a session already booting or finding its worker again is used as it is, never
+ * started twice, and the session ends the moment `work` is done or fails, since the T4 hours are the scarce quota.
+ * `onStart` is called before the session is checked.
+ */
+export async function onT4<T>(work: () => Promise<T>, onStart: () => void = () => undefined): Promise<T> {
+  onStart();
+  const view = await bridgeApi.view();
+  if ((view.phase === "ready" || view.phase === "booting") && view.mode !== "kaggle_gpu") {
+    throw new Error("A session that is not on the T4s is running: stop it on the Session screen, then try again.");
+  }
+  if (view.phase !== "ready" && view.phase !== "booting" && view.phase !== "reconnecting") await bridgeApi.start("kaggle_gpu");
+  try {
+    await waitForWorker();
+    return await work();
+  } finally {
+    await bridgeApi.stop().catch(() => undefined);
+  }
+}
+
+/**
  * One chapter from wherever it stands to its recorded voice, as ADR 0005 places the stages: Magi, the Director and
  * Drama 3 in one T4 session that ends as soon as the voice is done. A script with failed scenes or rule problems
  * stops the run for review; pressing Make Video again continues. The run holds there (ADR 0007): a voiced chapter
@@ -44,15 +64,7 @@ export async function makeVideo(chapter: string, method: Method, onStage: (stage
     );
   }
   if (at(current.state, "voiced")) throw new ReviewNeeded("It is voiced already: add it to an episode on the Episodes screen, or render it alone on the Render screen.");
-  onStage("session");
-  const view = await bridgeApi.view();
-  if ((view.phase === "ready" || view.phase === "booting") && view.mode !== "kaggle_gpu") {
-    throw new Error("A session that is not on the T4s is running: stop it on the Session screen, then press Make video again.");
-  }
-  // A session that is booting or finding its worker again is used as it is, never started twice.
-  if (view.phase !== "ready" && view.phase !== "booting" && view.phase !== "reconnecting") await bridgeApi.start("kaggle_gpu");
-  try {
-    await waitForWorker();
+  await onT4(async () => {
     if (!at(current.state, "analyzed")) {
       onStage("panels");
       await api.analyzeChapter(chapter, "magi");
@@ -94,8 +106,5 @@ export async function makeVideo(chapter: string, method: Method, onStage: (stage
     }
     onStage("voice");
     await api.recordVoice(chapter);
-  } finally {
-    // The T4 hours are the scarce quota: the session ends the moment its stages are done or fail.
-    await bridgeApi.stop().catch(() => undefined);
-  }
+  }, () => onStage("session"));
 }
