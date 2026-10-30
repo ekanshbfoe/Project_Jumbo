@@ -9,4 +9,5 @@ export * from "./memory";
 export * from "./ledger";
 export * from "./bridge";
 export * from "./hooks";
+export * from "./wrapper";
 export * from "./tagged";
