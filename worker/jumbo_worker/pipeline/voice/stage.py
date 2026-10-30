@@ -43,7 +43,7 @@ from ...contracts.rules import parse, script_problems
 from ...jobs import JobContext, JobError
 from ...models.wav import read_pcm, write_pcm
 from . import takes
-from .direction import NEUTRAL, pick_prompt
+from .direction import NEUTRAL, pick_prompt, steady
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +85,13 @@ async def run(ctx: JobContext) -> str:
                 prompts[voice][NEUTRAL] = str(prompt)
                 created.setdefault(voice, {})[NEUTRAL] = await asyncio.to_thread(store.put, prompt.read_bytes())
 
+        # Voice files are content-addressed blobs, so two emotions sharing one recording pick the same path.
+        picks: dict[str, tuple[str, str]] = {}
+        for voice, files in prompts.items():
+            mine = [line for line in script.lines if _speaker(line) == voice]
+            chosen = [pick_prompt(files, line.emotion) or (NEUTRAL, files[NEUTRAL]) for line in mine]
+            picks.update(zip((line.id for line in mine), steady(chosen, [line.emotion for line in mine])))
+
         rates: set[int] = set()
         files: dict[str, str] = {}
         clips: dict[str, dict] = {}
@@ -95,7 +102,7 @@ async def run(ctx: JobContext) -> str:
         async def speak(line) -> None:
             nonlocal done
             voice, line_id = _speaker(line), line.id
-            used, prompt = pick_prompt(prompts[voice], line.emotion) or (NEUTRAL, prompts[voice][NEUTRAL])
+            used, prompt = picks[line_id]
             direction = line.voice
             payload = {"text": line.narration, "voice": prompt, "emotion": line.emotion,
                        "tone": direction.tone if direction else None, "pace": direction.pace if direction else None}

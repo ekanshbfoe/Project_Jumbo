@@ -15,7 +15,7 @@ from jumbo_worker.jobs import JobRunner
 from jumbo_worker.models.drama3 import Drama3Runner, cue, speech_binary
 from jumbo_worker.models.wav import read_pcm, write_pcm
 from jumbo_worker.pipeline.voice import takes
-from jumbo_worker.pipeline.voice.direction import pick_prompt
+from jumbo_worker.pipeline.voice.direction import pick_prompt, steady
 from jumbo_worker.pool.cpu import CpuPool
 from jumbo_worker.pool.manager import ResourceManager
 from jumbo_worker.pool.specs import ModelSpec, PoolConfig, load_specs
@@ -43,6 +43,16 @@ def test_a_line_uses_its_emotion_recording_else_the_neutral_one():
     assert pick_prompt(files, "sad") == ("sad", "s.voice.gguf")
     assert pick_prompt(files, "action") == ("neutral", "n.voice.gguf")
     assert pick_prompt({}, "sad") is None
+
+
+def test_the_narrator_does_not_switch_voice_for_one_line():
+    bright, serious = ("calm", "bright.gguf"), ("neutral", "serious.gguf")
+    picks = [bright, serious, bright, serious, serious, bright, serious, serious]
+    emotions = ["calm", "action", "calm", "tense", "tense", "calm", "sad", "tense"]
+    # Bright, serious, bright, serious becomes one switch instead of three; the calm line between tense ones goes serious.
+    assert steady(picks, emotions) == [bright, bright, serious, serious, serious, serious, serious, serious]
+    # A lone sad line keeps its voice.
+    assert steady([bright, serious, bright], ["calm", "sad", "calm"]) == [bright, serious, bright]
 
 
 def test_trim_cuts_only_digital_silence():

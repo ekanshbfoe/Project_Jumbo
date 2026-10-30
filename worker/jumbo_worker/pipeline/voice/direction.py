@@ -16,3 +16,15 @@ def pick_prompt(prompts: dict[str, str], emotion: str) -> tuple[str, str] | None
         if key in prompts:
             return key, prompts[key]
     return None
+
+
+def steady(picks: list[tuple[str, str]], emotions: list[str]) -> list[tuple[str, str]]:
+    """The lines' (emotion used, voice file) with one-line switches removed: a line whose file differs from both
+    neighbours, which agree, takes theirs, so the narrator does not change voice for one line and back. Its own
+    cue still directs it. A sad line keeps its file: a lone sad moment is worth the switch."""
+    out = list(picks)
+    for i in range(1, len(picks) - 1):
+        before, after = picks[i - 1], picks[i + 1]
+        if before[1] == after[1] != picks[i][1] and emotions[i] != "sad":
+            out[i] = before
+    return out
