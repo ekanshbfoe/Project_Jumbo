@@ -207,19 +207,65 @@ class FakeVoice:
         pass
 
 
+class FakeEar(FakeVoice):
+    """The whisper replica: hears a take as the words of the line it was asked for, spread over the take's sound."""
+
+    def __init__(self, texts):
+        self.texts = texts
+
+    async def run(self, kind, payload):
+        pcm, rate = read_pcm(payload["audio"])
+        words = takes.spoken_words(self.texts.get(Path(payload["audio"]).name.split(".")[0], ""))
+        if not words:
+            return {"words": []}
+        step = len(pcm) / rate / len(words)
+        return {"words": [[i * step, (i + 1) * step, w, 0.9] for i, w in enumerate(words)]}
+
+
+def test_hearing_meets_devanagari_and_latin_spellings_and_finds_the_line():
+    text = "Orion कहते हैं कि यह reporter रात भर इंतज़ार करती रही है, इसलिए इसे लिफ़्ट दे देनी चाहिए।"
+    assert takes.skeleton("interview") == takes.skeleton("इंटरव्यू")[:4] and takes.skeleton("lift") == takes.skeleton("लिफ़्ट")
+    # Live test 2026-10-30: the take first read out the end of the voice's English reference transcript.
+    leak = ["Now", "the", "creepy", "part,", "some", "cookies", "don't", "even", "come", "from", "the", "site."]
+    heard = "Orion कहते हैं कि यह reporter रात पर इंतजार करती रही है, इसलिए इसे lift दे देनी चाहिए."  # as Whisper spelled it
+    line = heard.split()
+    words = [[i * 0.4, i * 0.4 + 0.35, w] for i, w in enumerate(leak + line)]
+    match = takes.hearing(text, words)
+    assert match["start"] == 12 * 0.4 and match["heard"] > 0.9 and takes.heard_problem(match) is None
+    # Half the line missing, or something else said inside it, is spoken again.
+    half = takes.hearing(text, words[12:19])
+    assert takes.heard_problem(half).startswith("words missing")
+    babble = takes.hearing(text, [[0, 1, w] for w in line[:8] + ["सु", "और", "ता", "बाभना", "दावाई", "साचा", "आचाया", "हें"] + line[8:]])
+    assert takes.heard_problem(babble).startswith("says something else mid-line")
+    assert takes.heard_problem(takes.hearing(text, [])) == "the line was not heard"
+
+
+def test_a_take_is_cut_in_the_pause_before_its_line():
+    leak, line = speech(3.0), speech(2.0)
+    pcm = np.concatenate([leak, np.zeros(int(0.2 * RATE), "<i2"), line])
+    # Whisper puts the line's first word 0.1 s late, inside the line.
+    out, cut = takes.cut_to_line(pcm, RATE, {"start": 3.3, "end": 5.2})
+    assert 3.0 <= cut <= 3.2 and np.array_equal(out[-len(line) + 1000 :], line[1000:])
+    assert takes.cut_to_line(pcm, RATE, {"start": 0.1, "end": 5.15}) == (pcm, 0.0)
+
+
 async def test_voice_job_creates_voices_once_retries_bad_takes_and_trims(tmp_path, monkeypatch):
     # The speed-up is ffmpeg's; here a stand-in keeps 10 samples in 11, which is the same length change.
     monkeypatch.setattr(takes, "tempo", lambda pcm, rate, factor=takes.TEMPO: pcm[np.arange(len(pcm)) % 11 != 10])
-    cfg = PoolConfig.model_validate({"chips": 0, "tick_s": 0.02, "models": {"drama3": {"backend": "fake", "max_replicas": 2, "wake_s": 0}}})
+    fake = {"backend": "fake", "max_replicas": 2, "wake_s": 0}
+    cfg = PoolConfig.model_validate({"chips": 0, "tick_s": 0.02, "models": {"drama3": fake, "whisper": fake}})
     log = []
+    script = json.loads(json.dumps(SCRIPT))
+
+    woke = []
 
     async def spawn(spec, chips, cpu, weights=None, gpus=()):
-        return FakeVoice(log, bad={7})
+        woke.append(spec.name)
+        return FakeEar({line["id"]: line["narration"] for line in script["lines"]}) if spec.name == "whisper" else FakeVoice(log, bad={7})
 
     pool = ResourceManager(cfg, cpu=CpuPool(4, 16), spawn=spawn)
     pool.start()
     store = BlobStore(tmp_path / "store")
-    script = json.loads(json.dumps(SCRIPT))
     lines = script["lines"]
     for line in lines:
         line.setdefault("voice", {})["speaker"] = "narrator"
@@ -251,6 +297,10 @@ async def test_voice_job_creates_voices_once_retries_bad_takes_and_trims(tmp_pat
     # Seed 7 stalls, so every line took a second take with seed 8, which passed.
     report = {r["line_id"]: r for r in manifest["report"]["lines"]}
     assert all(r["attempts"] == 2 and r["seed"] == 8 and "problem" not in r for r in report.values())
+    # Whisper woke before Drama 3, which sizes its share of the cards from what is free.
+    assert woke[0] == "whisper"
+    # Every take was heard saying its whole line, so nothing was cut from it.
+    assert all(r["heard"] == 1.0 and r["cut_s"] == 0.0 for r in report.values())
     # Silence was cut off both ends (0.2 s and 0.5 s, less 40 ms kept on each side); the manifest says 44.1 kHz.
     assert all(abs(r["trimmed_s"] - 0.62) < 0.01 for r in report.values())
     audio = manifest["audio"]
@@ -312,3 +362,30 @@ async def test_voice_job_refuses_hindi_in_latin_letters(tmp_path):
     job = JobRunner(store, EventBus()).submit("voice", store.put(json.dumps({"script": script}).encode()))
     await asyncio.wait_for(job.task, 10)
     assert job.status == "failed" and "lines.0.narration: narration has Hindi in Latin letters (ki, thi)" in job.error
+
+
+async def test_a_heard_take_is_cut_to_its_line_or_spoken_again(tmp_path):
+    from jumbo_worker.pipeline.voice.stage import _best_take
+
+    text = "सियोल की रात हमेशा शांत लगती थी, लेकिन आज कुछ अलग था।"
+    line = takes.spoken_words(text)
+
+    class Ctx:
+        speaks = 0
+
+        async def call(self, model, kind, payload):
+            if model == "whisper":
+                # Take 1 says only the first half of the line; take 2 reads 3 s of something else first, then all of it.
+                if self.speaks == 1:
+                    return {"words": [[i * 0.5, i * 0.5 + 0.4, w] for i, w in enumerate(line[:4])]}
+                leak = [[i * 0.75, i * 0.75 + 0.7, w] for i, w in enumerate(["Now", "the", "creepy", "part"])]
+                return {"words": leak + [[3.3 + i * 0.5, 3.3 + i * 0.5 + 0.45, w] for i, w in enumerate(line)]}
+            self.speaks += 1
+            leak = speech(3.0)
+            pcm = speech(4.6) if self.speaks == 1 else np.concatenate([leak, np.zeros(int(0.3 * RATE), "<i2"), speech(5.0)])
+            return {"duration": write_pcm(payload["out"], pcm, RATE), "sample_rate": RATE, "stop": "complete", "seed": payload["seed"]}
+
+    take = await _best_take(Ctx(), tmp_path, "l_0001", {"text": text, "voice": "narrator.voice.gguf"}, 7, hear=True)
+    assert take["attempts"] == 2 and take["problem"] is None and take["heard"] > 0.9
+    # The 3 s read out before the line are gone; the line itself (5 s) is all there.
+    assert 2.9 < take["cut_s"] < 3.4 and abs(len(take["pcm"]) / RATE - 5.0) < 0.4

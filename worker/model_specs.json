@@ -25,7 +25,7 @@
       "backend": "ggml",
       "chips": 1,
       "gpus": 2,
-      "hbm_gb_per_chip": 11.5,
+      "hbm_gb_per_chip": 10.0,
       "cpu_cores": 3,
       "host_ram_gb": 10,
       "cpu_fallback": true,
@@ -39,7 +39,25 @@
       "options": {
         "quant": "q5_k"
       },
-      "notes": "Fish Audio Drama 3 (35B MoE, 3B active) through speech.cpp 0.8.11 built for CUDA sm_75 with the dual-GPU and memory-cap patch; weights sakasegawa/drama-3-GGUF. Setup (c), chosen by the project lead from spike 5: one Q5_K replica split over both T4s, later layers' experts on CUDA1, 8 of 40 layers' experts on the CPU. Spike 5 at a 0.8 cap: peak 11.5 / 10.5 GiB on the two cards, 8.3 GB RAM, load 104 s, 1.22 s per second of audio. 44.1 kHz. On a TPU host it does not run yet (no ggml TPU backend; TorchTPU is the path to test)."
+      "notes": "Fish Audio Drama 3 (35B MoE, 3B active) through speech.cpp 0.8.11 built for CUDA sm_75 with the dual-GPU and memory-cap patch; weights sakasegawa/drama-3-GGUF. Setup (c), chosen by the project lead from spike 5: one Q5_K replica split over both T4s, later layers' experts on CUDA1, 8 of 40 layers' experts on the CPU. Spike 5 at a 0.8 cap: peak 11.5 / 10.5 GiB on the two cards, 8.3 GB RAM, load 104 s, 1.22 s per second of audio. 44.1 kHz. speech.cpp sizes its share from the cards' free memory, so it reserves 10 GiB a card here: whisper loads first (pipeline/voice/stage.py) and Drama 3 fills what is left under the cap (2026-10-31 run 2: 11.0 / 8.4 GiB beside whisper's 2.0 on card 1, 1.47 s per second of audio). On a TPU host it does not run yet (no ggml TPU backend; TorchTPU is the path to test)."
+    },
+    "whisper": {
+      "backend": "ggml",
+      "chips": 1,
+      "gpus": 1,
+      "hbm_gb_per_chip": 2.0,
+      "cpu_cores": 0,
+      "host_ram_gb": 3,
+      "cpu_fallback": true,
+      "max_replicas": 1,
+      "target_queue_per_replica": 4,
+      "concurrency": 1,
+      "priority": 4,
+      "wake_s": 60,
+      "job_s": 4,
+      "phase": "vision",
+      "pip": ["faster-whisper==1.1.1"],
+      "notes": "Whisper large-v3 through faster-whisper (CTranslate2, not ggml: the backend only names a fallback runner), int8_float16 on one T4 beside Drama 3: hears each voice take so the voice job can cut it to its line and speak it again when words are missing. Measured 2026-10-31: 2.0 GiB, 0.4 s per second of audio with word times and beam 5. No cores of its own: the GPU does the work and the host's are Drama 3's. First wake installs faster-whisper and downloads ~3 GB from the HF Hub."
     },
     "qwen3vl_32b": {
       "backend": "ggml",

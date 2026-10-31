@@ -182,6 +182,11 @@ def test_drama3_takes_both_t4s_of_the_kaggle_gpu_host():
     assert cards.lease("voice", drama.hbm_gb_per_chip, drama.gpus) == (0, 1)
     cores = CpuPool(4 - 1, 31.3 - 4)
     cores.lease("voice", cfg.replica_cores(drama, False), drama.host_ram_gb)
+    # Whisper hears its takes beside it, on one card, under the ceiling, with the RAM left and no cores of its own.
+    ear = cfg.spec("whisper")
+    assert ear.phase == drama.phase and ear.pip
+    assert len(cards.lease("ear", ear.hbm_gb_per_chip, ear.gpus)) == 1 and max(cards.reserved()) <= cfg.gpu_budget_gb
+    cores.lease("ear", cfg.replica_cores(ear, False), ear.host_ram_gb)
 
 
 def test_a_replica_running_alone_takes_empty_cards_past_the_budget_and_keeps_others_off():

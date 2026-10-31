@@ -152,7 +152,13 @@ def _qwen3vl(spec: ModelSpec) -> Runner:
     return Qwen3VLRunner(spec)
 
 
-MODEL_RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {"magi_v2": _magi, "drama3": _drama3, "qwen3vl_32b": _qwen3vl}
+def _whisper(spec: ModelSpec) -> Runner:
+    from ..models.whisper import WhisperRunner
+
+    return WhisperRunner(spec)
+
+
+MODEL_RUNNERS: dict[str, Callable[[ModelSpec], Runner]] = {"magi_v2": _magi, "drama3": _drama3, "qwen3vl_32b": _qwen3vl, "whisper": _whisper}
 
 
 def make_runner(spec: ModelSpec) -> Runner:
