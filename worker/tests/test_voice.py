@@ -251,7 +251,8 @@ def test_a_take_is_cut_in_the_pause_before_its_line():
 
 async def test_voice_job_creates_voices_once_retries_bad_takes_and_trims(tmp_path, monkeypatch):
     # The speed-up is ffmpeg's; here a stand-in keeps 10 samples in 11, which is the same length change.
-    monkeypatch.setattr(takes, "tempo", lambda pcm, rate, factor=takes.TEMPO: pcm[np.arange(len(pcm)) % 11 != 10])
+    factors = []
+    monkeypatch.setattr(takes, "tempo", lambda pcm, rate, factor=takes.TEMPO: factors.append(factor) or pcm[np.arange(len(pcm)) % 11 != 10])
     fake = {"backend": "fake", "max_replicas": 2, "wake_s": 0}
     cfg = PoolConfig.model_validate({"chips": 0, "tick_s": 0.02, "models": {"drama3": fake, "whisper": fake}})
     log = []
@@ -273,7 +274,7 @@ async def test_voice_job_creates_voices_once_retries_bad_takes_and_trims(tmp_pat
     lines[-1]["emotion"] = "sad"
     sad = store.put(b"SAD VOICE")
     neutral = store.put(b"NEUTRAL VOICE")
-    request = {"script": script, "voices": {"narrator": {"design": "deep, calm Indian male narrator voice"}, "jinwoo": {"prompts": {"neutral": neutral, "sad": sad}}}}
+    request = {"script": script, "voices": {"narrator": {"design": "deep, calm Indian male narrator voice"}, "jinwoo": {"prompts": {"neutral": neutral, "sad": sad}, "tempo": 1.25}}}
     job = JobRunner(store, EventBus(), pool=pool).submit("voice", store.put(json.dumps(request).encode()))
     await asyncio.wait_for(job.task, 30)
     await pool.close()
@@ -308,7 +309,8 @@ async def test_voice_job_creates_voices_once_retries_bad_takes_and_trims(tmp_pat
     assert [c["line_id"] for c in audio["clips"]] == [line["id"] for line in lines]
     first = audio["clips"][0]
     assert first["src"] == f"chapters/{script['chapter_id']}/audio/{lines[0]['id']}.wav"
-    # Then each line was paced: no pause to shorten in a steady tone, and 1.1 times faster.
+    # Then each line was paced: no pause to shorten in a steady tone, and 1.1 times faster; jinwoo's voice 1.25 times.
+    assert sorted(factors) == [1.1] * (len(lines) - 1) + [1.25]
     assert all(r["tightened_s"] == 0.0 for r in report.values())
     assert abs(first["duration"] - (takes.expected_seconds(lines[0]["narration"]) + 2 * takes.KEEP_S) / 1.1) < 0.01
     assert set(manifest["files"]) == {f"audio/{line['id']}.wav" for line in lines}

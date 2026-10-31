@@ -5,6 +5,9 @@
 //! every project (an imported voice goes there, so it is saved once and every new project has it), and the
 //! project, which wins for a speaker and emotion both have. A speaker without a file is invented by the worker
 //! from its description on the first line, and the take it clones comes back into the project.
+//!
+//! A speaker's folder may also hold `voice.json` with its speed-up, `{"tempo": 1.25}` (the project's wins): a voice
+//! cloned from a slow speaker plays faster than the job's default 1.1.
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -21,6 +24,7 @@ use crate::commands::{AppState, CmdResult, Lane, begin_job, config_dir, msg, wit
 use crate::script::run_job;
 
 const VOICE_EXT: &str = ".voice.gguf";
+const VOICE_SETTINGS: &str = "voice.json";
 
 /// What the worker's voice job returns (worker/jumbo_worker/pipeline/voice/stage.py).
 #[derive(Debug, Deserialize)]
@@ -61,6 +65,24 @@ fn library(shared: Option<&Path>, project: &Project) -> BTreeMap<String, BTreeMa
     let project_dir = project.paths().voices();
     for root in shared.into_iter().chain([project_dir.as_path()]) {
         add_voices(root, &mut out);
+    }
+    out
+}
+
+/// Each speaker's speed-up from its `voice.json`, the project's over the shared one; speakers without one are left out.
+fn tempos(shared: Option<&Path>, project: &Project) -> BTreeMap<String, f64> {
+    let mut out = BTreeMap::new();
+    let project_dir = project.paths().voices();
+    for root in shared.into_iter().chain([project_dir.as_path()]) {
+        for speaker in std::fs::read_dir(root).into_iter().flatten().flatten() {
+            let Some(name) = speaker.file_name().to_str().map(str::to_owned) else { continue };
+            let settings = std::fs::read(speaker.path().join(VOICE_SETTINGS)).ok();
+            let tempo =
+                settings.and_then(|b| serde_json::from_slice::<Value>(&b).ok()).and_then(|v| v["tempo"].as_f64());
+            if let Some(tempo) = tempo.filter(|t| (0.5..=2.0).contains(t)) {
+                out.insert(name, tempo);
+            }
+        }
     }
     out
 }
@@ -151,7 +173,7 @@ pub async fn record_voice(
     let id: ChapterId = chapter.parse().map_err(msg)?;
     let _job = begin_job(&state, Lane::Worker, format!("{chapter} voice"))?;
     let shared = shared_voices(&app).ok();
-    let (dir, script, voices) = with_project(&state, |p| {
+    let (dir, script, voices, tempos) = with_project(&state, |p| {
         let manifest = chapter::load_chapter(p, id).map_err(msg)?;
         if !matches!(manifest.state, ChapterState::Approved | ChapterState::Voiced) {
             return Err(format!("{chapter} is {}; approve its script first", manifest.state.as_str()));
@@ -165,21 +187,22 @@ pub async fn record_voice(
         let text = std::fs::read_to_string(dir.join("script").join("approved.json"))
             .map_err(|e| format!("approved.json: {e}"))?;
         let script: Value = serde_json::from_str(&text).map_err(|e| format!("approved.json: {e}"))?;
-        Ok((dir, script, library(shared.as_deref(), p)))
+        Ok((dir, script, library(shared.as_deref(), p), tempos(shared.as_deref(), p)))
     })?;
     current_client(&bridge).await?;
     let report = |progress: f64, message: String| {
         let _ = app.emit("voice://progress", Progress { chapter: &chapter, progress, message });
     };
     let staged = dir.join(".voice.partial");
-    let manifest = voice_job(&state, &bridge, &voices, &dir, &script, &chapter, &staged, report).await;
+    let manifest = voice_job(&state, &bridge, &voices, &tempos, &dir, &script, &chapter, &staged, report).await;
     let done = manifest.and_then(|manifest| with_project(&state, |p| install(p, id, &staged, &manifest)));
     let _ = std::fs::remove_dir_all(&staged);
     report(1.0, "voiced".into());
     done
 }
 
-/// Runs the worker's voice job on `script` (a ScriptDoc for `chapter`) with every voice in the library, and fetches
+/// Runs the worker's voice job on `script` (a ScriptDoc for `chapter`) with every voice in the library (at its own
+/// speed-up where `tempos` has one), and fetches
 /// its clips into `staged/audio/`. Voice files the job created are kept in the project's library. `work` holds the
 /// request and the manifest while they are passed on.
 #[allow(clippy::too_many_arguments)]
@@ -187,6 +210,7 @@ async fn voice_job(
     state: &State<'_, AppState>,
     bridge: &State<'_, BridgeState>,
     voices: &BTreeMap<String, BTreeMap<String, PathBuf>>,
+    tempos: &BTreeMap<String, f64>,
     work: &Path,
     script: &Value,
     chapter: &str,
@@ -200,7 +224,11 @@ async fn voice_job(
         for (emotion, path) in emotions {
             prompts.insert(emotion.clone(), Value::String(upload(bridge, path).await?));
         }
-        specs.insert(speaker.clone(), json!({ "prompts": prompts }));
+        let mut spec = json!({ "prompts": prompts });
+        if let Some(tempo) = tempos.get(speaker) {
+            spec["tempo"] = json!(tempo);
+        }
+        specs.insert(speaker.clone(), spec);
     }
     let request_path = work.join(".voice.request.json");
     fsx::atomic_write_json(&request_path, &json!({ "script": script, "voices": specs })).map_err(msg)?;
@@ -279,9 +307,10 @@ pub async fn record_wrapper(
     let _job = begin_job(&state, Lane::Worker, format!("{episode} wrapper voice"))?;
     let chapter = script["chapter_id"].as_str().ok_or("the wrapper's script has no chapter_id")?.to_owned();
     let shared = shared_voices(&app).ok();
-    let (root, dir, voices) = with_project(&state, |p| {
+    let (root, dir, voices, tempos) = with_project(&state, |p| {
         crate::assembly::load_episode(p, &episode)?;
-        Ok((p.paths().root().to_path_buf(), crate::assembly::wrapper_dir(p, &episode)?, library(shared.as_deref(), p)))
+        let dir = crate::assembly::wrapper_dir(p, &episode)?;
+        Ok((p.paths().root().to_path_buf(), dir, library(shared.as_deref(), p), tempos(shared.as_deref(), p)))
     })?;
     std::fs::create_dir_all(&dir).map_err(msg)?;
     let rel = dir.strip_prefix(&root).map_err(msg)?.to_string_lossy().replace('\\', "/");
@@ -290,7 +319,7 @@ pub async fn record_wrapper(
         let _ = app.emit("voice://progress", Progress { chapter: &episode, progress, message });
     };
     let staged = dir.join(".voice.partial");
-    let manifest = voice_job(&state, &bridge, &voices, &dir, &script, &chapter, &staged, report).await;
+    let manifest = voice_job(&state, &bridge, &voices, &tempos, &dir, &script, &chapter, &staged, report).await;
     let done = manifest.and_then(|manifest| install_wrapper(&dir, &rel, &staged, &manifest, &script));
     let _ = std::fs::remove_dir_all(&staged);
     report(1.0, "voiced".into());
@@ -399,6 +428,24 @@ mod tests {
         let lib = library(Some(&shared), &project);
         assert_eq!(std::fs::read(&lib["narrator"]["neutral"]).expect("read"), b"project");
         assert_eq!(std::fs::read(&lib["narrator"]["sad"]).expect("read"), b"shared");
+    }
+
+    #[test]
+    fn a_speakers_voice_json_sets_its_speed_up_and_the_project_wins() {
+        let (tmp, project, _) = project_with_approved_chapter();
+        let shared = tmp.path().join("shared-voices");
+        for (root, speaker, body) in [
+            (shared.clone(), "narrator", r#"{"tempo": 1.25}"#),
+            (shared.clone(), "akira", r#"{"tempo": 1.2}"#),
+            (project.paths().voices(), "akira", r#"{"tempo": 1.3}"#),
+            (shared.clone(), "kenji", r#"{"tempo": 9}"#),
+        ] {
+            std::fs::create_dir_all(root.join(speaker)).expect("dir");
+            std::fs::write(root.join(speaker).join(VOICE_SETTINGS), body).expect("settings");
+        }
+        // An out-of-range speed-up is ignored, so the job's default applies.
+        assert_eq!(tempos(Some(&shared), &project), BTreeMap::from([("akira".into(), 1.3), ("narrator".into(), 1.25)]));
+        assert!(!library(Some(&shared), &project).contains_key("kenji"));
     }
 
     #[test]

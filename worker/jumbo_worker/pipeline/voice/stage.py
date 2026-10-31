@@ -4,7 +4,8 @@ Input blob (JSON):
 
     {"script": ScriptDoc,
      "voices": {"narrator": {"design": "deep, calm Indian male narrator voice",  # used once, to create it
-                             "prompts": {"neutral": "<blob>", "sad": "<blob>"}}},  # voice files
+                             "prompts": {"neutral": "<blob>", "sad": "<blob>"},  # voice files
+                             "tempo": 1.25}},                                    # optional, this voice's speed-up
      "seed": 7,                                                                  # optional
      "pacing": true, "tempo": 1.1,                                               # optional (defaults shown)
      "hearing": true,                                                            # optional (default shown)
@@ -20,7 +21,7 @@ Each take is checked (pipeline/voice/takes.py) and spoken again with the next se
 silent, or is far off the length its text should take; the best of ATTEMPTS is kept and the report says so.
 Silence is cut off both ends. Unless `hearing` is false, each take is then heard (the whisper model) and cut to its line, and
 spoken again when words are missing or something else is said mid-line. Then, unless `pacing` is false, the pauses inside the line are shortened (takes.tighten:
-only the middle of a silence is cut) and the line plays `tempo` times faster at the same pitch (takes.tempo), the
+only the middle of a silence is cut) and the line plays `tempo` times faster at the same pitch (takes.tempo; a voice's own `tempo` wins), the
 pace of the recap channels the project follows. The lines' lengths then set the panels' (buildEpisodeSpec), so
 nothing is fitted to a duration.
 
@@ -85,12 +86,14 @@ async def run(ctx: JobContext) -> str:
             await ctx.call(EAR, "hear", {"audio": str(quiet), "language": "hi"})
         prompts: dict[str, dict[str, str]] = {}  # voice -> emotion -> prompt path on this host
         created: dict[str, dict[str, str]] = {}
+        speeds: dict[str, float] = {}
         for voice in dict.fromkeys(_speaker(line) for line in script.lines):
             spec = voices.get(voice, {})
             missing = [h for h in (spec.get("prompts") or {}).values() if not store.has(h)]
             if missing:
                 raise JobError(f"voice {voice}: prompt blobs not uploaded: {missing}")
             prompts[voice] = {emotion: str(store.path(h)) for emotion, h in (spec.get("prompts") or {}).items()}
+            speeds[voice] = float(spec.get("tempo") or speed)
             if NEUTRAL not in prompts[voice]:
                 ctx.progress(0.02, f"creating voice {voice}")
                 first = next(line for line in script.lines if _speaker(line) == voice)
@@ -125,7 +128,7 @@ async def run(ctx: JobContext) -> str:
                 take = await _best_take(ctx, work, line_id, payload, seed, hear=hear)
             tightened = 0.0
             if pacing:
-                take["pcm"], tightened = await asyncio.to_thread(_pace, take["pcm"], take["rate"], speed)
+                take["pcm"], tightened = await asyncio.to_thread(_pace, take["pcm"], take["rate"], speeds[voice])
                 await asyncio.to_thread(write_pcm, take["path"], take["pcm"], take["rate"])
             rates.add(take["rate"])
             rel = f"audio/{line_id}.wav"
