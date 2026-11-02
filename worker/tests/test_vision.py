@@ -217,6 +217,16 @@ async def test_a_lone_bubble_box_gives_its_text_to_the_real_panel_without_moving
     assert [b["text"] for b in panel.bubbles] == ["Where are you?"]
 
 
+async def test_a_slice_holding_only_a_caption_keeps_it_as_a_text_card():
+    # Nothing to fold into, so the box stays a panel, marked so the video shows it only briefly.
+    image, result = bubble_strip()
+    image[300:880] = 255
+    only = {**result, "panels": result["panels"][:1], "characters": []}
+    detector = MagiDetector(lambda *_: asyncio.sleep(0, only))
+    [panel] = await detector.detect(image, "x.webp")
+    assert detector.folded == 0 and panel.text_only
+
+
 async def test_painted_art_without_a_detected_character_is_not_folded():
     # Smooth painted art has few hard edges; its colour keeps it a panel even when Magi finds no one in it.
     image, result = bubble_strip()
@@ -224,6 +234,7 @@ async def test_painted_art_without_a_detected_character_is_not_folded():
     detector = MagiDetector(lambda *_: asyncio.sleep(0, result))
     panels = await detector.detect(image, "x.webp")
     assert detector.folded == 0 and len(panels) == 2
+    assert not any(p.text_only for p in panels)
 
 
 def test_rasterize_keeps_the_drawn_pixels(tmp_path):

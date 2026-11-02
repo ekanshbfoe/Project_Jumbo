@@ -200,6 +200,7 @@ async def run(ctx: JobContext) -> str:
                 "backdrop": f"chapters/{chapter}/{backdrop_rel}",
                 "bubbles": bubbles,
                 "characters": characters,
+                **({"text_only": True} if det.text_only else {}),
             }
         )
     # Method 2's pack for Gemini: every page with its panels outlined and labelled by id.

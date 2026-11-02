@@ -47,6 +47,8 @@ class Detection:
     polygon: list[Point]
     bubbles: list[dict] = field(default_factory=list)  # {"kind", "polygon" (px), "text"?, "speaker"?}
     characters: list[dict] = field(default_factory=list)  # {"cluster", "bbox" (x0, y0, x1, y1 px), "fingerprint"?}
+    # A text card kept because its image had no real panel to take its text: the video shows it only briefly.
+    text_only: bool = False
 
     @property
     def box(self) -> tuple[float, float, float, float]:
@@ -257,13 +259,18 @@ class MagiDetector:
     def _fold_text_only(self, image: np.ndarray, panels: list[Detection]) -> list[Detection]:
         """Moves the texts of text-only and empty boxes into the nearest real panel and drops the boxes.
         Only text data moves: the real panels' boxes are left exactly as detected."""
+        cards = [is_text_only(image, d.box, [_poly_box(b["polygon"]) for b in d.bubbles], len(d.characters)) for d in panels]
         text_only = [
-            is_text_only(image, d.box, [_poly_box(b["polygon"]) for b in d.bubbles], len(d.characters))
-            or is_empty(image, d.box, [_poly_box(b["polygon"]) for b in d.bubbles], len(d.characters))
-            for d in panels
+            card or is_empty(image, d.box, [_poly_box(b["polygon"]) for b in d.bubbles], len(d.characters))
+            for d, card in zip(panels, cards)
         ]
         real = [d for d, t in zip(panels, text_only) if not t]
-        if not real or len(real) == len(panels):
+        if not real:
+            # Nothing to fold into (a webtoon slice holding only a caption): keep the boxes, marking the text cards.
+            for d, card in zip(panels, cards):
+                d.text_only = card
+            return panels
+        if len(real) == len(panels):
             return panels
         for d, t in zip(panels, text_only):
             if t:

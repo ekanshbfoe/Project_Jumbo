@@ -59,6 +59,7 @@ class Panel(BaseModel):
     backdrop: Annotated[str | None, Field(min_length=1)] = None
     bubbles: Annotated[list[Bubble] | None, Field(validate_default=True)] = []
     characters: Annotated[list[CharacterBox] | None, Field(validate_default=True)] = []
+    text_only: bool | None = None
 
 
 class PanelsDoc(BaseModel):

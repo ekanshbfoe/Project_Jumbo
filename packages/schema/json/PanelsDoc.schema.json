@@ -87,6 +87,9 @@
           "items": {
             "$ref": "#/$defs/CharacterBox"
           }
+        },
+        "text_only": {
+          "type": "boolean"
         }
       },
       "required": [

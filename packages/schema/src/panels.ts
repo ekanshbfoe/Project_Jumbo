@@ -58,6 +58,11 @@ export const Panel = z.object({
   backdrop: AssetPath.optional(),
   bubbles: z.array(Bubble).default([]),
   characters: z.array(CharacterBox).default([]),
+  /**
+   * A caption or bubble on blank background with no drawing: a text card, kept as a panel only because its image
+   * had no real panel to fold its text into (vision/textonly.py). The video shows it briefly (episode.ts).
+   */
+  text_only: z.boolean().optional(),
 }).meta({ id: "Panel" });
 
 export const PanelsDoc = z
