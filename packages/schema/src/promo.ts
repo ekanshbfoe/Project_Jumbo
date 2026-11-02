@@ -4,7 +4,8 @@ export const SocialPlatform = z.enum(["x", "youtube", "instagram"]);
 
 export const PromoPosition = z.enum(["bottom-right", "bottom-left", "top-right", "top-left", "center"]);
 
-/** The follow-us card: shown once early in an episode for a few seconds, and again as an outro at its end. */
+/** The follow-us card: shown as an outro at the end of an episode, and early on only when asked (a card in the first
+ * seconds asks viewers to follow before they care, and covers the art; viewer review 2026-11-02). */
 export const SocialPromoSettings = z
   .object({
     enabled: z.boolean().default(true),
@@ -18,8 +19,8 @@ export const SocialPromoSettings = z
     headline: z.string().min(1).max(40).default("Follow for more recaps"),
     platforms: z.array(SocialPlatform).min(1).max(3).default(["x", "youtube", "instagram"]),
     position: PromoPosition.default("bottom-right"),
-    /** Whether the card shows early on. An episode made of several parts shows it only in the first. */
-    early: z.boolean().default(true),
+    /** Whether the card also shows early on (off by default). An episode made of several parts shows it only in the first. */
+    early: z.boolean().default(false),
     /** Seconds into the episode at which the card starts animating in. */
     start_s: z.number().min(0).default(20),
     /** Seconds the card is on screen, its entry and exit animations included. */

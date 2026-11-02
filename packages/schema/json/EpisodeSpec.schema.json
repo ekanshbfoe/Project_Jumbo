@@ -163,7 +163,7 @@
           ]
         },
         "early": {
-          "default": true,
+          "default": false,
           "type": "boolean"
         },
         "start_s": {

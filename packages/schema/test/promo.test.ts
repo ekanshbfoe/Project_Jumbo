@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { SocialPromoSettings } from "../src";
 
 describe("SocialPromoSettings", () => {
-  it("defaults to Project_Jumbo on all three platforms, 8 s from 0:20 and a 6 s outro", () => {
+  it("defaults to Project_Jumbo on all three platforms, a 6 s outro and no early card", () => {
     expect(SocialPromoSettings.parse({})).toEqual({
       enabled: true,
       username: "Project_Jumbo",
       headline: "Follow for more recaps",
       platforms: ["x", "youtube", "instagram"],
       position: "bottom-right",
-      early: true,
+      early: false,
       start_s: 20,
       duration_s: 8,
       outro_s: 6,

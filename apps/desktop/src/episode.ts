@@ -14,15 +14,15 @@ export function buildEpisode(chapter: string, src: PreviewSources, title: string
 }
 
 /**
- * A chapter's part of an episode (ADR 0007): the follow card shows early only in the first part and at the end only
- * in the last, so a long episode shows it once at each end. Parts join straight, with no title card between them.
+ * A chapter's part of an episode (ADR 0007): the follow card shows only at the end of the last part, so a long
+ * episode shows it once. Parts join straight, with no title card between them.
  * The last part also holds its final panel after the narration (END_HOLD_S). `at.last` is false for the last
  * chapter when the episode's wrapper ends on its outro.
  */
 export function buildPart(chapter: string, src: PreviewSources, title: string, at: { first: boolean; last: boolean }, signatureS = 0) {
   // The last part holds its final panel after the narration, so the episode does not stop on the last word, and
   // long enough for the signature clip with a breath on either side.
-  const promo = at.last ? { early: at.first } : { early: at.first, outro_s: 0 };
+  const promo = at.last ? { early: false } : { early: false, outro_s: 0 };
   return buildEpisode(chapter, src, title, { promo, endHold: at.last ? endHold(signatureS) : 0 });
 }
 

@@ -37,7 +37,7 @@ class SocialPromoSettings(BaseModel):
     position: (
         Literal["bottom-right", "bottom-left", "top-right", "top-left", "center"] | None
     ) = "bottom-right"
-    early: bool | None = True
+    early: bool | None = False
     start_s: Annotated[float | None, Field(ge=0.0)] = 20
     duration_s: Annotated[float | None, Field(ge=1.0, le=60.0)] = 8
     outro_s: Annotated[float | None, Field(ge=0.0, le=60.0)] = 6
