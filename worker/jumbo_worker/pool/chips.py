@@ -104,7 +104,9 @@ class GpuLedger:
         else:
             taken = {c for owner in self._alone for c in self._held[owner][0]}
             fits = [c for c in range(self.size) if c not in taken and reserved[c] + gb <= self.budget_gb + 1e-9]
-        fits.sort(key=lambda c: (reserved[c], c))
+        # Ties go to the last card: a two-card engine (speech.cpp, llama.cpp) keeps its main buffers on card 0, so a
+        # one-card replica beside it fits under the ceiling only on card 1 (Whisper beside Drama 3, 2026-11-02).
+        fits.sort(key=lambda c: (reserved[c], -c))
         return tuple(sorted(fits[:n])) if len(fits) >= n else None
 
     def can_place(self, gb: float, n: int = 1, alone: bool = False) -> bool:

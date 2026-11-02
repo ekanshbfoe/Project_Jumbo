@@ -16,7 +16,7 @@ def gpu_config(**det) -> PoolConfig:
 
 def test_gpu_ledger_spreads_replicas_and_never_reserves_past_the_budget():
     cards = GpuLedger(2, 12.0)
-    assert [cards.lease(f"r{i}", 5) for i in range(4)] == [(0,), (1,), (0,), (1,)]
+    assert [cards.lease(f"r{i}", 5) for i in range(4)] == [(1,), (0,), (1,), (0,)]
     assert not cards.can_place(5) and cards.can_place(2)
     try:
         cards.lease("r4", 5)
@@ -24,7 +24,7 @@ def test_gpu_ledger_spreads_replicas_and_never_reserves_past_the_budget():
     except LeaseError:
         pass
     cards.release("r1")
-    assert cards.lease("r5", 5) == (1,) and cards.reserved() == [10.0, 10.0]
+    assert cards.lease("r5", 5) == (0,) and cards.reserved() == [10.0, 10.0]
 
 
 def test_card_watchdog_kills_the_replica_furthest_past_its_footprint():
@@ -119,7 +119,7 @@ def test_magi_fits_one_replica_per_t4_on_the_kaggle_gpu_host():
 
 def test_a_two_card_replica_reserves_both_cards_and_waits_for_both_to_be_free():
     cards = GpuLedger(2, 12.0)
-    assert cards.lease("magi", 5) == (0,)
+    assert cards.lease("magi", 5) == (1,)
     # 11.8 GB on each card does not fit beside Magi's 5 GB.
     assert not cards.can_place(11.8, 2)
     cards.release("magi")
@@ -191,7 +191,7 @@ def test_drama3_takes_both_t4s_of_the_kaggle_gpu_host():
 
 def test_a_replica_running_alone_takes_empty_cards_past_the_budget_and_keeps_others_off():
     cards = GpuLedger(2, 12.0, card_gb=15.0)
-    assert cards.lease("magi", 5) == (0,)
+    assert cards.lease("magi", 5) == (1,)
     # The Director's 14.4 GB per card needs both cards empty.
     assert not cards.can_place(14.4, 2, alone=True)
     cards.release("magi")
