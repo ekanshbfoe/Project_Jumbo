@@ -64,6 +64,29 @@ def _norm_polygon(points, w: int, h: int) -> list[list[float]]:
     return [[_unit(x / w), _unit(y / h)] for x, y in points]
 
 
+# Most a panel's crop grows past its border to take in a bubble spilling over it, as a share of the panel's side.
+BUBBLE_REACH = 0.15
+
+
+def grow_to_bubbles(det: Detection, w: int, h: int) -> tuple[float, float, float, float]:
+    """The panel's box grown to cover the bubbles that spill over its border, as webtoon text often does (a line
+    cut mid-word at the frame's edge in the first real video, 2026-11-02); only text with words counts. Each side
+    grows by at most
+    BUBBLE_REACH of the panel, so a caption floating far off never drags the crop along."""
+    x0, y0, x1, y1 = det.box
+    rx, ry = (x1 - x0) * BUBBLE_REACH, (y1 - y0) * BUBBLE_REACH
+    gx0, gy0, gx1, gy1 = x0, y0, x1, y1
+    for b in det.bubbles:
+        if not any(c.isalnum() for c in b.get("text") or ""):
+            continue  # a mark like "....." or "!!??" is drawn art that spills on purpose, not words to keep whole
+        bx0, by0, bx1, by1 = Detection(b["polygon"]).box
+        if bx1 <= x0 or bx0 >= x1 or by1 <= y0 or by0 >= y1:
+            continue  # wholly outside: a caption given to the nearest panel, not one crossing its border
+        gx0, gy0 = min(gx0, max(bx0, x0 - rx)), min(gy0, max(by0, y0 - ry))
+        gx1, gy1 = max(gx1, min(bx1, x1 + rx)), max(gy1, min(by1, y1 + ry))
+    return max(0.0, gx0), max(0.0, gy0), min(float(w), gx1), min(float(h), gy1)
+
+
 def _norm_box(x0: float, y0: float, x1: float, y1: float, w: int, h: int) -> dict:
     x0, y0 = max(0.0, x0), max(0.0, y0)
     x1, y1 = min(float(w), x1), min(float(h), y1)
@@ -170,7 +193,10 @@ async def run(ctx: JobContext) -> str:
         prefix = f"i{n + 1:03d}."
         h, w = image.shape[:2]
         pid = f"p_{order + 1:04d}"
-        x0, y0, x1, y1 = det.box
+        x0, y0, x1, y1 = grow_to_bubbles(det, w, h)
+        # A grown box is shown as a plain rectangle: the outline cannot be grown to match.
+        grown = (x0, y0, x1, y1) != grow_to_bubbles(Detection(det.polygon), w, h)
+        polygon = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] if grown else det.polygon
         crop = image[max(0, int(y0)) : min(h, int(np.ceil(y1))), max(0, int(x0)) : min(w, int(np.ceil(x1)))]
         crop_rel = f"panels/crops/{pid}.webp"
         files[crop_rel] = await asyncio.to_thread(store.put, await asyncio.to_thread(encode_webp, crop))
@@ -195,7 +221,7 @@ async def run(ctx: JobContext) -> str:
                 "page": f"chapters/{chapter}/{rel}",
                 "page_size": {"width": w, "height": h},
                 "bbox": _norm_box(x0, y0, x1, y1, w, h),
-                "polygon": _norm_polygon(det.polygon, w, h),
+                "polygon": _norm_polygon(polygon, w, h),
                 "crop": f"chapters/{chapter}/{crop_rel}",
                 "backdrop": f"chapters/{chapter}/{backdrop_rel}",
                 "bubbles": bubbles,

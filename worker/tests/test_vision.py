@@ -453,3 +453,21 @@ def test_the_numbered_pdf_is_kept_under_the_size_limit():
     big, _ = numbered_pdf("ch_0001", "abcd", pages)
     small, _ = numbered_pdf("ch_0001", "abcd", pages, max_bytes=len(big) // 3)
     assert len(small) <= len(big) // 3
+
+
+def test_a_crop_grows_to_take_in_a_bubble_spilling_over_its_border():
+    from jumbo_worker.pipeline.vision.stage import grow_to_bubbles
+
+    panel = Detection([(100, 100), (500, 100), (500, 500), (100, 500)])
+    # Spills 40 px past the right edge: taken in whole.
+    panel.bubbles.append({"kind": "speech", "polygon": [[420, 200], [540, 200], [540, 260], [420, 260]], "text": "Run!"})
+    # A mark with no words spilling over the top is art: it does not count.
+    panel.bubbles.append({"kind": "sfx", "polygon": [[300, 60], [360, 60], [360, 120], [300, 120]], "text": "....."})
+    assert grow_to_bubbles(panel, 1000, 1000) == (100, 100, 540, 500)
+    # Spills far past the bottom: grows by 15% of the panel at most.
+    panel.bubbles.append({"kind": "speech", "polygon": [[200, 450], [300, 450], [300, 900], [200, 900]], "text": "No"})
+    assert grow_to_bubbles(panel, 1000, 1000) == (100, 100, 540, 560)
+    # A caption wholly outside (given to the nearest panel) leaves the box alone, and so does no bubble at all.
+    lone = Detection([(100, 100), (500, 100), (500, 500), (100, 500)])
+    lone.bubbles.append({"kind": "narration", "polygon": [[100, 600], [400, 600], [400, 650], [100, 650]], "text": "Later"})
+    assert grow_to_bubbles(lone, 1000, 1000) == (100, 100, 500, 500)
