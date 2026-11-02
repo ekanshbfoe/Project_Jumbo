@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { IDENTITY_CAMERA } from "../src/components/Camera";
-import { capUpscale, keepInFrame, MAX_UPSCALE, OVERSCAN, scrollShot, SCROLL_WIDTH } from "../src/framing";
+import { capUpscale, interestRows, keepInFrame, MAX_UPSCALE, OVERSCAN, scrollShot, SCROLL_WIDTH } from "../src/framing";
 import { fitContain } from "../src/geometry";
 
 const frame = { width: 1920, height: 1080 };
@@ -69,6 +69,33 @@ describe("scrollShot", () => {
     expect(end.transform.y + end.rect.height).toBeLessThan(1080);
     expect(end.transform.y + end.rect.height).toBeGreaterThan(1000);
     expect(scrollShot(tall, frame, 0, "up")!.transform.y).toBeCloseTo(end.transform.y, 6);
+  });
+
+  it("lingers on a face at the top and hurries through the empty rest", () => {
+    const tall = { width: 1080, height: 4000 };
+    const y = (p: number, rows: [number, number][] = []) => scrollShot(tall, frame, p, "down", rows)!.transform.y;
+    const face: [number, number][] = [[0.02, 0.2]];
+    // A third of the way in, an even scroll has left the face behind; this one is still on it.
+    expect(y(0.33, face)).toBeGreaterThan(y(0.33));
+    // It still starts at the top and ends at the bottom.
+    expect(y(0, face)).toBeCloseTo(y(0), 6);
+    expect(y(1, face)).toBeCloseTo(y(1), 6);
+    // Scrolling up mirrors it: the face at the top is reached early and held to the end.
+    const up = (p: number) => scrollShot(tall, frame, p, "up", face)!.transform.y;
+    expect(up(0.67)).toBeGreaterThan(scrollShot(tall, frame, 0.67, "up")!.transform.y);
+  });
+
+  it("marks bubbles and the tops of character boxes as worth stopping on", () => {
+    const panel = {
+      bbox: { x: 0, y: 0.5, w: 1, h: 0.5 },
+      bubbles: [{ id: "b_0001", kind: "speech" as const, polygon: [[0.1, 0.9], [0.3, 0.9], [0.3, 0.95], [0.1, 0.95]] as [number, number][] }],
+      characters: [{ cluster: "c", bbox: { x: 0, y: 0.5, w: 0.5, h: 0.25 } }],
+    };
+    const rows = interestRows(panel);
+    expect(rows[0]![0]).toBeCloseTo(0.8, 6);
+    expect(rows[0]![1]).toBeCloseTo(0.9, 6);
+    expect(rows[1]![0]).toBeCloseTo(0, 6);
+    expect(rows[1]![1]).toBeCloseTo(0.2, 6);
   });
 
   it("leaves a panel that fits the frame alone, and never magnifies past the cap", () => {

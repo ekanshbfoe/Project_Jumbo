@@ -3,7 +3,7 @@ import { AbsoluteFill, Html5Audio, Img, useCurrentFrame, useVideoConfig } from "
 import { AmbientLayer } from "../ambient/AmbientLayer";
 import { useAssetResolver } from "../assets";
 import { fitContain, panelSize, splitFrame } from "../geometry";
-import { capUpscale, keepInFrame, scrollShot } from "../framing";
+import { capUpscale, interestRows, keepInFrame, scrollShot } from "../framing";
 import { PRESETS } from "../presets/registry";
 import type { PanelSlot, PresetContext, PresetImpl } from "../presets/types";
 import { Camera } from "./Camera";
@@ -20,6 +20,9 @@ export interface BeatViewProps {
   /** The beat's first frame on the episode clock, which keeps ambient motion continuous across beats. */
   startFrame?: number;
 }
+
+/** Presets that hit. On a tall panel they play over a scroll, so the panel is shown big, not whole and narrow. */
+const IMPACTS: ReadonlySet<PresetName> = new Set(["shake", "action_tilt", "kinetic_jitter"]);
 
 /** Where each panel of the beat sits before the camera moves, unless the preset lays them out itself. */
 function layout(beat: Beat, panels: EpisodePanel[], width: number, height: number, impl: PresetImpl<PresetName>): PanelSlot[] {
@@ -55,11 +58,13 @@ export function BeatView({
   const impl = PRESETS[beat.preset.name] as PresetImpl<PresetName>;
   const rects = layout(beat, panels, width, height, impl);
   const shadow = impl.panelShadow?.(height / 1080) ?? true;
-  // A single tall panel panned up or down is scrolled through at a readable width instead of shown whole and small.
+  // A single tall panel panned up or down is scrolled through at a readable width instead of shown whole and small,
+  // and so is one that takes a hit (a shatter shown at a fifth of the frame's width, viewer review 2026-11-02).
   const pan = beat.preset.name === "pan" ? beat.preset.params.direction : undefined;
+  const hit = panels.length === 1 && IMPACTS.has(beat.preset.name);
   const scroll =
-    panels.length === 1 && (pan === "down" || pan === "up")
-      ? scrollShot(panelSize(panels[0]!), { width, height }, durationInFrames <= 1 ? 1 : frame / (durationInFrames - 1), pan)
+    panels.length === 1 && (pan === "down" || pan === "up" || hit)
+      ? scrollShot(panelSize(panels[0]!), { width, height }, durationInFrames <= 1 ? 1 : frame / (durationInFrames - 1), pan === "up" ? "up" : "down", interestRows(panels[0]!))
       : null;
   if (scroll) rects[0] = scroll.rect;
   const ctx = (index: number): PresetContext => ({
@@ -71,6 +76,13 @@ export function BeatView({
     index,
     count: panels.length,
   });
+  const scrolled = (panel: number) => {
+    if (!scroll) return null;
+    if (!hit) return scroll.transform;
+    // The hit's shake, tilt and punch on top of the scroll, pivoting on the middle of the screen, not of the panel.
+    const move = impl.camera(ctx(panel), beat.preset.params as never);
+    return { ...move, y: scroll.transform.y + move.y, originX: 50, originY: ((height / 2 - scroll.transform.y) / scroll.rect.height) * 100 };
+  };
   // The vision stage's pre-blurred backdrop when there is one: blurring the whole frame here every frame is slow.
   const blurred = panels[0]?.backdrop;
   const backdrop = blurred ?? (panels[0] && (panels[0].clean ?? panels[0].crop ?? panels[0].page));
@@ -97,7 +109,7 @@ export function BeatView({
           // A single panel's move is kept inside the frame: the panel is never cropped (multi-panel presets slide in by design).
           transform={
             scroll
-              ? scroll.transform
+              ? scrolled(i)!
               : panels.length === 1
               ? keepInFrame(impl.camera(ctx(i), beat.preset.params as never), rects[i]!, { width, height }, panelSize(panel))
               : impl.camera(ctx(i), beat.preset.params as never)
