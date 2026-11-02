@@ -59,6 +59,12 @@ class PointItem(RootModel[float]):
     root: Annotated[float, Field(ge=0.0, le=1.0)]
 
 
+class CharacterBox(BaseModel):
+    id: Annotated[str | None, Field(pattern="^k_\\d{4,}$")] = None
+    cluster: Annotated[str, Field(min_length=1)]
+    bbox: BBox
+
+
 class PanelId(RootModel[str]):
     root: Annotated[str, Field(pattern="^p_\\d{4}$")]
 
@@ -253,6 +259,8 @@ class EpisodePanel(BaseModel):
     clean: Annotated[str | None, Field(min_length=1)] = None
     backdrop: Annotated[str | None, Field(min_length=1)] = None
     bubbles: Annotated[list[Bubble] | None, Field(validate_default=True)] = []
+    characters: Annotated[list[CharacterBox] | None, Field(validate_default=True)] = []
+    text_only: bool | None = None
 
 
 class Beat(BaseModel):

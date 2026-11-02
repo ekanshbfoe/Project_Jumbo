@@ -87,6 +87,17 @@
           "text": "Main kamzor nahi hoon.",
           "speaker": "c_0001"
         }
+      ],
+      "characters": [
+        {
+          "cluster": "c_0001",
+          "bbox": {
+            "x": 0.1,
+            "y": 0.08,
+            "w": 0.3,
+            "h": 0.25
+          }
+        }
       ]
     },
     {
@@ -120,7 +131,8 @@
           0.66
         ]
       ],
-      "bubbles": []
+      "bubbles": [],
+      "characters": []
     },
     {
       "id": "p_0003",
@@ -154,7 +166,8 @@
         ]
       ],
       "clean": "chapters/ch_0001/panels/clean/p_0003.webp",
-      "bubbles": []
+      "bubbles": [],
+      "characters": []
     }
   ],
   "beats": [

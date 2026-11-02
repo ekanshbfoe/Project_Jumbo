@@ -55,6 +55,8 @@ export const EpisodePanel = Panel.pick({
   clean: true,
   backdrop: true,
   bubbles: true,
+  characters: true,
+  text_only: true,
 }).meta({ id: "EpisodePanel" });
 
 export const Beat = z.object({
@@ -161,6 +163,13 @@ const aspect = (p: EpisodePanel) => (p.bbox.h * p.page_size.height) / Math.max(1
 const STEP_FADE = 0.25;
 /** A line too short to give each of its panels this long stays one beat with its panels together. */
 const MIN_STEP = 1.2;
+/**
+ * Longest a text card stays on screen, in seconds: long enough to read a caption, short of a slideshow (a card held
+ * 11 s in the first real video, viewer review 2026-11-02). The rest of its line plays over a drawn panel.
+ */
+const CARD_MAX = 3.5;
+/** A text card is only cut short when at least this much of its line would be left for the drawn panel. */
+const CARD_RELIEF = 1.5;
 
 /** A camera move that suits a panel's shape: tall panels scroll down, wide ones pan across, the rest push in. */
 function moveFor(panel: EpisodePanel, n: number): PresetSpec {
@@ -171,9 +180,41 @@ function moveFor(panel: EpisodePanel, n: number): PresetSpec {
 }
 
 /**
- * One beat as shown: a multi-panel beat becomes one beat per panel, one after another, sharing the line's clip (each
- * plays the next part of it) and its screen time, with a short fade between them. Two tall panels stay side by side,
- * and so does a line too short to step through.
+ * One beat played as several, one panel each, one after another: they share the beat's clip (each plays the next
+ * part of it) and its screen time (`shares`, seconds that add up to the beat's), with a short fade between them.
+ */
+function playAcross(beat: z.input<typeof Beat>, steps: { panel: EpisodePanel; preset: PresetSpec }[], shares: number[], fps: number): z.input<typeof Beat>[] {
+  const n = steps.length;
+  // The steps overlap by the fade, so they add up to the line's own length on the timeline.
+  const total = beat.duration + (n - 1) * STEP_FADE;
+  const clip = beat.audio;
+  let used = 0;
+  let heard = 0;
+  return steps.map(({ panel, preset }, k) => {
+    const last = k === n - 1;
+    const duration = last ? beatLength(total - used, fps) : beatLength(shares[k]! + STEP_FADE, fps);
+    used += duration;
+    const room = last ? duration : duration - STEP_FADE;
+    const length = clip ? Math.min(room - 1e-6, clip.duration - heard) : 0;
+    const audio = clip && length > 0.01 ? { src: clip.src, duration: length, from: (clip.from ?? 0) + heard } : null;
+    heard += Math.max(0, length);
+    return {
+      ...beat,
+      panel_ids: [panel.id],
+      preset,
+      transition_in: k === 0 ? beat.transition_in : { name: "fade", duration: STEP_FADE },
+      // The card belongs to the line: it shows once, with its first panel.
+      card: k === 0 ? beat.card : null,
+      sfx: k === 0 ? beat.sfx : null,
+      audio,
+      duration,
+    };
+  });
+}
+
+/**
+ * One beat as shown: a multi-panel beat becomes one beat per panel, one after another (playAcross). Two tall panels
+ * stay side by side, and so does a line too short to step through. A text card among them gets at most CARD_MAX.
  */
 function stepThrough(beat: z.input<typeof Beat>, panels: ReadonlyMap<string, EpisodePanel>, fps: number): z.input<typeof Beat>[] {
   const shown = beat.panel_ids.map((id) => panels.get(id)).filter((p): p is EpisodePanel => p !== undefined);
@@ -187,30 +228,26 @@ function stepThrough(beat: z.input<typeof Beat>, panels: ReadonlyMap<string, Epi
   }
   // Judged on the spoken clip, so the pause after a line never makes a quick line step through its panels.
   if (n < 2 || together || (beat.audio?.duration ?? beat.duration) / n < MIN_STEP) return [beat];
-  // The steps overlap by the fade, so they add up to the line's own length on the timeline.
-  const total = beat.duration + (n - 1) * STEP_FADE;
-  const clip = beat.audio;
-  let used = 0;
-  let heard = 0;
-  return shown.map((panel, k) => {
-    const last = k === n - 1;
-    const duration = last ? beatLength(total - used, fps) : beatLength(total / n, fps);
-    used += duration;
-    const room = last ? duration : duration - STEP_FADE;
-    const length = clip ? Math.min(room - 1e-6, clip.duration - heard) : 0;
-    const audio = clip && length > 0.01 ? { src: clip.src, duration: length, from: heard } : null;
-    heard += Math.max(0, length);
-    return {
-      ...beat,
-      panel_ids: [panel.id],
-      preset: moveFor(panel, k),
-      transition_in: k === 0 ? beat.transition_in : { name: "fade", duration: STEP_FADE },
-      // The card belongs to the line: it shows once, with its first panel.
-      card: k === 0 ? beat.card : null,
-      sfx: k === 0 ? beat.sfx : null,
-      audio,
-      duration,
-    };
+  const even = beat.duration / n;
+  const cards = shown.filter((p) => p.text_only).length;
+  const card = cards < n ? Math.min(CARD_MAX, even) : even;
+  const art = (beat.duration - cards * card) / (n - cards);
+  return playAcross(beat, shown.map((panel, k) => ({ panel, preset: moveFor(panel, k) })), shown.map((p) => (p.text_only ? card : art)), fps);
+}
+
+/**
+ * A beat that shows only a text card for longer than CARD_MAX is cut short: the rest of its line plays over the
+ * drawn panel shown last before it (the story the caption talks about), or, at the very start, the next one.
+ */
+function relieveCards(beats: z.input<typeof Beat>[], panels: ReadonlyMap<string, EpisodePanel>, fps: number): z.input<typeof Beat>[] {
+  const drawn = (b: z.input<typeof Beat>) => b.panel_ids.map((id) => panels.get(id)).find((p) => p && !p.text_only);
+  return beats.flatMap((beat, i) => {
+    const card = beat.panel_ids.length === 1 ? panels.get(beat.panel_ids[0]!) : undefined;
+    if (!card?.text_only || beat.duration < CARD_MAX + CARD_RELIEF) return [beat];
+    const before = beats.slice(0, i).reverse().map(drawn).find(Boolean);
+    const other = before ?? beats.slice(i + 1).map(drawn).find(Boolean);
+    if (!other) return [beat];
+    return playAcross(beat, [{ panel: card, preset: beat.preset as PresetSpec }, { panel: other, preset: moveFor(other, 1) }], [CARD_MAX, beat.duration - CARD_MAX], fps);
   });
 }
 
@@ -250,6 +287,7 @@ export function buildEpisodeSpec(
     };
     return sequential ? stepThrough(beat, byId, fps) : [beat];
   });
+  if (sequential) beats.splice(0, beats.length, ...relieveCards(beats, byId, fps));
   const last = beats.at(-1);
   if (last && options.endHold) last.duration = beatLength(last.duration + options.endHold, fps);
 

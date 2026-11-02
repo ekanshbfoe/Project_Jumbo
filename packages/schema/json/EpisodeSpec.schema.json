@@ -223,6 +223,16 @@
           "items": {
             "$ref": "#/$defs/Bubble"
           }
+        },
+        "characters": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CharacterBox"
+          }
+        },
+        "text_only": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -341,6 +351,26 @@
         "id",
         "kind",
         "polygon"
+      ]
+    },
+    "CharacterBox": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^k_\\d{4,}$"
+        },
+        "cluster": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bbox": {
+          "$ref": "#/$defs/BBox"
+        }
+      },
+      "required": [
+        "cluster",
+        "bbox"
       ]
     },
     "Beat": {

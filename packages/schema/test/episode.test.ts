@@ -100,6 +100,40 @@ describe("buildEpisodeSpec", () => {
     expect(() => EpisodeSpec.parse(spec)).not.toThrow();
   });
 
+  it("shows a text card briefly and gives the rest of the line to the drawn panels", () => {
+    const withCard = PanelsDoc.parse({ ...panels, panels: panels.panels.map((p) => (p.id === "p_0002" ? { ...p, text_only: true } : p)) });
+    const voiced = (lines: ScriptDoc["lines"], clips: [string, number][]) =>
+      buildEpisodeSpec(
+        ScriptDoc.parse({ ...script, lines }),
+        withCard,
+        AudioManifest.parse({ ...audio, clips: clips.map(([line_id, duration]) => ({ line_id, src: `${line_id}.wav`, duration })) }),
+      );
+    const heardAll = (beats: { audio: { duration: number; from: number } | null }[], total: number) => {
+      let heard = 0;
+      for (const b of beats) {
+        expect(b.audio!.from).toBeCloseTo(heard, 6);
+        heard += b.audio!.duration;
+      }
+      expect(heard).toBeCloseTo(total, 4);
+    };
+    // A line over a card and a drawing: the card is read in 3.5 s, the drawing keeps the rest.
+    const mixed = voiced([{ ...script.lines[1]!, id: "l_0001", panel_ids: ["p_0002", "p_0003"], transition_in: { name: "cut", duration: 0.3 } }], [["l_0001", 10]]);
+    expect(mixed.beats.map((b) => b.panel_ids[0])).toEqual(["p_0002", "p_0003"]);
+    expect(mixed.beats[0]!.duration - mixed.beats[1]!.transition_in.duration).toBeCloseTo(3.5, 1);
+    heardAll(mixed.beats, 10);
+    // A long line over a card alone: after 3.5 s the drawn panel shown before it comes back for the rest.
+    const alone = voiced(
+      [script.lines[0]!, { ...script.lines[0]!, id: "l_0002", panel_ids: ["p_0002"] }],
+      [["l_0001", 3], ["l_0002", 11]],
+    );
+    expect(alone.beats.map((b) => b.panel_ids[0])).toEqual(["p_0001", "p_0002", "p_0001"]);
+    expect(alone.beats[1]!.duration - alone.beats[2]!.transition_in.duration).toBeCloseTo(3.5, 1);
+    heardAll(alone.beats.slice(1), 11);
+    expect(() => EpisodeSpec.parse(alone)).not.toThrow();
+    // A short line keeps its card.
+    expect(voiced([{ ...script.lines[0]!, panel_ids: ["p_0002"] }], [["l_0001", 3]]).beats).toHaveLength(1);
+  });
+
   it("scrolls a tall panel the script only holds or zooms", () => {
     const tallDoc = PanelsDoc.parse({ ...panels, panels: [{ ...panel("p_0001", 0), bbox: { x: 0, y: 0, w: 0.3, h: 1 } }] });
     const one = ScriptDoc.parse({ ...script, lines: [{ ...script.lines[0]!, preset: { name: "hold" } }] });
