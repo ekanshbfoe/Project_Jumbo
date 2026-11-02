@@ -131,6 +131,8 @@ export interface BuildEpisodeOptions {
   video?: Partial<VideoFormat>;
   /** Silence after each narration clip, in seconds, before the next beat's transition begins. */
   padding?: number;
+  /** Longer silence after a big moment (a sound effect, a hit or a question), so it lands before the next line. */
+  bigPause?: number;
   /** Longest a transition between beats may be, in seconds: quick cuts keep a recap moving. */
   maxTransition?: number;
   /** Shortest a beat may be, in seconds. */
@@ -145,6 +147,11 @@ export interface BuildEpisodeOptions {
   /** Seconds the last panel stays on screen after the narration ends (an episode's last part), so the music can fade out. */
   endHold?: number;
 }
+
+/** Presets that hit: the line after one waits a beat longer (bigPause). */
+const IMPACTS = new Set(["shake", "action_tilt", "kinetic_jitter"]);
+/** A line that ends on a big moment: a sound effect, a hit, or a question left hanging. */
+const isBig = (line: ScriptDoc["lines"][number]) => !!line.sfx || IMPACTS.has(line.preset.name) || /[?？]["'”’)]*$/.test(line.narration.trim());
 
 /** A panel this many times taller than wide is "tall": two of them may share the frame side by side. */
 const TALL = 1.3;
@@ -178,7 +185,8 @@ function stepThrough(beat: z.input<typeof Beat>, panels: ReadonlyMap<string, Epi
     // ({pan} with no direction is a pan to the right.)
     return [{ ...beat, preset: moveFor(shown[0]!, 0) }];
   }
-  if (n < 2 || together || beat.duration / n < MIN_STEP) return [beat];
+  // Judged on the spoken clip, so the pause after a line never makes a quick line step through its panels.
+  if (n < 2 || together || (beat.audio?.duration ?? beat.duration) / n < MIN_STEP) return [beat];
   // The steps overlap by the fade, so they add up to the line's own length on the timeline.
   const total = beat.duration + (n - 1) * STEP_FADE;
   const clip = beat.audio;
@@ -216,7 +224,8 @@ export function buildEpisodeSpec(
   audio?: AudioManifest,
   options: BuildEpisodeOptions = {},
 ): EpisodeSpec {
-  const { padding = 0.12, maxTransition = 0.3, minBeat = 1.5, wordsPerSecond = 2.6, sequential = true } = options;
+  // A 0.12 s gap read as wall-to-wall talk with no beat after the big moments (viewer review 2026-11-02).
+  const { padding = 0.35, bigPause = 0.9, maxTransition = 0.3, minBeat = 1.5, wordsPerSecond = 2.6, sequential = true } = options;
   const transition = (line?: ScriptDoc["lines"][number]) =>
     line && { ...line.transition_in, duration: Math.min(line.transition_in.duration, maxTransition) };
   const clips = new Map(audio?.clips.map((c) => [c.line_id, c]));
@@ -237,7 +246,7 @@ export function buildEpisodeSpec(
       audio: clip ? { src: clip.src, duration: clip.duration, from: 0 } : null,
       card: line.card,
       sfx: line.sfx,
-      duration: beatLength(Math.max(minBeat, spoken + padding + overlapOf(transition(script.lines[i + 1]))), fps),
+      duration: beatLength(Math.max(minBeat, spoken + (isBig(line) ? Math.max(padding, bigPause) : padding) + overlapOf(transition(script.lines[i + 1]))), fps),
     };
     return sequential ? stepThrough(beat, byId, fps) : [beat];
   });

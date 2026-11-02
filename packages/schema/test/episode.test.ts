@@ -49,11 +49,11 @@ const audio = AudioManifest.parse({
 describe("buildEpisodeSpec", () => {
   it("sizes voiced beats from audio and unvoiced beats from word count", () => {
     const spec = buildEpisodeSpec(script, panels, audio);
-    // 4.2 s of audio + 0.12 s pause + the next beat's 0.5 s fade cut to 0.3 s, rounded up to a frame.
-    expect(spec.beats[0]?.duration).toBeCloseTo(4.6333, 3);
+    // 4.2 s of audio + 0.35 s pause + the next beat's 0.5 s fade cut to 0.3 s, rounded up to a frame.
+    expect(spec.beats[0]?.duration).toBeCloseTo(4.8667, 3);
     expect(spec.beats[1]?.transition_in.duration).toBe(0.3);
     expect(spec.beats[0]?.audio).toEqual({ src: "chapters/ch_0001/audio/l_0001.wav", duration: 4.2, from: 0 });
-    // 2 words / 2.6 wps + 0.12 padding is under the 1.5 s floor.
+    // 2 words / 2.6 wps + 0.35 padding is under the 1.5 s floor.
     expect(spec.beats[1]?.duration).toBe(1.5);
     expect(spec.beats[1]?.audio).toBeNull();
   });
@@ -61,8 +61,18 @@ describe("buildEpisodeSpec", () => {
   it("never lets the next beat's audio start before this one's narration ends", () => {
     const spec = buildEpisodeSpec(script, panels, audio);
     const [first, second] = spec.beats;
-    expect(first!.duration - second!.transition_in.duration).toBeGreaterThanOrEqual(first!.audio!.duration + 0.12);
+    expect(first!.duration - second!.transition_in.duration).toBeGreaterThanOrEqual(first!.audio!.duration + 0.35);
     expect(Number.isInteger(Math.round(first!.duration * 30 * 1e6) / 1e6)).toBe(true);
+  });
+
+  it("waits longer after a sound effect, a hit or a question", () => {
+    const plain = buildEpisodeSpec(script, panels, audio).beats[0]!.duration;
+    const big = (line: Partial<ScriptDoc["lines"][number]>) =>
+      buildEpisodeSpec(ScriptDoc.parse({ ...script, lines: [{ ...script.lines[0]!, ...line }, script.lines[1]] }), panels, audio).beats[0]!.duration;
+    expect(big({ sfx: "slam" })).toBeCloseTo(plain + 0.55, 1);
+    expect(big({ preset: { name: "kinetic_jitter", params: { intensity: 10, decay: 0.3 } } })).toBeCloseTo(plain + 0.55, 1);
+    expect(big({ narration: "पर क्या यह सच था?" })).toBeCloseTo(plain + 0.55, 1);
+    expect(big({ narration: "यह सच था।" })).toBeCloseTo(plain, 5);
   });
 
   it("steps a multi-panel line through its panels one at a time, playing one clip across them", () => {
