@@ -168,6 +168,18 @@ describe("buildEpisodeSpec", () => {
     expect(held.beats.slice(0, -1)).toEqual(plain.beats.slice(0, -1));
   });
 
+  it("ends on a face when the last panel has no one in it", () => {
+    const faces = PanelsDoc.parse({ ...panels, panels: panels.panels.map((p) => (p.id === "p_0001" ? { ...p, characters: [{ cluster: "c", bbox: { x: 0, y: 0, w: 0.5, h: 0.4 } }] } : p)) });
+    const lines = [script.lines[0]!, { ...script.lines[0]!, id: "l_0002", panel_ids: ["p_0002"] }];
+    const clips = AudioManifest.parse({ ...audio, clips: [...audio.clips, { line_id: "l_0002", src: "l_0002.wav", duration: 8 }] });
+    const spec = buildEpisodeSpec(ScriptDoc.parse({ ...script, lines }), faces, clips, { endHold: 3 });
+    expect(spec.beats.map((b) => b.panel_ids[0])).toEqual(["p_0001", "p_0002", "p_0001"]);
+    expect(spec.beats.at(-1)!.audio!.from).toBeGreaterThan(0);
+    expect(() => EpisodeSpec.parse(spec)).not.toThrow();
+    // Without an end hold (a part with more after it), the last panel stays.
+    expect(buildEpisodeSpec(ScriptDoc.parse({ ...script, lines }), faces, clips).beats.map((b) => b.panel_ids[0])).toEqual(["p_0001", "p_0002"]);
+  });
+
   it("passes an episode part's follow-card settings", () => {
     const spec = buildEpisodeSpec(script, panels, audio, { promo: { early: false, outro_s: 0 } });
     expect(spec.social_promo).toMatchObject({ early: false, outro_s: 0, start_s: 20 });

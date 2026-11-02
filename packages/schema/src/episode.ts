@@ -252,6 +252,26 @@ function relieveCards(beats: z.input<typeof Beat>[], panels: ReadonlyMap<string,
 }
 
 /**
+ * The video's last beat, ending on a face: when its one panel has no character in it (an empty balcony held for the
+ * cliffhanger question in the first real video), the rest of the line and the final hold go to the last panel shown
+ * with someone in it.
+ */
+function endOnFace(beats: z.input<typeof Beat>[], panels: ReadonlyMap<string, EpisodePanel>, fps: number): z.input<typeof Beat>[] {
+  const last = beats.at(-1);
+  const panel = last?.panel_ids.length === 1 ? panels.get(last.panel_ids[0]!) : undefined;
+  if (!last || !panel || panel.characters.length > 0) return last ? [last] : [];
+  const face = beats
+    .slice(0, -1)
+    .reverse()
+    .flatMap((b) => b.panel_ids.map((id) => panels.get(id)))
+    .find((p) => p && p.characters.length > 0);
+  if (!face) return [last];
+  // Long enough to see the empty scene, then the face for the rest; a short line goes straight to the face at its end.
+  const scene = Math.min(CARD_MAX, last.duration * 0.6);
+  return playAcross(last, [{ panel, preset: last.preset as PresetSpec }, { panel: face, preset: PresetSpec.parse({ name: "zoom", params: { from: 1, to: 1.1 } }) }], [scene, last.duration - scene], fps);
+}
+
+/**
  * Joins an approved script, its panels and (optionally) the voiced audio into a render-ready EpisodeSpec.
  * Without audio, beat lengths are estimated from the narration so the motion can be previewed early.
  */
@@ -288,8 +308,12 @@ export function buildEpisodeSpec(
     return sequential ? stepThrough(beat, byId, fps) : [beat];
   });
   if (sequential) beats.splice(0, beats.length, ...relieveCards(beats, byId, fps));
-  const last = beats.at(-1);
-  if (last && options.endHold) last.duration = beatLength(last.duration + options.endHold, fps);
+  if (options.endHold) {
+    const shown = endOnFace(beats, byId, fps);
+    beats.splice(-1, 1, ...shown);
+    const last = beats.at(-1)!;
+    last.duration = beatLength(last.duration + options.endHold, fps);
+  }
 
   return EpisodeSpec.parse({
     schema_version: 1,
