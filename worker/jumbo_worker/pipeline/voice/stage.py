@@ -37,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -55,6 +56,10 @@ log = logging.getLogger(__name__)
 MODEL = "drama3"
 EAR = "whisper"
 PARALLEL_LINES = 8
+# Drama 3's buffers grow with the text it speaks: a line longer than this is spoken a few sentences at a time and joined,
+# so long Gemini lines (60+ words, 2026-11-02) stay inside the cards beside Whisper.
+PIECE_WORDS = 25
+PIECE_GAP_S = 0.18
 DEFAULT_DESIGN = "calm Indian male narrator voice"
 DEFAULT_SEED = 7
 
@@ -125,7 +130,12 @@ async def run(ctx: JobContext) -> str:
             if energetic:
                 payload.update(_energetic(line.emotion, payload["tone"]))
             async with gate:
-                take = await _best_take(ctx, work, line_id, payload, seed, hear=hear)
+                pieces = _pieces(line.narration)
+                if len(pieces) == 1:
+                    take = await _best_take(ctx, work, line_id, payload, seed, hear=hear)
+                else:
+                    parts = [await _best_take(ctx, work, f"{line_id}.{k}", {**payload, "text": text}, seed, hear=hear) for k, text in enumerate(pieces)]
+                    take = await asyncio.to_thread(_join, work / f"{line_id}.wav", parts)
             tightened = 0.0
             if pacing:
                 take["pcm"], tightened = await asyncio.to_thread(_pace, take["pcm"], take["rate"], speeds[voice])
@@ -222,6 +232,32 @@ async def _best_take(ctx: JobContext, work: Path, name: str, payload: dict, seed
     best["path"] = str(work / f"{name}.wav")
     await asyncio.to_thread(write_pcm, best["path"], best["pcm"], best["rate"])
     return best
+
+
+def _pieces(text: str) -> list[str]:
+    """A line cut at sentence ends into runs of at most PIECE_WORDS words (a longer sentence stays whole)."""
+    sentences = [s.strip() for s in re.findall(r"[^।?!]+[।?!]*", text) if s.strip()]
+    pieces: list[str] = []
+    for sentence in sentences:
+        if pieces and len(pieces[-1].split()) + len(sentence.split()) <= PIECE_WORDS:
+            pieces[-1] += " " + sentence
+        else:
+            pieces.append(sentence)
+    return pieces or [text]
+
+
+def _join(path: Path, parts: list[dict]) -> dict:
+    """One take from the pieces of a line, a short breath between them."""
+    rate = parts[0]["rate"]
+    if any(p["rate"] != rate for p in parts):
+        raise JobError(f"pieces of {path.stem} came back at different sample rates")
+    gap = np.zeros(int(PIECE_GAP_S * rate), parts[0]["pcm"].dtype)
+    pcm = np.concatenate([x for p in parts for x in (p["pcm"], gap)][:-1])
+    write_pcm(path, pcm, rate)
+    heard = [p["heard"] for p in parts if p["heard"] is not None]
+    return {"pcm": pcm, "rate": rate, "seed": parts[0]["seed"], "attempts": sum(p["attempts"] for p in parts), "plain": any(p["plain"] for p in parts),
+            "trimmed_s": round(sum(p["trimmed_s"] for p in parts), 3), "cut_s": round(sum(p["cut_s"] for p in parts), 3),
+            "heard": min(heard) if heard else None, "problem": next((p["problem"] for p in parts if p["problem"]), None), "path": str(path)}
 
 
 def _closer(text: str, take: dict, best: dict) -> bool:

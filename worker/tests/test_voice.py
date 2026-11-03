@@ -391,3 +391,14 @@ async def test_a_heard_take_is_cut_to_its_line_or_spoken_again(tmp_path):
     assert take["attempts"] == 2 and take["problem"] is None and take["heard"] > 0.9
     # The 3 s read out before the line are gone; the line itself (5 s) is all there.
     assert 2.9 < take["cut_s"] < 3.4 and abs(len(take["pcm"]) / RATE - 5.0) < 0.4
+
+
+def test_a_long_line_is_spoken_a_few_sentences_at_a_time():
+    from jumbo_worker.pipeline.voice.stage import PIECE_WORDS, _pieces
+
+    short = "वह रुक गया।"
+    assert _pieces(short) == [short]
+    line = " ".join(["एक दो तीन चार पाँच छह सात आठ नौ दस।"] * 5)
+    pieces = _pieces(line)
+    assert len(pieces) == 3 and all(len(p.split()) <= PIECE_WORDS for p in pieces)
+    assert " ".join(pieces) == line
