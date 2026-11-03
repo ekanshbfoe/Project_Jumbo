@@ -26,6 +26,11 @@ QUIET_EDGE = 12
 QUIET_BUSY = 0.01
 # Slices shorter than this share of the strip width are merged into a neighbour.
 MIN_SLICE = 0.2
+# A slice longer than this many widths (a long scene with no gutter) is cut at its calmest rows, and never
+# longer than MAX_SLICE_ROWS: WebP cannot hold an image over 16383 pixels tall (Solo Leveling Ragnarok ch1,
+# 2026-11-03, had a 21236-row slice).
+MAX_SLICE_ASPECT = 8.0
+MAX_SLICE_ROWS = 16000
 
 
 def ink_rows(image: np.ndarray) -> np.ndarray:
@@ -78,7 +83,18 @@ def slice_strip(image: np.ndarray, min_gap: int | None = None, min_height: int |
                 start, gap = None, 0
     if start is not None:
         slices.append((start, len(drawn) - gap))
-    return merge_slivers([(top, bottom) for top, bottom in slices if bottom - top >= min_height], round(MIN_SLICE * width))
+    slices = merge_slivers([(top, bottom) for top, bottom in slices if bottom - top >= min_height], round(MIN_SLICE * width))
+    longest = min(MAX_SLICE_ASPECT * width, MAX_SLICE_ROWS)
+    return [piece for top, bottom in slices for piece in _cut(image, top, bottom, longest)]
+
+
+def _cut(image: np.ndarray, top: int, bottom: int, longest: float) -> list[tuple[int, int]]:
+    """(top, bottom) in even pieces no longer than `longest`, each cut moved to a calm row nearby."""
+    if bottom - top <= longest:
+        return [(top, bottom)]
+    pieces = int(np.ceil((bottom - top) / longest))
+    edges = [0, *calm_cuts(image[top:bottom], pieces), bottom - top]
+    return [(top + a, top + b) for a, b in zip(edges, edges[1:])]
 
 
 def merge_slivers(slices: list[tuple[int, int]], min_slice: int) -> list[tuple[int, int]]:
@@ -122,10 +138,16 @@ def split_tall(image: np.ndarray, box: tuple[float, float, float, float]) -> lis
     if width <= 0 or height <= MAX_PANEL_ASPECT * width:
         return [box]
     pieces = int(np.ceil(height / (TALL_PIECE * width)))
-    step = height / pieces
-    busy = busy_rows(image[max(0, int(y0)) : int(np.ceil(y1)), max(0, int(x0)) : int(np.ceil(x1))])
+    cuts = calm_cuts(image[max(0, int(y0)) : int(np.ceil(y1)), max(0, int(x0)) : int(np.ceil(x1))], pieces)
+    edges = [0, *cuts, int(height)]
+    return [(x0, y0 + a, x1, y0 + b) for a, b in zip(edges, edges[1:])]
+
+
+def calm_cuts(image: np.ndarray, pieces: int) -> list[int]:
+    """Rows that cut `image` into `pieces` about even pieces, each moved to the calmest row near its even place."""
+    step = image.shape[0] / pieces
     # Smoothed over a few rows, so a cut lands in a calm band, not between two busy lines.
-    busy = np.convolve(busy, np.ones(15) / 15, mode="same")
+    busy = np.convolve(busy_rows(image), np.ones(15) / 15, mode="same")
     cuts = []
     for k in range(1, pieces):
         lo, hi = int(k * step - CUT_SLACK * step), int(k * step + CUT_SLACK * step)
@@ -133,5 +155,4 @@ def split_tall(image: np.ndarray, box: tuple[float, float, float, float]) -> lis
         # The calmest row; among equally calm ones, the closest to the even cut.
         calm = np.flatnonzero(window <= window.min() + 1e-3) + lo
         cuts.append(int(calm[np.argmin(np.abs(calm - k * step))]))
-    edges = [0, *cuts, int(height)]
-    return [(x0, y0 + a, x1, y0 + b) for a, b in zip(edges, edges[1:])]
+    return cuts

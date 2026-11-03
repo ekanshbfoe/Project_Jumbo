@@ -91,6 +91,13 @@ def test_strips_are_sliced_at_their_gutters():
     assert [(t, b) for t, b in slices] == SPANS
 
 
+def test_a_long_scene_with_no_gutter_is_cut_into_pieces_webp_can_hold():
+    # 100 wide and about 1200 tall with no gutter: over eight widths, so it comes back in two pieces that touch.
+    slices = slice_strip(art(1200, 100, seed=7))
+    assert len(slices) == 2 and slices[0][1] == slices[1][0]
+    assert all(b - t <= 800 for t, b in slices)
+
+
 def test_borderless_shots_fading_through_black_are_sliced_apart():
     width = 600
     shot_a, shot_b = art(700, width, seed=31), art(700, width, seed=32)
