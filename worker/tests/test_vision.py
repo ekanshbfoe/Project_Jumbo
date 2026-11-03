@@ -234,6 +234,19 @@ async def test_a_slice_holding_only_a_caption_keeps_it_as_a_text_card():
     assert detector.folded == 0 and panel.text_only
 
 
+async def test_a_text_card_boxed_beside_its_caption_is_reframed_on_the_words():
+    # Magi boxed the black next to a caption and gave the box the caption's words: the card is moved onto them.
+    image = np.zeros((300, 1000, 3), np.uint8)
+    cv2.putText(image, "LEARNING OF THIS", (110, 160), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+    result = {
+        "panels": [{"polygon": [[600, 0], [1000, 0], [1000, 300], [600, 300]]}],
+        "texts": [{"polygon": [[100, 20], [500, 20], [500, 280], [100, 280]], "kind": "speech", "text": "Learning of this,", "speaker": None}],
+        "characters": [],
+    }
+    [panel] = await MagiDetector(lambda *_: asyncio.sleep(0, result)).detect(image, "x.webp")
+    assert panel.text_only and panel.box == (70, 0, 530, 300)
+
+
 async def test_painted_art_without_a_detected_character_is_not_folded():
     # Smooth painted art has few hard edges; its colour keeps it a panel even when Magi finds no one in it.
     image, result = bubble_strip()

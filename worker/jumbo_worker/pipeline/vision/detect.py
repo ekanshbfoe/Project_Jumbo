@@ -187,6 +187,24 @@ def keep_shots(boxes: list[tuple[float, float, float, float]], width: int) -> li
     return kept or boxes
 
 
+# Room left around a text card's words, as a share of the image width.
+CARD_PAD = 0.03
+
+
+def _frame_text(card: Detection, image: np.ndarray) -> None:
+    """A text card whose words lie outside its own box (Magi boxed the black beside a caption, Solo Leveling Ragnarok
+    ch1, 2026-11-03) is reframed on its words, so the video shows the caption, not an empty frame."""
+    x0, y0, x1, y1 = card.box
+    words = [_poly_box(b["polygon"]) for b in card.bubbles]
+    if not any(bx1 <= x0 or bx0 >= x1 or by1 <= y0 or by0 >= y1 for bx0, by0, bx1, by1 in words):
+        return
+    h, w = image.shape[:2]
+    pad = CARD_PAD * w
+    gx0, gy0 = max(0.0, min(b[0] for b in words) - pad), max(0.0, min(b[1] for b in words) - pad)
+    gx1, gy1 = min(float(w), max(b[2] for b in words) + pad), min(float(h), max(b[3] for b in words) + pad)
+    card.polygon = [(gx0, gy0), (gx1, gy0), (gx1, gy1), (gx0, gy1)]
+
+
 class MagiDetector:
     """Magi v2 through the model pool. `call` is `JobContext.call`.
 
@@ -269,6 +287,8 @@ class MagiDetector:
             # Nothing to fold into (a webtoon slice holding only a caption): keep the boxes, marking the text cards.
             for d, card in zip(panels, cards):
                 d.text_only = card
+                if card:
+                    _frame_text(d, image)
             return panels
         if len(real) == len(panels):
             return panels
