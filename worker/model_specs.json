@@ -43,12 +43,12 @@
     },
     "whisper": {
       "backend": "ggml",
-      "chips": 0,
+      "chips": 1,
       "gpus": 1,
-      "hbm_gb_per_chip": 0.0,
+      "hbm_gb_per_chip": 2.0,
       "cpu_cores": 0,
       "host_ram_gb": 3,
-      "cpu_fallback": false,
+      "cpu_fallback": true,
       "max_replicas": 1,
       "target_queue_per_replica": 4,
       "concurrency": 1,
@@ -56,9 +56,8 @@
       "wake_s": 60,
       "job_s": 4,
       "phase": "vision",
-      "options": {"cpu_threads": "2"},
       "pip": ["faster-whisper==1.1.1"],
-      "notes": "Whisper large-v3 through faster-whisper (CTranslate2, not ggml: the backend only names a fallback runner), int8 on the host CPU: hears each voice take so the voice job can cut it to its line and speak it again when words are missing. Off the T4s since 2026-11-03: on long lines Drama 3 grew to 11 GiB on card 1 and the two no longer fit under the ceiling. No cores leased (Drama 3 holds the host's); it runs two threads beside it. First wake installs faster-whisper and downloads ~3 GB from the HF Hub."
+      "notes": "Whisper large-v3 through faster-whisper (CTranslate2, not ggml: the backend only names a fallback runner), int8_float16 on one T4 beside Drama 3: hears each voice take so the voice job can cut it to its line and speak it again when words are missing. Measured 2026-10-31: 2.0 GiB, 0.4 s per second of audio with word times and beam 5. No cores of its own: the GPU does the work and the host's are Drama 3's. First wake installs faster-whisper and downloads ~3 GB from the HF Hub."
     },
     "qwen3vl_32b": {
       "backend": "ggml",
