@@ -5,8 +5,8 @@ Requests (paths are on the worker host):
 
 - `hear` {"audio": a 16-bit mono WAV, "language"?: "hi"} -> {"words": [[start, end, word, probability], ...]}
 
-On a T4 it runs int8_float16 (2.0 GiB beside Drama 3, measured 2026-10-31), 0.4 s per second of audio with word times
-and beam 5; on a CPU host int8. The audio is passed as samples, not a path: faster-whisper's own decoding goes through
+On a T4 it runs int8_float16 (2.0 GiB, 0.4 s per second of audio with word times and beam 5, measured 2026-10-31); on the
+CPU int8, with the `cpu_threads` option when it leases no cores of its own. The audio is passed as samples, not a path: faster-whisper's own decoding goes through
 PyAV, whose Kaggle build refused its arguments in the reel prep.
 """
 
@@ -45,6 +45,7 @@ class WhisperRunner:
         threads = int(os.environ.get("OMP_NUM_THREADS", "1"))
         if os.environ.get("JUMBO_DEVICE") == "cuda":
             return WhisperModel(MODEL, device="cuda", device_index=0, compute_type="int8_float16", cpu_threads=threads)
+        threads = int(self.spec.options.get("cpu_threads", threads))
         return WhisperModel(MODEL, device="cpu", compute_type="int8", cpu_threads=threads)
 
     def _hear(self, p: dict) -> dict:
