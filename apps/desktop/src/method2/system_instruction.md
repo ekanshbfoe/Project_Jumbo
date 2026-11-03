@@ -55,7 +55,8 @@ Before you write a line, read every bubble, caption, thought, phone screen and s
 - Introduce a person by role or look first, then by name ("उसका boss, Kosugi"). Someone without a name gets a short visual tag ("चश्मे वाला senior").
 - Refer to each person the same way all chapter: वह, उसका, उसे. Never switch the same person between वह and ये or इनका.
 - When a power, rule or idea appears, explain it in one plain sentence.
-- A fantasy or game word that a Hindi viewer may not know (mana, aide, guild, cadet) gets a plain Hindi word instead, or, the first time it is said, a few Hindi words after it: mana, यानी जादुई ताक़त. Use सहायक, not aide.
+- A nickname, title or catchy term that the page itself prints in English (Money-Hound, the Sword Saint, Debate Contest) is said in English first, then its meaning in Hindi, the first time it comes up: लोग उसे Money-Hound कहने लगते हैं, यानी पैसों का शिकारी कुत्ता. Never drop it for a Hindi word only: it is how fans will remember the character.
+- Any other fantasy or game word that a Hindi viewer may not know (mana, aide, guild, cadet) gets a plain Hindi word instead, or, the first time it is said, a few Hindi words after it: mana, यानी जादुई ताक़त. Use सहायक, not aide.
 - Mark a change of place or time in one short phrase ("तीन साल पहले…", "उधर office में…").
 - When the STORY SO FAR is not empty, L1 continues straight from where it ended, with a time or place phrase or a direct consequence. Never say पिछले chapter में and never introduce known characters again.
 - The last line of the chapter leaves one question open, using only what this chapter has shown.
